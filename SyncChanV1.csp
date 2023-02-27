@@ -1,0 +1,143 @@
+-- This version corresponds to the implementation of SCL, as used in the
+-- course.  But it's buggy.
+
+-- A module representing a synchronous channel.  This version does not include
+-- interactions with Alts or closing of channels.
+module SyncChan(ThreadID, Data)
+  include "Variable.csp"
+
+  -- The value variable: the current or previous value.
+  channel getValue, setValue: ThreadID.Data
+  Value = Var(head(seq(Data)), getValue, setValue)  
+
+  -- The full variable: is the current value of value valid?
+  channel getFull, setFull: ThreadID.Bool
+  Full = Var(false, getFull, setFull)
+
+  -- Number of threads
+  N = card(ThreadID)
+
+  -- The receiversWaiting variable
+  channel getReceiversWaiting, setReceiversWaiting : ThreadID.{0..N}
+  ReceiversWaiting = Var(0, getReceiversWaiting, setReceiversWaiting)
+
+  -- Monitor and conditions
+  datatype ConditionID = SlotFull | Continue | SlotEmptied
+
+  include "MonitorCondition.csp"
+
+  -- Assertion macros
+  Assert(b, P) = if b then P else DIV
+  Assert1(b) = Assert(b, SKIP)
+
+  -------- Sending
+
+  -- slotEmptied.await(!full)
+  Send1(me, x) = 
+    getFull.me?f -> 
+    if f then Await(me, SlotEmptied); Send1(me, x) else Send2(me, x)
+
+  -- value = x; full = true 
+  Send2(me, x) = 
+    setValue.me.x -> setFull.me.true -> Send3(me, x)
+
+  -- maybeSignalToReceiver:
+  -- if(receiversWaiting > 0){ slotFull.signal(); receiversWaiting -= 1 }
+  Send3(me, x) = 
+    getReceiversWaiting.me?r ->
+    if r > 0 then 
+      Signal(me, SlotFull); getReceiversWaiting.me?r1 -> 
+      Assert1(r1 == r); setReceiversWaiting.me.r-1 -> Send4(me, x)
+    else Send4(me, x)
+
+  -- continue.await(); release lock
+  Send4(me, x) = Await(me, Continue); Unlock(me)
+
+  -------- Receiving
+
+  -- while(!full){ receiversWaiting += 1; slotFull.await() }
+  Receive1(me, cont) = 
+    getFull.me?f ->
+    if not(f) then
+      getReceiversWaiting.me?r -> 
+      Assert(r < N, setReceiversWaiting.me.r+1 -> Await(me, SlotFull)); 
+      Receive1(me, cont)
+    else Receive2(me, cont)
+
+  -- assert(full); 
+  Receive2(me, cont) =
+    getFull.me?f -> Assert1(f); CompleteReceive(me, cont)
+
+  -- completeReceive: full = false; continue.signal(); slotEmptied.signal();
+  -- unlock and return value
+  CompleteReceive(me, cont) = 
+    setFull.me.false -> 
+    Signal(me, Continue); Signal(me, SlotEmptied);
+    getValue.me?v -> (Unlock(me); cont(v))
+
+  -- var timeout = false
+  -- while(!full && !timeout){
+  --   receiversWaiting += 1; timeout = !slotFull.awaintNanos(...)
+  -- }
+  ReceiveWithin1(me, cont) = 
+    getFull.me?f ->
+    if not(f) then
+      getReceiversWaiting.me?r -> 
+      Assert(r < N, setReceiversWaiting.me.r+1 -> SKIP);
+      let cont1(b) = -- b if not timedout
+      	if b then ReceiveWithin1(me, cont) 
+        else ReceiveWithinTimeout(me, cont)
+      within TimedAwait(me, SlotFull, cont1)
+    else ReceiveWithinFull(me, cont)
+
+  --  if(full) Some(completeReceive)
+  -- else{ receiversWaiting -= 1; None }
+  -- ReceiveAfter(me, cont) = 
+  --   getFull.me?f ->
+  --   if f then CompleteReceive(me, \ v @ cont(Some.v))
+  --   else ReceiveWithinTimeout(me, cont)
+
+  -- if(timeout){ receiversWaiting -= 1; None }
+  ReceiveWithinTimeout(me, cont) = 
+    getReceiversWaiting.me?rw ->
+    Assert(rw > 0, setReceiversWaiting.me.rw-1 -> SKIP);
+    Unlock(me); cont(None)
+
+  -- assert(full); Some(completeReceive)
+  ReceiveWithinFull(me, cont) = 
+    getFull.me?f -> Assert1(f);
+    CompleteReceive(me, \ v @ cont(Some.v))
+
+  ---------- All variables
+
+  Variables = Full ||| Value ||| ReceiversWaiting
+
+  varEvents = 
+    {| getFull, setFull, getValue, setValue, 
+       getReceiversWaiting, setReceiversWaiting |}
+
+  -- All internal events
+  events = union(varEvents, monitorEvents)
+
+exports
+  datatype Option = None | Some.Data
+
+  -- Thread me sends x
+  Send(me, x) = Lock(me); Send1(me, x)
+
+  -- Thread me receives value, and apply cont to it.
+  Receive :: (ThreadID, (Data) -> Proc) -> Proc
+  Receive(me, cont) = Lock(me); Receive1(me, cont)
+
+  ReceiveWithin :: (ThreadID, (Option) -> Proc) -> Proc
+  ReceiveWithin(me, cont) = Lock(me); ReceiveWithin1(me, cont)
+
+  -- Run P with this channel
+  runWith(P) = 
+    let P1 = P [| varEvents |] Variables
+    within runWithMonitor(P1)
+
+  -- Run P with this channel, and hide internals
+  runWithAndHide(P) = runWith(P) \ events
+
+endmodule

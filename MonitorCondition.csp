@@ -1,0 +1,110 @@
+  -- Events for monitor actions
+  channel acquire, release: ThreadID
+  channel await, timedAwait: ThreadID . ConditionID
+  channel signal: ThreadID . ConditionID . ThreadID
+  channel signalAll: ThreadID . ConditionID
+  -- timeout from a timed wait
+  channel timeout: ThreadID . ConditionID  
+
+  -- We use a map waitingMap :: (| ConditionID => {ThreadID} |) to record those
+  -- threads waiting on each Condition.
+
+  -- We use a map timedWaitingMap :: (| ConditionID => {ThreadID} |) to record
+  -- those threads doing a timed await on each Condition.
+
+  -- The initial waitingMap.
+  initialMap = mapFromList(< (c,{}) | c <- seq(ConditionID) >) 
+
+  -- Add that t is waiting on c.
+  addToMap(map, c, t) = mapUpdate(map, c, union(mapLookup(map, c), {t}))
+
+  -- Record that t is no longer waiting on c  
+  removeFromMap(map, c, t) = mapUpdate(map, c, diff(mapLookup(map, c), {t}))
+
+  -- Either ts, or {t} if the former is empty. 
+  addIfEmpty(t, ts) = if empty(ts) then {t} else ts
+
+  -- All threads waiting on any condition. 
+  range(waitingMap) = Union({mapLookup(waitingMap, c) | c <- ConditionID})  
+
+  -- The monitor in the unlocked state.  waitingMap records those threads
+  -- waiting on each Condition.  timedWaitingMap records those threads doing a
+  -- timed wait on each condition.  Invariant: elements in range are disjoint.
+  Unlocked :: 
+     ((| ConditionID=>{ThreadID} |), (| ConditionID=>{ThreadID} |)) -> Proc 
+  Unlocked(waitingMap, timedWaitingMap) =
+    let allWaiters = union(range(waitingMap), range(timedWaitingMap)) within
+    -- Note: we don't allow waiting threads to acquire the lock. 
+    acquire?t:diff(ThreadID, allWaiters) -> 
+      Locked(t, waitingMap, timedWaitingMap)
+    []
+    -- A waiting thread wakes up and immediately acquires the lock.  Note that
+    -- this event really represents the acquiring of the lock. 
+    [] c: ConditionID @ 
+      let timedWaiters = mapLookup(timedWaitingMap,c) within
+      timeout?t:timedWaiters!c ->
+        Locked(t, waitingMap, removeFromMap(timedWaitingMap, c, t))
+
+  -- The monitor locked by t.
+  Locked :: 
+    (ThreadID, (| ConditionID=>{ThreadID} |), (| ConditionID=>{ThreadID} |))
+    -> Proc 
+  Locked(t, waitingMap, timedWaitingMap) = 
+    release.t -> Unlocked(waitingMap, timedWaitingMap)
+    []
+    await.t?c -> Unlocked(addToMap(waitingMap, c, t), timedWaitingMap)
+    [] 
+    timedAwait.t?c -> Unlocked(waitingMap, addToMap(timedWaitingMap, c, t))
+    []
+    ([] c: ConditionID @
+       let waiters = mapLookup(waitingMap,c) within
+       let timedWaiters = mapLookup(timedWaitingMap,c) within
+       signal.t.c?t':waiters -> 
+         Locked(t, removeFromMap(waitingMap, c, t'), timedWaitingMap)
+       []
+       signal.t.c?t':timedWaiters -> 
+         Locked(t, waitingMap, removeFromMap(timedWaitingMap, c, t'))
+       []
+       -- Avoid blocking signals if no thread waiting
+       empty(waiters) and empty(timedWaiters) & 
+         signal.t.c.t -> Locked(t, waitingMap, timedWaitingMap)
+    )
+    []
+    signalAll.t?c -> 
+      Locked(t, mapUpdate(waitingMap, c, {}), mapUpdate(timedWaitingMap, c, {}))
+
+
+  monitorEvents = 
+    {| acquire, release, await, signal, signalAll, timedAwait, timeout |}
+
+  runWithMonitor(P) = P [| monitorEvents |] Unlocked(initialMap, initialMap)
+
+  -- Interface to threads.
+
+  -- Lock the monitor
+  Lock(t) = acquire.t -> SKIP
+  
+  -- Unlock the monitor
+  Unlock(t) = release.t -> SKIP
+
+  -- Perform P under mutual exclusion
+  Mutex(t, P) = Lock(t); P; Unlock(t)
+
+  -- Perform an await() on c, and then regain the lock.
+  Await(t,c) = await.t.c -> acquire.t -> SKIP 
+
+  -- Do a timed await(delay) on c.  Apply cond to the boolean that indicates
+  -- if a signal was received.
+  TimedAwait(t,c,cond) = 
+    timedAwait.t.c -> 
+    -- Note: the former case corresponds to t receiving a signal and
+    -- subsequently acquiring the lock; the latter case corresponds to it
+    -- timing out and acquiring the lock.
+    (acquire.t -> cond(true) [] timeout.t.c -> cond(false))
+
+  -- perform a signal()
+  Signal(t,c) = signal.t.c?t' -> SKIP
+
+  -- perform a signallAll()
+  SignalAll(t,c) = signalAll.t.c -> SKIP
+

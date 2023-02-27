@@ -1,0 +1,5 @@
+-- A process representign a variable. 
+
+Var(value, get, set) = 
+  get?_!value -> Var(value, get, set)
+  [] set?_?value -> Var(value, get, set)
