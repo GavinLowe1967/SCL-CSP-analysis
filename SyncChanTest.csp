@@ -1,4 +1,4 @@
--- Test upon SyncChan1
+-- Test upon SyncChan
 
 datatype ThreadID = T1 | T2 | T3 | T4
 datatype Data = A | B
@@ -9,16 +9,19 @@ include "SyncChanV1.csp"
 instance c = SyncChan(ThreadID, Data)
 
 -- Signals before and after invocations.
-channel beginSend, endReceive : ThreadID . Data
+channel beginSend, endReceive, beginSendWithin : ThreadID . Data
 channel beginReceive, beginReceiveWithin, endSend : ThreadID
 channel endReceiveWithin : ThreadID . (c::Option)
+channel endSendWithin: ThreadID . Bool
 
 -- Thread with identity me, which repeatedly sends or receives, or neither.
 Thread(me) = 
-  let handleReceive(x) = endReceive.me.x -> SKIP within
   beginSend.me?x -> c::Send(me, x); endSend.me -> Thread(me)
   |~|
   beginReceive.me -> c::Receive(me, \ x @ endReceive.me.x -> SKIP ); Thread(me)
+  |~|
+  beginSendWithin.me?x -> c::SendWithin(me, x, \ b @ endSendWithin.me.b -> SKIP);
+    Thread(me)
   |~|
   beginReceiveWithin.me -> 
     c::ReceiveWithin(me, \ ox @ endReceiveWithin.me.ox -> SKIP); Thread(me)
@@ -30,18 +33,22 @@ Threads = ||| t <- ThreadID @ Thread(t)
 System = c::runWithAndHide(Threads)
 
 assert System  :[divergence free]
--- assert System  :[deadlock free [F]] -- doesn't hold if thread can STOP!
 
--- Specification of synnchronisation linearisation.
+-- Specification of synchronisation linearisation.
 
 -- sync.t1.t2.x represents sender t1 and receiver t2 synchronising on the
 -- sending of x.
 channel sync : ThreadID . ThreadID . Data
 
+-- A linearizer for thread t
 Linearizer(me) = 
   beginSend.me?x -> sync.me?other!x -> endSend.me -> Linearizer(me)
   |~|
   beginReceive.me -> sync?other!me?x -> endReceive.me.x -> Linearizer(me)
+  |~|
+  beginSendWithin.me?x -> 
+    (sync.me?other!x -> endSendWithin.me.true -> Linearizer(me)
+     [> endSendWithin.me.false -> Linearizer(me))
   |~|
   beginReceiveWithin.me ->
     (sync?other!me?x -> endReceiveWithin.me.(c::Some.x) -> Linearizer(me)
@@ -49,13 +56,15 @@ Linearizer(me) =
   |~| 
   STOP
 
-Spec = 
-  let alpha(t) = 
+-- Alphabet of Linearizer(t)
+alphaLin(t) = 
     {| beginSend.t, endSend.t, beginReceive.t, endReceive.t, 
+       beginSendWithin.t, endSendWithin.t,
        beginReceiveWithin.t, endReceiveWithin.t, sync.t.other, sync.other.t | 
          other <- diff(ThreadID,{t}) |} 
-  within (|| t <- ThreadID @ [alpha(t)] Linearizer(t)) \ {| sync|}
 
+-- Specification of synchronisation linearisation.
+Spec = (|| t <- ThreadID @ [alphaLin(t)] Linearizer(t)) \ {| sync|}
 
 assert Spec [T= System
 assert Spec [F= System

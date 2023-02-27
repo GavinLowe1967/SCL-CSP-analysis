@@ -1,3 +1,5 @@
+module MonitorCondition
+
   -- Events for monitor actions
   channel acquire, release: ThreadID
   channel await, timedAwait: ThreadID . ConditionID
@@ -31,7 +33,7 @@
   -- waiting on each Condition.  timedWaitingMap records those threads doing a
   -- timed wait on each condition.  Invariant: elements in range are disjoint.
   Unlocked :: 
-     ((| ConditionID=>{ThreadID} |), (| ConditionID=>{ThreadID} |)) -> Proc 
+    ((| ConditionID=>{ThreadID} |), (| ConditionID=>{ThreadID} |)) -> Proc 
   Unlocked(waitingMap, timedWaitingMap) =
     let allWaiters = union(range(waitingMap), range(timedWaitingMap)) within
     -- Note: we don't allow waiting threads to acquire the lock. 
@@ -57,27 +59,28 @@
     timedAwait.t?c -> Unlocked(waitingMap, addToMap(timedWaitingMap, c, t))
     []
     ([] c: ConditionID @
-       let waiters = mapLookup(waitingMap,c) within
-       let timedWaiters = mapLookup(timedWaitingMap,c) within
-       signal.t.c?t':waiters -> 
-         Locked(t, removeFromMap(waitingMap, c, t'), timedWaitingMap)
-       []
-       signal.t.c?t':timedWaiters -> 
-         Locked(t, waitingMap, removeFromMap(timedWaitingMap, c, t'))
-       []
-       -- Avoid blocking signals if no thread waiting
-       empty(waiters) and empty(timedWaiters) & 
-         signal.t.c.t -> Locked(t, waitingMap, timedWaitingMap)
+      let waiters = mapLookup(waitingMap,c) within
+      let timedWaiters = mapLookup(timedWaitingMap,c) within
+      signal.t.c?t':waiters -> 
+        Locked(t, removeFromMap(waitingMap, c, t'), timedWaitingMap)
+      []
+      signal.t.c?t':timedWaiters -> 
+        Locked(t, waitingMap, removeFromMap(timedWaitingMap, c, t'))
+      []
+      -- Avoid blocking signals if no thread waiting
+      empty(waiters) and empty(timedWaiters) & 
+        signal.t.c.t -> Locked(t, waitingMap, timedWaitingMap)
     )
     []
     signalAll.t?c -> 
       Locked(t, mapUpdate(waitingMap, c, {}), mapUpdate(timedWaitingMap, c, {}))
 
+exports
 
-  monitorEvents = 
+  events = 
     {| acquire, release, await, signal, signalAll, timedAwait, timeout |}
 
-  runWithMonitor(P) = P [| monitorEvents |] Unlocked(initialMap, initialMap)
+  runWith(P) = P [| events |] Unlocked(initialMap, initialMap)
 
   -- Interface to threads.
 
@@ -108,3 +111,4 @@
   -- perform a signallAll()
   SignalAll(t,c) = signalAll.t.c -> SKIP
 
+endmodule

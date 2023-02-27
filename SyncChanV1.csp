@@ -1,6 +1,3 @@
--- This version corresponds to the implementation of SCL, as used in the
--- course.  But it's buggy.
-
 -- A module representing a synchronous channel.  This version does not include
 -- interactions with Alts or closing of channels.
 module SyncChan(ThreadID, Data)
@@ -35,23 +32,62 @@ module SyncChan(ThreadID, Data)
   -- slotEmptied.await(!full)
   Send1(me, x) = 
     getFull.me?f -> 
-    if f then Await(me, SlotEmptied); Send1(me, x) else Send2(me, x)
+    if f then MonitorCondition::Await(me, SlotEmptied); Send1(me, x) 
+    else Send2(me, x)
 
   -- value = x; full = true 
-  Send2(me, x) = 
-    setValue.me.x -> setFull.me.true -> Send3(me, x)
+  Send2(me, x) = setValue.me.x -> setFull.me.true -> CompleteSend(me, x)
 
   -- maybeSignalToReceiver:
   -- if(receiversWaiting > 0){ slotFull.signal(); receiversWaiting -= 1 }
-  Send3(me, x) = 
+  MaybeSignalToReceiver(me) = 
     getReceiversWaiting.me?r ->
     if r > 0 then 
-      Signal(me, SlotFull); getReceiversWaiting.me?r1 -> 
-      Assert1(r1 == r); setReceiversWaiting.me.r-1 -> Send4(me, x)
-    else Send4(me, x)
+      MonitorCondition::Signal(me, SlotFull); getReceiversWaiting.me?r1 -> 
+      Assert1(r1 == r); setReceiversWaiting.me.r-1 -> SKIP
+    else SKIP
 
-  -- continue.await(); release lock
-  Send4(me, x) = Await(me, Continue); Unlock(me)
+  -- completeSend: maybeSignalToReceiver; continue.await(); release lock
+  CompleteSend(me, x) = 
+    MaybeSignalToReceiver(me);
+    MonitorCondition::Await(me, Continue); 
+    MonitorCondition::Unlock(me)
+
+  -- Timed sending
+
+  -- val timeout = !slotEmptied.awaitNanos(nanos, !full || isClosed)
+  SendWithin1(me, x, cont) = 
+    getFull.me?f -> 
+    if not f then SendWithin2(me, x, cont, false)
+    else 
+      let cont1(b) = -- b if not timeout
+        if b then SendWithin1(me, x, cont) 
+        else getFull.me?f -> SendWithin2(me, x, cont, f)
+      within MonitorCondition::TimedAwait(me, SlotEmptied, cont1)
+
+  -- if(timeout) false 
+  -- else{ assert(!full); value = x; full = true    // deposit my value
+  --       maybeSignalToReceiver; ... }
+  SendWithin2(me, x, cont, timeout) = 
+    if(timeout) then MonitorCondition::Unlock(me); cont(false)
+    else
+      getFull.me?f -> Assert1(not f); 
+      setValue.me.x -> setFull.me.true -> MaybeSignalToReceiver(me); 
+      SendWithin3(me, x, cont)
+  
+  -- val success = continue.awaitNanos(deadline-nanoTime)
+  SendWithin3(me, x, cont) = 
+    let cont1(success) = 
+          if success then MonitorCondition::Unlock(me); cont(true)
+          else SendWithin4(me, x, cont)
+    within MonitorCondition::TimedAwait(me, Continue, cont1)
+  
+  -- Case of no corresponding receiver
+  -- assert(full && value == x); full = false; slotEmptied.signal(); false
+  SendWithin4(me, x, cont) = 
+    getFull.me?f -> getValue.me?x1 -> Assert1(f and x == x1);
+    setFull.me.false -> MonitorCondition::Signal(me, SlotEmptied);
+    MonitorCondition::Unlock(me); cont(false)
 
   -------- Receiving
 
@@ -60,7 +96,7 @@ module SyncChan(ThreadID, Data)
     getFull.me?f ->
     if not(f) then
       getReceiversWaiting.me?r -> 
-      Assert(r < N, setReceiversWaiting.me.r+1 -> Await(me, SlotFull)); 
+      Assert(r < N, setReceiversWaiting.me.r+1 -> MonitorCondition::Await(me, SlotFull)); 
       Receive1(me, cont)
     else Receive2(me, cont)
 
@@ -72,8 +108,8 @@ module SyncChan(ThreadID, Data)
   -- unlock and return value
   CompleteReceive(me, cont) = 
     setFull.me.false -> 
-    Signal(me, Continue); Signal(me, SlotEmptied);
-    getValue.me?v -> (Unlock(me); cont(v))
+    MonitorCondition::Signal(me, Continue); MonitorCondition::Signal(me, SlotEmptied);
+    getValue.me?v -> (MonitorCondition::Unlock(me); cont(v))
 
   -- var timeout = false
   -- while(!full && !timeout){
@@ -87,21 +123,14 @@ module SyncChan(ThreadID, Data)
       let cont1(b) = -- b if not timedout
       	if b then ReceiveWithin1(me, cont) 
         else ReceiveWithinTimeout(me, cont)
-      within TimedAwait(me, SlotFull, cont1)
+      within MonitorCondition::TimedAwait(me, SlotFull, cont1)
     else ReceiveWithinFull(me, cont)
-
-  --  if(full) Some(completeReceive)
-  -- else{ receiversWaiting -= 1; None }
-  -- ReceiveAfter(me, cont) = 
-  --   getFull.me?f ->
-  --   if f then CompleteReceive(me, \ v @ cont(Some.v))
-  --   else ReceiveWithinTimeout(me, cont)
 
   -- if(timeout){ receiversWaiting -= 1; None }
   ReceiveWithinTimeout(me, cont) = 
     getReceiversWaiting.me?rw ->
     Assert(rw > 0, setReceiversWaiting.me.rw-1 -> SKIP);
-    Unlock(me); cont(None)
+    MonitorCondition::Unlock(me); cont(None)
 
   -- assert(full); Some(completeReceive)
   ReceiveWithinFull(me, cont) = 
@@ -117,25 +146,30 @@ module SyncChan(ThreadID, Data)
        getReceiversWaiting, setReceiversWaiting |}
 
   -- All internal events
-  events = union(varEvents, monitorEvents)
+  events = union(varEvents, MonitorCondition::events)
 
 exports
   datatype Option = None | Some.Data
 
   -- Thread me sends x
-  Send(me, x) = Lock(me); Send1(me, x)
+  Send(me, x) = MonitorCondition::Lock(me); Send1(me, x)
 
-  -- Thread me receives value, and apply cont to it.
+  -- Thread me receives value, and applies cont to it.
   Receive :: (ThreadID, (Data) -> Proc) -> Proc
-  Receive(me, cont) = Lock(me); Receive1(me, cont)
+  Receive(me, cont) = MonitorCondition::Lock(me); Receive1(me, cont)
 
+  -- Thread me does sendWithin(_)(x), and applies cont to it.
+  SendWithin :: (ThreadID, Data, (Bool) -> Proc) -> Proc
+  SendWithin(me, x, cont) = MonitorCondition::Lock(me); SendWithin1(me, x, cont)
+
+  -- Thread me does receiveWithin(_) with continuation cont. 
   ReceiveWithin :: (ThreadID, (Option) -> Proc) -> Proc
-  ReceiveWithin(me, cont) = Lock(me); ReceiveWithin1(me, cont)
+  ReceiveWithin(me, cont) = MonitorCondition::Lock(me); ReceiveWithin1(me, cont)
 
   -- Run P with this channel
   runWith(P) = 
     let P1 = P [| varEvents |] Variables
-    within runWithMonitor(P1)
+    within MonitorCondition::runWith(P1)
 
   -- Run P with this channel, and hide internals
   runWithAndHide(P) = runWith(P) \ events
