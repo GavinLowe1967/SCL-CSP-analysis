@@ -1,0 +1,33 @@
+-- This file contains various macros that are useful for capturing programming
+-- constructs.
+
+-- Assertion macros
+Assert(b, P) = if b then P else DIV
+Assert1(b) = Assert(b, SKIP)
+
+-- Macro corresponding to while(test){body}.  Note: this won't work when body
+-- updates thread-local parameters.  test is modelled by a function test such
+-- that test(cont) applies the continuation cont to the boolean result.
+While :: (((Bool) -> Proc) -> Proc, Proc) -> Proc
+While(test, body) = 
+  test(\b @ if b then body; While(test, body) else SKIP)
+
+-- The negation of test. 
+Negate :: (((Bool) -> Proc) -> Proc) -> (((Bool) -> Proc) -> Proc)
+Negate(test)(cont) = test(\ b @ cont(not b))
+
+-- A while loop with state of polymorphic type State.  test(st)(cont) applies
+-- cont to the result of evaluating test in state st.  body(st)(cont) executes
+-- body from state st, and applies cont to the resulting state.  state is the
+-- initial state.  cont is a continuation representing the rest of the
+-- program, which gets applied to the subsequent state.
+While1 :: ( 
+  (State) -> ((Bool) -> Proc) -> Proc , 
+  (State) -> ((State) -> Proc) -> Proc, 
+  State,
+  (State) -> Proc
+) -> Proc
+While1(test, body, state, cont) = 
+  test(state)(\ b @ 
+    if b then body(state)(\ state' @ While1(test, body, state', cont)) 
+    else cont(state))

@@ -2,6 +2,7 @@
 -- closing of channels.
 module SyncChan(ThreadID, AltID, Data)
   include "Variable.csp"
+  include "Macros.csp"
 
   -- The value variable: the current or previous value.
   channel getValue, setValue: ThreadID.Data
@@ -18,14 +19,15 @@ module SyncChan(ThreadID, AltID, Data)
   channel getReceiversWaiting, setReceiversWaiting : ThreadID.{0..N}
   ReceiversWaiting = Var(0, getReceiversWaiting, setReceiversWaiting)
 
+  -- macro for receiversWaiting += 1
+  IncReceiversWaiting(me) = 
+    getReceiversWaiting.me?r -> 
+    Assert(r < N, setReceiversWaiting.me.r+1 -> SKIP)
+
   -- Monitor and conditions
   datatype ConditionID = SlotFull | Continue | SlotEmptied
 
   include "MonitorCondition.csp"
-
-  -- Assertion macros
-  Assert(b, P) = if b then P else DIV
-  Assert1(b) = Assert(b, SKIP)
 
   -------- Sending
 
@@ -33,9 +35,6 @@ module SyncChan(ThreadID, AltID, Data)
   Send1(me, x) = 
     let Test(cont) = getFull.me?f -> cont(not f) -- test of !full
     within MonitorCondition::AwaitTest(me, SlotEmptied, Test); Send2(me, x)
-    -- getFull.me?f -> 
-    -- if f then MonitorCondition::Await(me, SlotEmptied); Send1(me, x) 
-    -- else Send2(me, x)
 
   -- if(tryAltReceive(x)) slotEmptied.signal() else ...
   Send2(me, x) = 
@@ -66,13 +65,6 @@ module SyncChan(ThreadID, AltID, Data)
     let Test(cont1) = getFull.me?f -> cont1(not f) -- test "!full"
         Cont(b) = SendWithin2(me, x, cont, not b) -- continuation on result
     within MonitorCondition::TimedAwaitTest(me, SlotEmptied, Test, Cont)
-    -- getFull.me?f -> 
-    -- if not f then SendWithin2(me, x, cont, false)
-    -- else 
-    --   let cont1(b) = -- b if not timeout
-    --     if b then SendWithin1(me, x)(cont) 
-    --     else getFull.me?f -> SendWithin2(me, x, cont, f)
-    --   within MonitorCondition::TimedAwait(me, SlotEmptied, cont1)
 
   -- if(timeout) false 
   -- else{ assert(!full); value = x; full = true    // deposit my value
@@ -99,13 +91,16 @@ module SyncChan(ThreadID, AltID, Data)
 
   -- while(!full){ receiversWaiting += 1; slotFull.await() }
   Receive1(me)(cont) = 
-    getFull.me?f ->
-    if not(f) then
-      getReceiversWaiting.me?r -> 
-      Assert(r < N, 
-        setReceiversWaiting.me.r+1 -> MonitorCondition::Await(me, SlotFull)); 
-      Receive1(me)(cont)
-    else Receive2(me, cont)
+    let Test(cont1) = getFull.me?f -> cont1(not f)
+        Body = IncReceiversWaiting(me); MonitorCondition::Await(me, SlotFull)
+    within While(Test, Body); Receive2(me, cont)
+    -- getFull.me?f ->
+    -- if not(f) then
+    --   getReceiversWaiting.me?r -> 
+    --   Assert(r < N, 
+    --     setReceiversWaiting.me.r+1 -> MonitorCondition::Await(me, SlotFull)); 
+    --   Receive1(me)(cont)
+    -- else Receive2(me, cont)
 
   -- assert(full); 
   Receive2(me, cont) =
@@ -122,15 +117,25 @@ module SyncChan(ThreadID, AltID, Data)
   --   receiversWaiting += 1; timeout = !slotFull.awaintNanos(...)
   -- }
   ReceiveWithin1(me)(cont) = 
-    getFull.me?f ->
-    if not(f) then
-      getReceiversWaiting.me?r -> 
-      Assert(r < N, setReceiversWaiting.me.r+1 -> SKIP);
-      let cont1(b) = -- b if not timedout
-      	if b then ReceiveWithin1(me)(cont) 
-        else ReceiveWithinTimeout(me, cont)
-      within MonitorCondition::TimedAwait(me, SlotFull, cont1)
-    else ReceiveWithinFull(me, cont)
+    let Test(timeout)(cont1) = getFull.me?f -> cont1(not f and not timeout)
+        Body(timeout)(cont1) = 
+          IncReceiversWaiting(me); 
+          -- Below b represents the result of the awaitNanos.  The
+          -- continuation of Body is applied to the new value of timeout.
+          MonitorCondition::TimedAwait(me, SlotFull, \b @ cont1(not b))
+        Cont(timeout) = 
+          if timeout then ReceiveWithinTimeout(me, cont) 
+          else ReceiveWithinFull(me, cont)
+    within While1(Test, Body, false, Cont)
+    -- getFull.me?f ->
+    -- if not(f) then
+    --   getReceiversWaiting.me?r -> 
+    --   Assert(r < N, setReceiversWaiting.me.r+1 -> SKIP);
+    --   let cont1(b) = -- b if not timedout
+    --   	if b then ReceiveWithin1(me)(cont) 
+    --     else ReceiveWithinTimeout(me, cont)
+    --   within MonitorCondition::TimedAwait(me, SlotFull, cont1)
+    -- else ReceiveWithinFull(me, cont)
 
   -- if(timeout){ receiversWaiting -= 1; None }
   ReceiveWithinTimeout(me, cont) = 
