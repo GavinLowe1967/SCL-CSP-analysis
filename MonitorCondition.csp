@@ -93,17 +93,40 @@ exports
   -- Perform P under mutual exclusion
   Mutex(t, P) = Lock(t); P; Unlock(t)
 
+  -- Perform P under mutual exclusion, and apply cond to the result. 
+  MutexC :: (ThreadID, ((a) -> Proc) -> Proc, (a) -> Proc) -> Proc
+  MutexC(t, P, cond) = Lock(t); P(\ x @ Unlock(t); cond(x))
+
   -- Perform an await() on c, and then regain the lock.
   Await(t,c) = await.t.c -> acquire.t -> SKIP 
 
+  -- Perform an await(test) on c.  test(cont) should model calculating test
+  -- and applying cont to the result.
+  AwaitTest :: (ThreadID, ConditionID, ((Bool) -> Proc) -> Proc) -> Proc
+  AwaitTest(t, c, test) = 
+    test(\ b @ if b then SKIP else (Await(t,c); AwaitTest(t, c, test)))
+
   -- Do a timed await(delay) on c.  Apply cond to the boolean that indicates
   -- if a signal was received.
-  TimedAwait(t,c,cond) = 
+  TimedAwait :: (ThreadID, ConditionID, (Bool) -> Proc) -> Proc
+  TimedAwait(t, c, cond) = 
     timedAwait.t.c -> 
     -- Note: the former case corresponds to t receiving a signal and
     -- subsequently acquiring the lock; the latter case corresponds to it
     -- timing out and acquiring the lock.
     (acquire.t -> cond(true) [] timeout.t.c -> cond(false))
+
+  -- Do a timed await(nanos, test) on c.  Apply cond to the resulting boolean,
+  -- which will be true if test gives true.
+  TimedAwaitTest ::
+    (ThreadID, ConditionID, ((Bool) -> Proc) -> Proc, (Bool) -> Proc) -> Proc 
+  TimedAwaitTest(t, c, test, cont) = 
+    let -- If test gives true, return true; otherwise either wait or return
+        -- false
+        DoTest = test(\b @ if b then cont(b) else (DoWait |~| cont(false)))
+        -- Wait, and then do the test again; if didn't timeout, maybe wait again
+        DoWait = TimedAwait(t, c, \sig @ if sig then DoTest else test(cont))
+    within DoTest
 
   -- perform a signal()
   Signal(t,c) = signal.t.c?t' -> SKIP

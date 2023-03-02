@@ -10,3 +10,50 @@ SyncChan1.csp: corresponds to SyncChanXXX.scala; receiver always resets
 receviersWaiting
 
 
+Interface with alts
+
+For an alt receiving:
+
+tryAltReceive * (InPort.scala)
+registerIn * - done
+deregisterIn *
+informAltInPortClosed
+
+behaviour of thread:
+
+  beginTryAltReceive.me -> c::RegisterIn(me, regCont)
+
+  where 
+
+  regCont(RegisterInSuccess.x) = endTryAltReceive.me.Some.x -> SKIP
+
+  regCont(RegisterInWaiting) = 
+    c::DeregisterIn(me); endTryAltReceive.me.None -> SKIP
+    |~|
+    ??? ...  endTryAltReceive.me.Some.x -> SKIP
+
+In Linearizer(me)
+
+  beginSend.me?x -> SendLin(me, x)
+
+  SendLin(me,x) = 
+    sync.me?other!x -> endSend.me -> Linearizer(me)
+    |~| tryAltReceive.me -> (
+         sync.me?other!x  ->  endSend.me -> Linearizer(me)
+         |~| SendLin(me,x) )
+
+
+For an alt sending
+
+tryAltSend
+registerOut
+deregisterOut
+informAltOutPortClosed
+
+In alts
+
+maybeReceive *
+maybeSend
+portClosed
+
+

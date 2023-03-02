@@ -1,6 +1,6 @@
 -- A module representing a synchronous channel.  This version does not include
--- interactions with Alts or closing of channels.
-module SyncChan(ThreadID, Data)
+-- closing of channels.
+module SyncChan(ThreadID, AltID, Data)
   include "Variable.csp"
 
   -- The value variable: the current or previous value.
@@ -37,8 +37,14 @@ module SyncChan(ThreadID, Data)
     -- if f then MonitorCondition::Await(me, SlotEmptied); Send1(me, x) 
     -- else Send2(me, x)
 
+  -- if(tryAltReceive(x)) slotEmptied.signal() else ...
+  Send2(me, x) = 
+    let cont(res) =  
+      if res then MonitorCondition::Signal(me, SlotEmptied) else Send2a(me, x)
+    within TryAltReceive(me, x, cont)
+
   -- value = x; full = true 
-  Send2(me, x) = setValue.me.x -> setFull.me.true -> CompleteSend(me, x)
+  Send2a(me, x) = setValue.me.x -> setFull.me.true -> CompleteSend(me, x)
 
   -- maybeSignalToReceiver:
   -- if(receiversWaiting > 0){ slotFull.signal(); receiversWaiting -= 1 }
@@ -113,7 +119,7 @@ module SyncChan(ThreadID, Data)
 
   -- var timeout = false
   -- while(!full && !timeout){
-  --   receiversWaiting += 1; timeout = !slotFull.awaitNanos(...)
+  --   receiversWaiting += 1; timeout = !slotFull.awaintNanos(...)
   -- }
   ReceiveWithin1(me)(cont) = 
     getFull.me?f ->
@@ -135,18 +141,58 @@ module SyncChan(ThreadID, Data)
   ReceiveWithinFull(me, cont) = 
     getFull.me?f -> Assert1(f); CompleteReceive(me, \ v @ cont(Some.v))
 
+  ------------------ Interactions with Alts. 
+
+  -- Optionally an AltID.  The value NoAlt corresponds to null in the
+  -- implementation.
+  datatype OptAlt = NoAlt | SomeAlt.AltID
+
+  -- The receivingAlt variable
+  channel getReceivingAlt, setReceivingAlt : ThreadID.OptAlt
+  ReceivingAlt = Var(NoAlt, getReceivingAlt, setReceivingAlt)
+
+  -- Try to have current registered alt (if any) receive x.  Return true if
+  -- successful.
+  TryAltReceive(me, x, cont) = 
+    getReceivingAlt.me.SomeAlt?alt -> setReceivingAlt.me.NoAlt ->
+      TryAltReceive1(me, x, cont, alt)
+    []  
+    getReceivingAlt.me.NoAlt -> cont(false) -- no registered alt
+
+  -- Try to have alt receive x.
+  TryAltReceive1(me, x, cont, alt) = 
+    beginMaybeReceive.me.alt.x -> endMaybeReceive.me.alt?res -> cont(res)
+
+  -- Thread me in Alt alt performing a registerIn.  
+  -- checkCanRegisterIn
+  RegisterIn1(me, alt)(cont) = 
+    getReceivingAlt.me?a -> Assert1(a == NoAlt); RegisterIn2(me, alt, cont)
+
+  -- If(canReceive) ...; canReceive in SyncChan just reads full
+  RegisterIn2(me, alt, cont) = 
+    getFull.me?f -> 
+    if f then
+      -- val result = completeReceive; RegisterInSuccess(result)
+      CompleteReceive(me, \ v @ cont(RegisterInSuccess.v))
+    else -- receivingAlt = alt; RegisterInWaiting
+      setReceivingAlt.me.(SomeAlt.alt) -> cont(RegisterInWaiting)
+
+-- TODO: deregister
+
   ---------- All variables
 
-  Variables = Full ||| Value ||| ReceiversWaiting
+  Variables = Full ||| Value ||| ReceiversWaiting ||| ReceivingAlt
 
   varEvents = 
     {| getFull, setFull, getValue, setValue, 
-       getReceiversWaiting, setReceiversWaiting |}
+       getReceiversWaiting, setReceiversWaiting, 
+       getReceivingAlt, setReceivingAlt |}
 
   -- All internal events
   events = union(varEvents, MonitorCondition::events)
 
 exports
+
   datatype Option = None | Some.Data
 
   -- Thread me sends x
@@ -165,6 +211,19 @@ exports
   ReceiveWithin :: (ThreadID, (Option) -> Proc) -> Proc
   ReceiveWithin(me, cont) = 
     MonitorCondition::MutexC(me, ReceiveWithin1(me), cont)
+
+  -- Events for calling back to Alts. 
+  channel beginMaybeReceive: ThreadID . AltID . Data 
+  channel endMaybeReceive: ThreadID . AltID . Bool
+
+  -- The result of a RegisterIn
+  datatype RegisterInResult = RegisterInSuccess.Data | RegisterInWaiting
+
+  -- Thread me, in an alt, does registerIn with continuation cont
+-- IMPROVE, include branch number, iter.
+  RegisterIn :: (ThreadID, AltID, (RegisterInResult) -> Proc) -> Proc
+  RegisterIn(me, alt, cont) = 
+    MonitorCondition::MutexC(me, RegisterIn1(me, alt), cont)
 
   -- Run P with this channel
   runWith(P) = 

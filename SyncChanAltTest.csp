@@ -1,0 +1,142 @@
+-- Test upon SyncChan
+
+datatype ThreadID = T1 | T2 | T3 -- | T4
+datatype AltID = Alt1 | Alt2
+datatype Data = A | B
+
+include "SyncChanAlt.csp"
+
+-- We'll test a single channel
+instance c = SyncChan(ThreadID, AltID, Data)
+
+-- Signals before and after invocations or sends and receives
+channel beginSend, endReceive, beginSendWithin : ThreadID . Data
+channel beginReceive, beginReceiveWithin, endSend : ThreadID
+channel endReceiveWithin : ThreadID . c::Option
+channel endSendWithin: ThreadID . Bool
+
+-- Signals for Alt interactions
+-- Call registerIn, for the Alt to register with the channel. 
+channel beginRegisterIn: ThreadID . AltID
+-- Return from registerIn
+channel endRegisterIn: ThreadID . AltID . c::RegisterInResult
+-- Successfully receive from Alt.
+channel endAltReceive: ThreadID . AltID . Data
+
+-- Thread with identity me, performing a single operation: it either sends or
+-- receives, or neither.
+Thread0(me) = 
+  beginSend.me?x -> c::Send(me, x); endSend.me -> SKIP
+  |~|
+  beginReceive.me -> c::Receive(me, \ x @ endReceive.me.x -> SKIP )
+  |~|
+  beginSendWithin.me?x -> c::SendWithin(me, x, \ b @ endSendWithin.me.b -> SKIP)
+  |~|
+  beginReceiveWithin.me -> 
+    c::ReceiveWithin(me, \ ox @ endReceiveWithin.me.ox -> SKIP)
+  |~|
+  -- Alts
+  beginRegisterIn.me?alt -> 
+    c::RegisterIn(me, alt, ThreadRegisteringInAlt(me, alt))
+  |~| 
+  STOP
+
+-- A thread calling registerIn on an alt; wait for return.
+ThreadRegisteringInAlt(me, alt)(rir) = 
+  endRegisterIn.me.alt.rir -> ThreadInAltReceive(me, alt, rir)
+
+-- A thread that has done a registerIn with alt, and received back a result.
+ThreadInAltReceive(me, alt, c::RegisterInSuccess.x) = 
+  endAltReceive.me.alt.x -> SKIP
+
+-- Registering unsuccessful.  Wait for end (via callback). 
+ThreadInAltReceive(me, alt, c::RegisterInWaiting) = 
+  endAltReceive.me.alt?x -> SKIP
+-- TODO: also allow deregistration
+
+-- A thread that repeatedly performs operations.
+Thread(me) = Thread0(me); Thread(me)
+
+Threads = ||| t <- ThreadID @ Thread(t)
+
+-- A regulator to ensure multiple threads don't try to register an alt.
+Reg = beginRegisterIn?t?a -> Reg'(t,a)
+Reg'(t,a) = endRegisterIn.t.a.c::RegisterInSuccess?_ -> Reg
+alphaReg = union(
+  {|beginRegisterIn|}, 
+  {|endRegisterIn.t.a.c::RegisterInSuccess | t <- ThreadID, a <- AltID|}
+)
+
+-- Process modelling the contract of an Alt
+
+-- The Alt registers with the channel
+AltReg(alt) = 
+  beginRegisterIn?t!alt -> endRegisterIn.t.alt?rir -> AltReg1(alt,t,rir)
+
+-- The registration was successful, so the Alt returns.
+AltReg1(alt, t, c::RegisterInSuccess.x) = endAltReceive.t.alt.x -> AltReg(alt)
+
+-- Registering unsuccessful.  Wait for successful callback then end.
+AltReg1(alt, t, c::RegisterInWaiting) = 
+  c::beginMaybeReceive?t1!alt?x -> c::endMaybeReceive.t1.alt!true -> 
+  endAltReceive.t.alt.x -> AltReg(alt)
+-- TODO: also allow deregistration
+
+alphaAlts = 
+  {| beginRegisterIn, endRegisterIn, 
+     c::beginMaybeReceive, c::endMaybeReceive, endAltReceive |}
+
+Alts = ||| alt : AltID @ AltReg(alt)
+
+-- Put system together
+
+-- System ignoring the channel
+System0 = ((Threads [|alphaReg|] Reg) [|alphaAlts|] Alts) \ {| endRegisterIn |}
+
+System = 
+  c::runWithAndHide(System0) \ {| c::beginMaybeReceive, c::endMaybeReceive |}
+
+assert System  :[divergence free]
+
+-- Specification of synchronisation linearisation.
+
+-- sync.t1.t2.x represents sender t1 and receiver t2 synchronising on the
+-- sending of x.
+channel sync : ThreadID . ThreadID . Data
+
+-- A linearizer for thread t
+Linearizer(me) = 
+  beginSend.me?x ->    -- Lin1(me, x) 
+     sync.me?other!x -> endSend.me -> Linearizer(me)
+  |~|
+  beginReceive.me -> sync?other!me?x -> endReceive.me.x -> Linearizer(me)
+  |~|
+  beginSendWithin.me?x -> 
+    (sync.me?other!x -> endSendWithin.me.true -> Linearizer(me)
+     [> endSendWithin.me.false -> Linearizer(me))
+  |~|
+  beginReceiveWithin.me ->
+    (sync?other!me?x -> endReceiveWithin.me.c::Some.x -> Linearizer(me)
+     [> endReceiveWithin.me.(c::None) -> Linearizer(me))
+  |~| 
+  -- Alts
+  beginRegisterIn.me?alt -> sync?other!me?x -> endAltReceive.me.alt.x -> 
+    Linearizer(me)
+  |~|
+  STOP
+
+  
+-- Alphabet of Linearizer(t)
+alphaLin(t) = 
+  {| beginSend.t, endSend.t, beginReceive.t, endReceive.t, 
+     beginSendWithin.t, endSendWithin.t,
+     beginReceiveWithin.t, endReceiveWithin.t, 
+     beginRegisterIn.t, endAltReceive.t,
+     sync.t.other, sync.other.t | 
+       other <- diff(ThreadID,{t}) |} 
+
+-- Specification of synchronisation linearisation.
+Spec = (|| t <- ThreadID @ [alphaLin(t)] Linearizer(t)) \ {| sync|}
+
+assert Spec [T= System
+assert Spec [F= System 
