@@ -105,9 +105,7 @@ exports
   -- Perform an await(test) on c.  test(cont) should model calculating test
   -- and applying cont to the result.
   AwaitTest :: (ThreadID, ConditionID, ((Bool) -> Proc) -> Proc) -> Proc
-  AwaitTest(t, c, test) = 
-    While(Negate(test), Await(t,c))
-    --test(\ b @ if b then SKIP else (Await(t,c); AwaitTest(t, c, test)))
+  AwaitTest(t, c, test) = While(Negate(test), Await(t,c))
 
   -- Do a timed await(delay) on c.  Apply cond to the boolean that indicates
   -- if a signal was received.

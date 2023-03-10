@@ -1,0 +1,168 @@
+
+
+-- A model of an Alt with identity this, and branches given by branches.  
+module Alt(this, branches, ThreadID, ChanID)
+  include "Variable.csp"
+  include "Macros.csp"
+
+  include "JVMMonitor.csp"
+
+  -- The registering variable
+  channel getRegistering, setRegistering : ThreadID . Bool
+  Registering = Var(true, getRegistering, setRegistering)
+
+  -- The done variable
+  channel getDone, setDone : ThreadID . Bool
+  Done = Var(false, getDone, setDone)
+
+  size = length(branches)
+
+  Index = {0 .. size-1}
+
+  -- The toRun variable.
+  channel getToRun, setToRun : ThreadID . union({(-1)}, Index)
+  ToRun = Var(-1, getToRun, setToRun)
+
+  -- The value received.  
+  channel getValueReceived, setValueReceived : ThreadID . Data
+  ValueReceived = Var(A, getValueReceived, setValueReceived)
+
+  -- The array of enabled variables
+  channel getEnabled, setEnabled : Index . ThreadID . Bool
+  Enabled = ||| i <- Index @ Var(false, getEnabled.i, setEnabled.i)
+
+  Variables = Registering ||| Done ||| ToRun ||| ValueReceived ||| Enabled
+
+  varEvents = {|
+    getRegistering, setRegistering, getDone, setDone, getToRun, setToRun, 
+    getValueReceived, setValueReceived, getEnabled, setEnabled
+  |} 
+
+  ---------- 
+
+  -- The n'th element of a sequence
+  nth(xs, 0) = head(xs)
+  nth(xs, n) = nth(tail(xs), n-1)
+
+  events = union(varEvents, JVMMonitor::events)
+
+  ---------- Model of code
+
+  -- Register with branches.  synchronized{ registering = true }
+  Register(me,  cont) = 
+    JVMMonitor::Synchronized(me, setRegistering.me.true -> SKIP);
+    Register1(me, cont, 0)
+
+  -- Register with branches from index i.
+  Register1(me, cont, i) = 
+    if i == size then AfterLoop(me, cont)
+    else
+      let c = nth(branches, i) within
+      beginRegisterIn.me.this.c.i -> (
+        endRegisterIn.me.this.c.RegisterInSuccess?x -> 
+          setValueReceived.me.x -> setToRun.me.i -> 
+   	  setDone.me.true -> AfterLoop(me, cont)
+        [] 
+        endRegisterIn.me.this.c.RegisterInWaiting -> 
+          setEnabled.i.me.true -> Register1(me, cont, i+1)
+      )
+
+  -- Code after the registration loop
+  AfterLoop(me, cont) = 
+    JVMMonitor::Synchronized(me, AfterLoop1(me, cont));
+    PostWait(me, cont)
+
+  -- The body of the synchronized block. 
+  AfterLoop1(me, cont) = 
+    setRegistering.me.false -> JVMMonitor::NotifyAll(me);
+    getDone.me?done -> 
+    if not done then
+      let Test(k) = getDone.me?done -> k(not done) within
+      While(Test, JVMMonitor::Wait(me))
+    else SKIP
+
+  -- Code after the (possible) wait
+  PostWait(me, cont) = 
+    getDone.me?done -> Assert1(done); PostWait1(me, cont, 0)
+
+  PostWait1(me, cont, i) = 
+    if i == size then RunBranch(me, cont)
+    else 
+      getToRun.me?toRun -> getEnabled.i.me?enabled -> 
+      if i != toRun and enabled then 
+        let c = nth(branches,i) within
+        beginDeregisterIn.me.this.c.i -> endDeregisterIn.me.this.c ->
+        PostWait1(me, cont, i+1)
+      else PostWait1(me, cont, i+1)
+
+  -- Run the branch toRun.
+  RunBranch(me, cont) = 
+    getToRun.me?toRun -> 
+    Assert(toRun >= 0, 
+      getValueReceived.me?valueReceived -> cont(toRun, valueReceived))
+
+  -- Reset for next round
+
+  Reset1(me,i) = 
+    if i < size then setEnabled.i.me.false -> Reset1(me,i+1)
+    else setToRun.me.(-1) -> setDone.me.false -> SKIP
+
+  -- while(registering) wait() 
+  MaybeReceive1(me, value, index)(cont) = 
+    let Test(k) = getRegistering.me?registering -> k(registering) within
+    While(Test, JVMMonitor::Wait(me));
+    -- assert(enabled(index))
+    getEnabled.index.me?enab -> Assert1(enab);
+    -- if(done) ...
+    getDone.me?done -> 
+    if done then
+      -- enabled(index) = false; false
+      setEnabled.index.me.false -> cont(false)
+    else  
+      -- assert(enabled(index)); enabled(index) = false
+      getEnabled.index.me?enab -> Assert1(enab); setEnabled.index.me.false ->
+      -- valueReceived = value
+      setValueReceived.me.value -> 
+      -- toRun = index; done = true; notify(); true
+      setToRun.me.index -> setDone.me.true -> 
+      JVMMonitor::Notify(me); cont(true)
+
+exports
+
+  -- Channels for interface with ports.
+  channel beginRegisterIn : ThreadID . {this} . ChanID . Index
+  channel endRegisterIn : ThreadID . {this} . ChanID . RegisterInResult
+
+  channel beginDeregisterIn : ThreadID . {this} . ChanID . Index
+  channel endDeregisterIn : ThreadID . {this} . ChanID
+
+  -- datatype Branch = InPortBranch . ChanID  -- OutPortBranch . ChanID
+
+  spuriousWakeUp = JVMMonitor::spuriousWakeup
+
+  ----- Interface to other classes
+
+  -- Run the Alt, and apply cont to the value received.
+  Run :: (ThreadID, (Int, Data) -> Proc) -> Proc
+  Run(me, cont) = Register(me, cont)
+
+  -- reset function. 
+  Reset(me) = JVMMonitor::Synchronized(me, Reset1(me, 0))
+
+  -- maybeReceive function; try to get Alt to receive value from the InPort of
+  -- branch index.  Apply cont to Bool indicating if successful.
+  MaybeReceive :: (ThreadID, Data, Int, (Bool) -> Proc) -> Proc
+  MaybeReceive(me, value, index, cont) = 
+    JVMMonitor::SynchronizedC(me, MaybeReceive1(me, value, index), cont)
+
+  ----- Administrative functions.
+
+  -- Run P with this Alt
+  runWith(P) = 
+    let P1 = P [| varEvents |] Variables
+    within JVMMonitor::runWith(P1)
+
+  -- Run P with this Alt, and hide internals except spuriousWakeup
+  runWithAndHide(P) = runWith(P) \ events
+
+endmodule

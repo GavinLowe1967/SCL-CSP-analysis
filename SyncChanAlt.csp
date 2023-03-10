@@ -1,8 +1,11 @@
 -- A module representing a synchronous channel.  This version does not include
--- closing of channels.
-module SyncChan(ThreadID, AltID, Data)
+-- closing of channels.  
+-- 
+-- This file assumes that RegisterInResult is in scope.
+module SyncChan(ThreadID, AltID, Data, MaxIndex)
   include "Variable.csp"
   include "Macros.csp"
+  include "MonitorCondition.csp"
 
   -- The value variable: the current or previous value.
   channel getValue, setValue: ThreadID.Data
@@ -24,10 +27,13 @@ module SyncChan(ThreadID, AltID, Data)
     getReceiversWaiting.me?r -> 
     Assert(r < N, setReceiversWaiting.me.r+1 -> SKIP)
 
+  -- macro for receiversWaiting -= 1
+  DecReceiversWaiting(me) =
+    getReceiversWaiting.me?r -> 
+    Assert(r > 0, setReceiversWaiting.me.r-1 -> SKIP)
+
   -- Monitor and conditions
   datatype ConditionID = SlotFull | Continue | SlotEmptied
-
-  include "MonitorCondition.csp"
 
   -------- Sending
 
@@ -50,8 +56,7 @@ module SyncChan(ThreadID, AltID, Data)
   MaybeSignalToReceiver(me) = 
     getReceiversWaiting.me?r ->
     if r > 0 then 
-      MonitorCondition::Signal(me, SlotFull); getReceiversWaiting.me?r1 -> 
-      Assert1(r1 == r); setReceiversWaiting.me.r-1 -> SKIP
+      MonitorCondition::Signal(me, SlotFull); DecReceiversWaiting(me)
     else SKIP
 
   -- completeSend: maybeSignalToReceiver; continue.await()
@@ -94,13 +99,6 @@ module SyncChan(ThreadID, AltID, Data)
     let Test(cont1) = getFull.me?f -> cont1(not f)
         Body = IncReceiversWaiting(me); MonitorCondition::Await(me, SlotFull)
     within While(Test, Body); Receive2(me, cont)
-    -- getFull.me?f ->
-    -- if not(f) then
-    --   getReceiversWaiting.me?r -> 
-    --   Assert(r < N, 
-    --     setReceiversWaiting.me.r+1 -> MonitorCondition::Await(me, SlotFull)); 
-    --   Receive1(me)(cont)
-    -- else Receive2(me, cont)
 
   -- assert(full); 
   Receive2(me, cont) =
@@ -127,20 +125,10 @@ module SyncChan(ThreadID, AltID, Data)
           if timeout then ReceiveWithinTimeout(me, cont) 
           else ReceiveWithinFull(me, cont)
     within While1(Test, Body, false, Cont)
-    -- getFull.me?f ->
-    -- if not(f) then
-    --   getReceiversWaiting.me?r -> 
-    --   Assert(r < N, setReceiversWaiting.me.r+1 -> SKIP);
-    --   let cont1(b) = -- b if not timedout
-    --   	if b then ReceiveWithin1(me)(cont) 
-    --     else ReceiveWithinTimeout(me, cont)
-    --   within MonitorCondition::TimedAwait(me, SlotFull, cont1)
-    -- else ReceiveWithinFull(me, cont)
 
   -- if(timeout){ receiversWaiting -= 1; None }
   ReceiveWithinTimeout(me, cont) = 
-    getReceiversWaiting.me?rw ->
-    Assert(rw > 0, setReceiversWaiting.me.rw-1 -> SKIP); cont(None) 
+    DecReceiversWaiting(me); cont(None) 
 
   -- assert(full); Some(completeReceive)
   ReceiveWithinFull(me, cont) = 
@@ -148,9 +136,11 @@ module SyncChan(ThreadID, AltID, Data)
 
   ------------------ Interactions with Alts. 
 
+  Index = {0.. MaxIndex-1}
+
   -- Optionally an AltID.  The value NoAlt corresponds to null in the
   -- implementation.
-  datatype OptAlt = NoAlt | SomeAlt.AltID
+  datatype OptAlt = NoAlt | SomeAlt.AltID.Index
 
   -- The receivingAlt variable
   channel getReceivingAlt, setReceivingAlt : ThreadID.OptAlt
@@ -159,30 +149,35 @@ module SyncChan(ThreadID, AltID, Data)
   -- Try to have current registered alt (if any) receive x.  Return true if
   -- successful.
   TryAltReceive(me, x, cont) = 
-    getReceivingAlt.me.SomeAlt?alt -> setReceivingAlt.me.NoAlt ->
-      TryAltReceive1(me, x, cont, alt)
+    getReceivingAlt.me.SomeAlt?alt?index -> setReceivingAlt.me.NoAlt ->
+      TryAltReceive1(me, x, cont, alt, index)
     []  
     getReceivingAlt.me.NoAlt -> cont(false) -- no registered alt
 
   -- Try to have alt receive x.
-  TryAltReceive1(me, x, cont, alt) = 
-    beginMaybeReceive.me.alt.x -> endMaybeReceive.me.alt?res -> cont(res)
+  TryAltReceive1(me, x, cont, alt, index) = 
+    beginMaybeReceive.me.alt.index.x -> endMaybeReceive.me.alt?res -> cont(res)
 
   -- Thread me in Alt alt performing a registerIn.  
   -- checkCanRegisterIn
-  RegisterIn1(me, alt)(cont) = 
-    getReceivingAlt.me?a -> Assert1(a == NoAlt); RegisterIn2(me, alt, cont)
+  RegisterIn1(me, alt, index)(cont) = 
+    getReceivingAlt.me?a -> Assert1(a == NoAlt); 
+    RegisterIn2(me, alt, index, cont)
 
   -- If(canReceive) ...; canReceive in SyncChan just reads full
-  RegisterIn2(me, alt, cont) = 
+  RegisterIn2(me, alt, index, cont) = 
     getFull.me?f -> 
     if f then
       -- val result = completeReceive; RegisterInSuccess(result)
       CompleteReceive(me, \ v @ cont(RegisterInSuccess.v))
     else -- receivingAlt = alt; RegisterInWaiting
-      setReceivingAlt.me.(SomeAlt.alt) -> cont(RegisterInWaiting)
+      setReceivingAlt.me.(SomeAlt.alt.index) -> cont(RegisterInWaiting)
 
--- TODO: deregister
+  -- Thread me in Alt alt performing a deregisterIn
+  DeregisterIn1(me, alt, index) = 
+    getReceivingAlt.me?a -> Assert1(a == (SomeAlt.alt.index) or a == NoAlt);
+    setReceivingAlt.me.NoAlt -> SKIP
+    
 
   ---------- All variables
 
@@ -199,6 +194,8 @@ module SyncChan(ThreadID, AltID, Data)
 exports
 
   datatype Option = None | Some.Data
+
+  ----- Interface to other classes.
 
   -- Thread me sends x
   Send(me, x) = MonitorCondition::Mutex(me, Send1(me, x))
@@ -218,17 +215,20 @@ exports
     MonitorCondition::MutexC(me, ReceiveWithin1(me), cont)
 
   -- Events for calling back to Alts. 
-  channel beginMaybeReceive: ThreadID . AltID . Data 
+  channel beginMaybeReceive: ThreadID . AltID . Index . Data 
   channel endMaybeReceive: ThreadID . AltID . Bool
-
-  -- The result of a RegisterIn
-  datatype RegisterInResult = RegisterInSuccess.Data | RegisterInWaiting
 
   -- Thread me, in an alt, does registerIn with continuation cont
 -- IMPROVE, include branch number, iter.
-  RegisterIn :: (ThreadID, AltID, (RegisterInResult) -> Proc) -> Proc
-  RegisterIn(me, alt, cont) = 
-    MonitorCondition::MutexC(me, RegisterIn1(me, alt), cont)
+  RegisterIn :: (ThreadID, AltID, Int, (RegisterInResult) -> Proc) -> Proc
+  RegisterIn(me, alt, index, cont) = 
+    MonitorCondition::MutexC(me, RegisterIn1(me, alt, index), cont)
+
+  DeregisterIn :: (ThreadID, AltID, Int) -> Proc
+  DeregisterIn(me, alt, index) = 
+    MonitorCondition::Mutex(me, DeregisterIn1(me, alt, index))
+
+  ------ Administrative functions
 
   -- Run P with this channel
   runWith(P) = 

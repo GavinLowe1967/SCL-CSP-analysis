@@ -1,0 +1,5 @@
+
+datatype Data = A | B
+
+-- The result of a RegisterIn
+datatype RegisterInResult = RegisterInSuccess.Data | RegisterInWaiting
