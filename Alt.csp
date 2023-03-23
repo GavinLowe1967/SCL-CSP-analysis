@@ -28,8 +28,9 @@ module Alt(this, branches, ThreadID, ChanID)
   ValueReceived = Var(A, getValueReceived, setValueReceived)
 
   -- The array of enabled variables
-  channel getEnabled, setEnabled : Index . ThreadID . Bool
-  Enabled = ||| i <- Index @ Var(false, getEnabled.i, setEnabled.i)
+  channel getEnabled, setEnabled : ThreadID . Index . Bool
+  Enabled = Array(Index, false, getEnabled, setEnabled)
+  -- ||| i <- Index @ Var(false, getEnabled.i, setEnabled.i)
 
   Variables = Registering ||| Done ||| ToRun ||| ValueReceived ||| Enabled
 
@@ -64,7 +65,7 @@ module Alt(this, branches, ThreadID, ChanID)
    	  setDone.me.true -> AfterLoop(me, cont)
         [] 
         endRegisterIn.me.this.c.RegisterInWaiting -> 
-          setEnabled.i.me.true -> Register1(me, cont, i+1)
+          setEnabled.me.i.true -> Register1(me, cont, i+1)
       )
 
   -- Code after the registration loop
@@ -88,7 +89,7 @@ module Alt(this, branches, ThreadID, ChanID)
   PostWait1(me, cont, i) = 
     if i == size then RunBranch(me, cont)
     else 
-      getToRun.me?toRun -> getEnabled.i.me?enabled -> 
+      getToRun.me?toRun -> getEnabled.me.i?enabled -> 
       if i != toRun and enabled then 
         let c = nth(branches,i) within
         beginDeregisterIn.me.this.c.i -> endDeregisterIn.me.this.c ->
@@ -104,7 +105,7 @@ module Alt(this, branches, ThreadID, ChanID)
   -- Reset for next round
 
   Reset1(me,i) = 
-    if i < size then setEnabled.i.me.false -> Reset1(me,i+1)
+    if i < size then setEnabled.me.i.false -> Reset1(me,i+1)
     else setToRun.me.(-1) -> setDone.me.false -> SKIP
 
   -- while(registering) wait() 
@@ -112,15 +113,15 @@ module Alt(this, branches, ThreadID, ChanID)
     let Test(k) = getRegistering.me?registering -> k(registering) within
     While(Test, JVMMonitor::Wait(me));
     -- assert(enabled(index))
-    getEnabled.index.me?enab -> Assert1(enab);
+    getEnabled.me.index?enab -> Assert1(enab);
     -- if(done) ...
     getDone.me?done -> 
     if done then
       -- enabled(index) = false; false
-      setEnabled.index.me.false -> cont(false)
+      setEnabled.me.index.false -> cont(false)
     else  
       -- assert(enabled(index)); enabled(index) = false
-      getEnabled.index.me?enab -> Assert1(enab); setEnabled.index.me.false ->
+      getEnabled.me.index?enab -> Assert1(enab); setEnabled.me.index.false ->
       -- valueReceived = value
       setValueReceived.me.value -> 
       -- toRun = index; done = true; notify(); true

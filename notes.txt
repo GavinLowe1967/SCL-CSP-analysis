@@ -1,14 +1,78 @@
+Components
+----------
+
+Macros.csp: various macros
+
 Variable.csp: model of a variable
 
 MonitorCondition.csp: blocks timeouts when another thread has the lock
 
-MonitorCondition1.csp: allows timeouts when another thread has the lock
+JVMMonitor.csp: a JVM monitor
 
-SyncChanV1.csp: corresponds to version used in course 
+Types.csp: types shared between models, Data and RegisterInResult. 
 
-SyncChan1.csp: corresponds to SyncChanXXX.scala; receiver always resets
-receviersWaiting
 
+SyncChan
+--------
+
+SyncChanV1.csp: model without alts.
+
+SyncChanTest.csp: test on SyncChanV1
+
+SyncChanAlt.csp: model including interaction with Alts. 
+
+SyncChanAltTest: test on SyncChanAlt, modelling the contract of the Alt fairly
+explicitly.
+
+SyncChanAltTest2 -- I don't think this works.
+
+
+Alt
+---
+
+Alt.csp: model of Alt
+
+AltTest.csp: initial spec for Alt
+
+AltTest2.csp: improved, but allows multiple threads to be treated as waiting
+in completeSend.
+
+AltTest3.csp: simplified, a single thread treated as waiting in completeSend.
+
+-------------------------------------------------------
+
+Assumptions on alt when analysing channel:
+
+1. Calls to registerIn, registerOut follow the protocol
+
+2. Each sync is either (a) begin a registerIn and a
+registerOut...RegisterInSuccess, or (b) between a beginMaybeReceive and an
+endMaybeReceive...true.
+
+(1) could be captured in the spec by a component that diverges if the protocol
+is broken.  We would still need the Thread processes to put begin/end events
+around each call; but this wouldn't use the endAltReceive events, and would
+not enforce the protocol. 
+
+
+ ??? How does that capture the relationship between the calls to
+c::RegisterIn and the beginRegisterIn/endRegisterIn events? 
+
+Assumptions on channel when analysing alt:
+
+1. Calls to registerIn, deregisterIn and maybeReceive follow the protocol (in
+particular, maybeReceive happens only between a registerIn and a
+deregisterIn).
+
+2. Each sync is either (a) begin a registerIn and a
+registerOut...RegisterInSuccess, or (b) between a beginMaybeReceive and an
+endMaybeReceive...true.
+
+Independently, the alt could be shown to follow the protocol on the assumption
+that the channel does (i.e. the alt breaks protocol only if the channel has
+already done so); and vice versa.  
+
+-------------------------------------------------------
 
 Interface with alts
 

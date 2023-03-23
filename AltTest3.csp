@@ -1,0 +1,163 @@
+
+datatype ThreadID = AltThread | T1 | T2  | T3 -- | T4
+-- Thread AltThread will run the Alt; other threads will act on channels
+datatype AltID = Alt1 -- | Alt2
+datatype ChanID = c1 | c2
+
+include "Types.csp"
+include "Alt.csp"
+include "Macros.csp"
+
+-- The list of branches
+branches =  <c1,c2>
+
+instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
+
+-- Indices of branches
+Index = {0 .. length(branches)-1}
+
+-- Index of channel c in branches
+index(c) = 
+  let index1(c,cs) = if c == head(cs) then 0 else 1 + index1(c, tail(cs))
+  within index1(c, branches)
+
+----- The thread that runs the Alt repeatedly. 
+
+channel beginAlt : ThreadID
+channel endAlt : ThreadID . {0,1} . Data
+
+Thread0(me) = 
+  beginAlt.me -> A1::Run(me, \ i,x @ endAlt.me.i.x -> A1::Reset(me))
+
+Thread(me) = Thread0(me); Thread(me)
+
+----- Process modelling the contract of a channel the Alt tries to receive on.
+
+ChanThreads =  diff(ThreadID,{AltThread})
+-- beginSend.t.c.x represents thread t calling c!x.  sendX.t.c.x represents
+-- that call being registered.  endSendX.t.c.x represents that the thread can
+-- return.  endSend.t.c.x represents the call returning.
+channel beginSend, sendX : ChanThreads . ChanID . Data
+channel endSend, endSendX : ChanThreads . ChanID
+
+-- Interface between sending thread t and the channel.
+
+ChannelThreadInterface(t) = 
+  beginSend.t?c?x -> sendX.t.c.x -> endSendX.t.c -> endSend.t.c -> 
+    ChannelThreadInterface(t)
+  |~| STOP
+
+-- registerIn.t.alt.c.index.res represents alt being registered by thread t
+-- with channel c at index, and getting result res.
+channel registerIn : ThreadID . AltID . ChanID . Index . RegisterInResult
+-- deregister.t.alt.c.index represents thread t deregistering alt from c at
+-- index.
+channel deregisterIn : ThreadID . AltID . ChanID . Index
+
+-- The calls to registerIn, deregisterIn are wrappped in events on channels
+-- A1::beginRegisterIn, A1::endRegisterIn, A1::beginDeregisterIn and
+-- A1::endDeregisterIn.  The following process describes the interface.
+
+ChannelInterface(c) =
+  A1::beginRegisterIn?t1?alt!c?index -> registerIn.t1.alt.c.index?result ->
+    A1::endRegisterIn.t1.alt.c.result -> ChannelInterface(c)
+  []
+  A1::beginDeregisterIn?t1?alt!c?index -> deregisterIn.t1.alt.c.index ->
+    A1::endDeregisterIn.t1.alt.c -> ChannelInterface(c)
+
+
+-- IMPROVE names  sendX, endSendX
+
+
+
+-- Model of the contract of channel c.
+Channel(c) = 
+  sendX?t!c?x -> ChannelWait(c,t, x)
+  []  
+  registerIn?_?alt!c?index!RegisterInWaiting -> ChannelReg(c, alt, index)
+
+-- Channel with thread t waiting to send x
+ChannelWait(c, t, x) = 
+  registerIn?_?alt!c?index!RegisterInSuccess.x -> endSendX.t.c -> Channel(c)
+
+-- Channel with alt registered against index
+ChannelReg(c, alt, index) = 
+  DeregisterIn(c,alt,index); Channel(c)
+  [] 
+  sendX?t!c?x -> 
+    -- call maybeReceive on the alt
+    A1::MaybeReceive(t, x, index, PostMaybeReceive(c,alt,t,index,x))
+
+-- Be deregistered by alt with index, then terminate.
+DeregisterIn(c,alt,index) = 
+  deregisterIn?_?alt'!c?index' -> Assert1(alt' == alt and index' == index)
+
+-- Thread t channel has performed alt.maybeReceive(x,index), and received a
+-- boolean result (the final parameter below).
+PostMaybeReceive(c,alt,t,index,x)(true) = endSendX.t.c -> Channel(c) 
+PostMaybeReceive(c,alt,t,index,x)(false) = 
+  -- The attempt to send failed; the alt may still deregister with this.
+  DeregisterIn(c,alt,index); ChannelWait(c, t, x) 
+  []
+  -- If a registerIn happens, then the deregisterIn isn't going to happen
+  ChannelWait(c, t, x) 
+
+----------------------------------
+
+-- Wrap the models of the channels with their interfaces. 
+
+WrappedChannel(c) = 
+  let syncSet = 
+    {| registerIn.t1.alt.c, deregisterIn.t1.alt.c | 
+         t1 <- ThreadID, alt <- AltID |} 
+  within
+  (Channel(c) [| syncSet |] ChannelInterface(c)) \ syncSet
+
+Channels0 =
+  (||| c <- ChanID @ WrappedChannel(c)) 
+  [| {| sendX,endSendX |} |] 
+  (||| t <- ChanThreads @ ChannelThreadInterface(t))
+
+Channels = Channels0 \ {|sendX,endSendX|}
+
+alphaChannels = 
+  {| A1::beginRegisterIn, A1::endRegisterIn, 
+     A1::beginDeregisterIn, A1::endDeregisterIn |}
+
+--------- Construct system
+
+System0 = Thread(AltThread) [| alphaChannels |] Channels
+
+-- System1 = A1::runWith(System0)
+
+System2 = A1::runWithAndHide(System0)
+
+System = System2 \ union(alphaChannels, {|A1::spuriousWakeUp|}) 
+
+assert System2 :[divergence free] -- succeeds.
+
+assert not System :[divergence free] -- diverges because of spurious wake ups
+
+assert not System2 :[deadlock free]
+-- Can deadlock if both channels could refuse to communicate.
+
+------ Specification for synchronisation linearisation.
+
+-- Synchronisation between thread in Alt and channel, passing data value.
+channel sync : ThreadID . ChanID . Data
+
+-- Lineariser of thread in Alt.
+AltLin(me) = beginAlt.me -> sync.me?c?x -> endAlt.me.index(c).x -> AltLin(me)
+
+-- Lineariser of thread sending on channel c.
+ChanLin(c,t) = 
+  beginSend.t!c?x -> sync.AltThread!c!x -> endSend.t.c -> ChanLin(c,t) 
+  |~| STOP
+
+ChanLins = ||| c <- ChanID, t <- ChanThreads @ ChanLin(c,t)
+
+Spec = (AltLin(AltThread) [| {| sync.AltThread |} |] ChanLins) \ {| sync |}
+
+assert Spec [T= System
+
+assert Spec [F= System

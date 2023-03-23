@@ -1,6 +1,6 @@
 -- Test upon SyncChan
 
-datatype ThreadID = T1 | T2 | T3 -- | T4
+datatype ThreadID = T1 | T2 -- | T3 -- | T4
 datatype AltID = Alt1 -- | Alt2
 
 include "Types.csp"
@@ -30,7 +30,7 @@ channel endAltReceive: ThreadID . AltID . Data
 channel beginDeregisterIn, endDeregisterIn: ThreadID . AltID
 
 -- Thread with identity me, performing a single operation: it either sends or
--- receives, or neither.
+-- receives, or registers with the channel as an alt, or does nothing.
 Thread0(me) = 
   beginSend.me?x -> c::Send(me, x); endSend.me -> SKIP
   |~|
@@ -132,7 +132,7 @@ assert System  :[divergence free]
 -- sending of x.
 channel sync : ThreadID . ThreadID . Data
 
--- A linearizer for thread t
+-- A linearizer for thread me.
 Linearizer(me) = 
   beginSend.me?x ->    -- Lin1(me, x) 
      sync.me?other!x -> endSend.me -> Linearizer(me)
