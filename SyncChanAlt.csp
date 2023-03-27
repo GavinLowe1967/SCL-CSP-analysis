@@ -5,7 +5,6 @@
 module SyncChan(ThreadID, AltID, Data, MaxIndex)
   include "Variable.csp"
   include "Macros.csp"
-  include "MonitorCondition.csp"
 
   -- The value variable: the current or previous value.
   channel getValue, setValue: ThreadID.Data
@@ -32,10 +31,24 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     getReceiversWaiting.me?r -> 
     Assert(r > 0, setReceiversWaiting.me.r-1 -> SKIP)
 
+  -- All variables
+
+  Variables = Full ||| Value ||| ReceiversWaiting ||| ReceivingAlt
+
+  varEvents = 
+    {| getFull, setFull, getValue, setValue, 
+       getReceiversWaiting, setReceiversWaiting, 
+       getReceivingAlt, setReceivingAlt |}
+
   -- Monitor and conditions
   datatype ConditionID = SlotFull | Continue | SlotEmptied
 
+  include "MonitorCondition.csp"
+
   -------- Sending
+
+  -- Thread me sends x
+  Send(me, x) = MonitorCondition::Mutex(me, Send1(me, x))
 
   -- slotEmptied.await(!full)
   Send1(me, x) = 
@@ -64,6 +77,11 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     MaybeSignalToReceiver(me); MonitorCondition::Await(me, Continue)
 
   -- Timed sending
+
+  -- Thread me does sendWithin(_)(x), and applies cont to it.
+  SendWithin :: (ThreadID, Data, (Bool) -> Proc) -> Proc
+  SendWithin(me, x, cont) = 
+    MonitorCondition::MutexC(me, SendWithin1(me, x), cont)
 
   -- val timeout = !slotEmptied.awaitNanos(nanos, !full || isClosed)
   SendWithin1(me, x)(cont) = 
@@ -94,6 +112,11 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
 
   -------- Receiving
 
+  -- Thread me receives value, and applies cont to it.
+  Receive :: (ThreadID, (Data) -> Proc) -> Proc
+  Receive(me, cont) = 
+    MonitorCondition::MutexC(me, Receive1(me), cont)
+
   -- while(!full){ receiversWaiting += 1; slotFull.await() }
   Receive1(me)(cont) = 
     let Test(cont1) = getFull.me?f -> cont1(not f)
@@ -109,6 +132,11 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   CompleteReceive(me, cont) = 
     setFull.me.false -> MonitorCondition::Signal(me, Continue); 
     MonitorCondition::Signal(me, SlotEmptied); getValue.me?v -> cont(v) 
+
+  -- Thread me does receiveWithin(_) with continuation cont. 
+  ReceiveWithin :: (ThreadID, (Option) -> Proc) -> Proc
+  ReceiveWithin(me, cont) = 
+    MonitorCondition::MutexC(me, ReceiveWithin1(me), cont)
 
   -- var timeout = false
   -- while(!full && !timeout){
@@ -158,6 +186,12 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   TryAltReceive1(me, x, cont, alt, index) = 
     beginMaybeReceive.me.alt.index.x -> endMaybeReceive.me.alt?res -> cont(res)
 
+  -- Thread me, in an alt, does registerIn with continuation cont
+-- IMPROVE, include iter.
+  RegisterIn :: (ThreadID, AltID, Int, (RegisterInResult) -> Proc) -> Proc
+  RegisterIn(me, alt, index, cont) = 
+    MonitorCondition::MutexC(me, RegisterIn1(me, alt, index), cont)
+
   -- Thread me in Alt alt performing a registerIn.  
   -- checkCanRegisterIn
   RegisterIn1(me, alt, index)(cont) = 
@@ -174,68 +208,91 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
       setReceivingAlt.me.(SomeAlt.alt.index) -> cont(RegisterInWaiting)
 
   -- Thread me in Alt alt performing a deregisterIn
+  DeregisterIn :: (ThreadID, AltID, Int) -> Proc
+  DeregisterIn(me, alt, index) = 
+    MonitorCondition::Mutex(me, DeregisterIn1(me, alt, index))
+
   DeregisterIn1(me, alt, index) = 
     getReceivingAlt.me?a -> Assert1(a == (SomeAlt.alt.index) or a == NoAlt);
     setReceivingAlt.me.NoAlt -> SKIP
-    
 
-  ---------- All variables
+  ---------- Threads
 
-  Variables = Full ||| Value ||| ReceiversWaiting ||| ReceivingAlt
+  -- A thread that performs operations, wrapping them in begin/end events
+  Thread(me) = 
+    beginSend.me?x -> Send(me, x); endSend.me -> Thread(me)
+    []
+    beginReceive.me -> Receive(me, \ x @ endReceive.me.x -> Thread(me))
+    [] 
+    beginSendWithin.me?x -> 
+      SendWithin(me, x, \ b @ endSendWithin.me.b -> Thread(me))
+    []
+    beginReceiveWithin.me ->
+      ReceiveWithin(me, \ ox @ endReceiveWithin.me.ox -> Thread(me))
+    []
+    beginRegisterIn.me?alt?index -> 
+      RegisterIn(me, alt, index, \rir @ endRegisterIn.me.alt.rir -> Thread(me))
+    [] 
+    beginDeregisterIn.me?alt.index -> 
+      (DeregisterIn(me, alt, index); endDeregisterIn.me.alt -> Thread(me))
 
-  varEvents = 
-    {| getFull, setFull, getValue, setValue, 
-       getReceiversWaiting, setReceiversWaiting, 
-       getReceivingAlt, setReceivingAlt |}
+  Threads = ||| t : ThreadID @ Thread(t)
 
-  -- All internal events
-  events = union(varEvents, MonitorCondition::events)
+  --------  All internal processes and events
+
+  Internals = MonitorCondition::runWith(Threads [| varEvents |] Variables)
+
+  internals = union(varEvents, MonitorCondition::events)
+
+  -- Interface with client threads
+  ClientInterface = {|
+    beginSend, endSend, beginReceive, endReceive, 
+    beginSendWithin, endSendWithin, beginReceiveWithin, endReceiveWithin
+  |}
+
+  -- Interface with alts
+  AltInterface = {|
+    beginRegisterIn, endRegisterIn, beginDeregisterIn, endDeregisterIn,
+    beginMaybeReceive, endMaybeReceive
+  |}
+
+  -- Interface with client threads and alts
+  Interface = union(ClientInterface, AltInterface)
 
 exports
 
-  datatype Option = None | Some.Data
+  -- Signals before and after invocations or sends and receives
+  channel beginSend, endReceive, beginSendWithin : ThreadID . Data
+  channel beginReceive, endSend, beginReceiveWithin : ThreadID
+  channel endSendWithin: ThreadID . Bool
+  channel endReceiveWithin : ThreadID . Option
 
-  ----- Interface to other classes.
-
-  -- Thread me sends x
-  Send(me, x) = MonitorCondition::Mutex(me, Send1(me, x))
-
-  -- Thread me receives value, and applies cont to it.
-  Receive :: (ThreadID, (Data) -> Proc) -> Proc
-  Receive(me, cont) = MonitorCondition::MutexC(me, Receive1(me), cont)
-
-  -- Thread me does sendWithin(_)(x), and applies cont to it.
-  SendWithin :: (ThreadID, Data, (Bool) -> Proc) -> Proc
-  SendWithin(me, x, cont) = 
-    MonitorCondition::MutexC(me, SendWithin1(me, x), cont)
-
-  -- Thread me does receiveWithin(_) with continuation cont. 
-  ReceiveWithin :: (ThreadID, (Option) -> Proc) -> Proc
-  ReceiveWithin(me, cont) = 
-    MonitorCondition::MutexC(me, ReceiveWithin1(me), cont)
+  -- Signals before and after invocations of registerIn or deregisterIn
+  channel beginRegisterIn, beginDeregisterIn: ThreadID . AltID . Index
+  channel endRegisterIn: ThreadID . AltID . RegisterInResult
+  channel endDeregisterIn: ThreadID . AltID
 
   -- Events for calling back to Alts. 
   channel beginMaybeReceive: ThreadID . AltID . Index . Data 
   channel endMaybeReceive: ThreadID . AltID . Bool
 
-  -- Thread me, in an alt, does registerIn with continuation cont
--- IMPROVE, include branch number, iter.
-  RegisterIn :: (ThreadID, AltID, Int, (RegisterInResult) -> Proc) -> Proc
-  RegisterIn(me, alt, index, cont) = 
-    MonitorCondition::MutexC(me, RegisterIn1(me, alt, index), cont)
-
-  DeregisterIn :: (ThreadID, AltID, Int) -> Proc
-  DeregisterIn(me, alt, index) = 
-    MonitorCondition::Mutex(me, DeregisterIn1(me, alt, index))
+  -- The interface the alt presents to a channel thread.  Note: this doesn't
+  -- include callbacks from the alt to the channel.
+  threadInterface(t) = {|
+    beginSend.t, endSend.t, beginReceive.t, endReceive.t, 
+    beginSendWithin.t, endSendWithin.t, beginReceiveWithin.t, endReceiveWithin.t
+  |}
 
   ------ Administrative functions
 
   -- Run P with this channel
-  runWith(P) = 
-    let P1 = P [| varEvents |] Variables
-    within MonitorCondition::runWith(P1)
+  runWith(P) = P [| Interface |] Internals
 
   -- Run P with this channel, and hide internals
-  runWithAndHide(P) = runWith(P) \ events
+  runWithAndHide(P) = runWith(P) \ internals
+
+  -- Run with P on the client interface, but leave the interface with alts
+  -- open.
+  runWithClientsAndHide(P) = (P [| ClientInterface |] Internals) \ internals
 
 endmodule

@@ -1,5 +1,7 @@
 
 datatype Data = A | B
 
+datatype Option = None | Some.Data
+
 -- The result of a RegisterIn
 datatype RegisterInResult = RegisterInSuccess.Data | RegisterInWaiting

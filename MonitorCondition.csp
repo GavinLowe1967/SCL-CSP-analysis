@@ -31,6 +31,8 @@ module MonitorCondition
   -- All threads waiting on any condition. 
   range(waitingMap) = Union({mapLookup(waitingMap, c) | c <- ConditionID})  
 
+-- IMPROVE: allow await/signal by non locking thread, but diverge.
+
   -- The monitor in the unlocked state.  waitingMap records those threads
   -- waiting on each Condition.  timedWaitingMap records those threads doing a
   -- timed wait on each condition.  Invariant: elements in range are disjoint.
@@ -56,7 +58,11 @@ module MonitorCondition
   Locked(t, waitingMap, timedWaitingMap) = 
     release.t -> Unlocked(waitingMap, timedWaitingMap)
     []
-    await.t?c -> Unlocked(addToMap(waitingMap, c, t), timedWaitingMap)
+    await.t?c ->  Unlocked(addToMap(waitingMap, c, t), timedWaitingMap)
+    -- await?t'?c -> (
+    --   if t' == t then  Unlocked(addToMap(waitingMap, c, t), timedWaitingMap)
+    --   else DIV
+    -- )
     [] 
     timedAwait.t?c -> Unlocked(waitingMap, addToMap(timedWaitingMap, c, t))
     []

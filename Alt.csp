@@ -1,5 +1,3 @@
-
-
 -- A model of an Alt with identity this, and branches given by branches.  
 module Alt(this, branches, ThreadID, ChanID)
   include "Variable.csp"
@@ -17,6 +15,7 @@ module Alt(this, branches, ThreadID, ChanID)
 
   size = length(branches)
 
+  -- Indices of branches
   Index = {0 .. size-1}
 
   -- The toRun variable.
@@ -30,8 +29,8 @@ module Alt(this, branches, ThreadID, ChanID)
   -- The array of enabled variables
   channel getEnabled, setEnabled : ThreadID . Index . Bool
   Enabled = Array(Index, false, getEnabled, setEnabled)
-  -- ||| i <- Index @ Var(false, getEnabled.i, setEnabled.i)
 
+  -- All variables
   Variables = Registering ||| Done ||| ToRun ||| ValueReceived ||| Enabled
 
   varEvents = {|
@@ -49,13 +48,14 @@ module Alt(this, branches, ThreadID, ChanID)
 
   ---------- Model of code
 
-  -- Register with branches.  synchronized{ registering = true }
-  Register(me,  cont) = 
+  --------- Run the Alt, and apply cont to the value received.
+  Run :: (ThreadID, (Int, Data) -> Proc) -> Proc
+  Run(me, cont) = -- Register(me, cont)
     JVMMonitor::Synchronized(me, setRegistering.me.true -> SKIP);
-    Register1(me, cont, 0)
+    Register(me, cont, 0)
 
   -- Register with branches from index i.
-  Register1(me, cont, i) = 
+  Register(me, cont, i) = 
     if i == size then AfterLoop(me, cont)
     else
       let c = nth(branches, i) within
@@ -65,7 +65,7 @@ module Alt(this, branches, ThreadID, ChanID)
    	  setDone.me.true -> AfterLoop(me, cont)
         [] 
         endRegisterIn.me.this.c.RegisterInWaiting -> 
-          setEnabled.me.i.true -> Register1(me, cont, i+1)
+          setEnabled.me.i.true -> Register(me, cont, i+1)
       )
 
   -- Code after the registration loop
@@ -102,11 +102,22 @@ module Alt(this, branches, ThreadID, ChanID)
     Assert(toRun >= 0, 
       getValueReceived.me?valueReceived -> cont(toRun, valueReceived))
 
-  -- Reset for next round
+  ------ Reset for next round
 
+  Reset(me) = JVMMonitor::Synchronized(me, Reset1(me, 0))
+
+  -- Clear enabled[i..size).
   Reset1(me,i) = 
     if i < size then setEnabled.me.i.false -> Reset1(me,i+1)
     else setToRun.me.(-1) -> setDone.me.false -> SKIP
+
+  -------- The maybeReceive function
+
+  -- maybeReceive function; try to get Alt to receive value from the InPort of
+  -- branch index.  Apply cont to Bool indicating if successful.
+  MaybeReceive :: (ThreadID, Data, Int, (Bool) -> Proc) -> Proc
+  MaybeReceive(me, value, index, cont) = 
+    JVMMonitor::SynchronizedC(me, MaybeReceive1(me, value, index), cont)
 
   -- while(registering) wait() 
   MaybeReceive1(me, value, index)(cont) = 
@@ -128,40 +139,53 @@ module Alt(this, branches, ThreadID, ChanID)
       setToRun.me.index -> setDone.me.true -> 
       JVMMonitor::Notify(me); cont(true)
 
+  -------- Threads that interact with the alt
+
+  -- Thread me interacting with the alt, corresponding to the main run function
+  -- and the maybeReceive function.  
+  Thread(me) = 
+    beginAlt.me -> Run(me, \ i,x @ endAlt.me.i.x -> Reset(me)); Thread(me)
+    []
+    beginMaybeReceive.me?index.x -> 
+      MaybeReceive(me, x, index, \ res @ endMaybeReceive.me.res -> Thread(me))
+
+  Threads = ||| t <- ThreadID @ Thread(t)
+
+  ---- The internals of the Alt: threads, variables, monitor.
+  Internals = JVMMonitor::runWith(Threads [| varEvents |] Variables)
+
+  ---- Interface with clients
+  AltInterface = {| beginAlt, endAlt |}
+
+  Interface = union( AltInterface, ChannelInterface )
+
 exports
 
-  -- Channels for interface with ports.
+  -- Events for invocations of the main run function.
+  channel beginAlt: ThreadID
+  channel endAlt: ThreadID . Index . Data
+
+  -- Events for invocations of maybeReceive.
+  channel beginMaybeReceive: ThreadID . Index . Data
+  channel endMaybeReceive : ThreadID . Bool
+
+  -- Channels for operations the alt calls on ports.
   channel beginRegisterIn : ThreadID . {this} . ChanID . Index
   channel endRegisterIn : ThreadID . {this} . ChanID . RegisterInResult
-
   channel beginDeregisterIn : ThreadID . {this} . ChanID . Index
   channel endDeregisterIn : ThreadID . {this} . ChanID
 
-  -- datatype Branch = InPortBranch . ChanID  -- OutPortBranch . ChanID
-
   spuriousWakeUp = JVMMonitor::spuriousWakeup
 
-  ----- Interface to other classes
-
-  -- Run the Alt, and apply cont to the value received.
-  Run :: (ThreadID, (Int, Data) -> Proc) -> Proc
-  Run(me, cont) = Register(me, cont)
-
-  -- reset function. 
-  Reset(me) = JVMMonitor::Synchronized(me, Reset1(me, 0))
-
-  -- maybeReceive function; try to get Alt to receive value from the InPort of
-  -- branch index.  Apply cont to Bool indicating if successful.
-  MaybeReceive :: (ThreadID, Data, Int, (Bool) -> Proc) -> Proc
-  MaybeReceive(me, value, index, cont) = 
-    JVMMonitor::SynchronizedC(me, MaybeReceive1(me, value, index), cont)
+  -- The interface between the alt and channels (in both directions). 
+  ChannelInterface = 
+    {| beginRegisterIn, endRegisterIn, beginDeregisterIn, endDeregisterIn, 
+       beginMaybeReceive, endMaybeReceive |}
 
   ----- Administrative functions.
 
   -- Run P with this Alt
-  runWith(P) = 
-    let P1 = P [| varEvents |] Variables
-    within JVMMonitor::runWith(P1)
+  runWith(P) = P [| Interface |] Internals
 
   -- Run P with this Alt, and hide internals except spuriousWakeup
   runWithAndHide(P) = runWith(P) \ events

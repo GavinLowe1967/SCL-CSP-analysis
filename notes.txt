@@ -24,7 +24,7 @@ SyncChanAlt.csp: model including interaction with Alts.
 SyncChanAltTest: test on SyncChanAlt, modelling the contract of the Alt fairly
 explicitly.
 
-SyncChanAltTest2 -- I don't think this works.
+SyncChanAltTest2 -- I don't think this works.  Removed
 
 
 Alt

@@ -1,0 +1,192 @@
+-- A test on the combination of an alt and two channels.
+
+-- Thread identities.  Thread AltThread will run the Alt; other threads will
+-- act on channels.
+datatype ThreadID = AltThread | T1 | T2 -- | T3 -- | T4
+
+ChanThreads =  diff(ThreadID, {AltThread})
+
+include "Types.csp"
+
+-- Identities of channels
+datatype ChanID = c1 | c2
+
+-- Identities of Alts
+datatype AltID = Alt1 -- | Alt2
+
+-- The list of branches in the alt
+branches =  <c1,c2>
+
+size = length(branches)
+
+Index = {0..size-1}
+
+-- Index of channel c in branches
+index(c) = 
+  let index1(c,cs) = if c == head(cs) then 0 else 1 + index1(c, tail(cs))
+  within index1(c, branches)
+
+include "SyncChanAlt.csp"
+
+-- Create two channels
+instance C1 = SyncChan(ThreadID, AltID, Data, size)
+instance C2 = SyncChan(ThreadID, AltID, Data, size)
+
+include "Alt.csp"
+
+-- Create the alt.
+instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
+
+-- include "Macros.csp"
+
+------ Threads
+
+-- The thread that runs the Alt repeatedly. 
+
+TheAltThread(me) = 
+  A1::beginAlt.me -> A1::endAlt.me?i.x -> TheAltThread(me) |~| STOP
+
+-- A thread that tries to send on a channel
+
+-- Thread with identity me, which repeatedly sends or receives, or neither.
+Thread(me) = 
+  C1::beginSend.me?x -> C1::endSend.me -> Thread(me) 
+  |~|
+  C2::beginSend.me?x -> C2::endSend.me -> Thread(me)
+  |~|
+  C1::beginReceive.me -> C1::endReceive.me?x -> Thread(me)
+  |~|
+  C2::beginReceive.me -> C2::endReceive.me?x -> Thread(me)
+  |~|
+  C1::beginSendWithin.me?x -> C1::endSendWithin.me?b -> Thread(me)
+  |~|
+  C2::beginSendWithin.me?x -> C2::endSendWithin.me?b -> Thread(me)
+  |~|
+  C1::beginReceiveWithin.me -> C1::endReceiveWithin.me?ox -> Thread(me)
+  |~|
+  C2::beginReceiveWithin.me -> C2::endReceiveWithin.me?ox -> Thread(me)
+  |~| 
+  STOP
+
+Threads = (||| t <- ChanThreads @ Thread(t)) ||| TheAltThread(AltThread)
+
+-- Put the system together
+
+-- Run Threads with C2, and rename events to be consistent with the alt.
+System00 = C1::runWithClientsAndHide(C2::runWithClientsAndHide(Threads))
+
+System01 = 
+  System00 [[
+    C1::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.Alt1.c1,
+    C1::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.Alt1.c1,
+    C1::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.Alt1.c1,
+    C1::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.Alt1.c1,
+    C1::beginMaybeReceive.t.Alt1 <- A1::beginMaybeReceive.t,
+    C1::endMaybeReceive.t.Alt1 <- A1::endMaybeReceive.t,
+    C2::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.Alt1.c2,
+    C2::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.Alt1.c2,
+    C2::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.Alt1.c2,
+    C2::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.Alt1.c2,
+    C2::beginMaybeReceive.t.Alt1 <- A1::beginMaybeReceive.t,
+    C2::endMaybeReceive.t.Alt1 <- A1::endMaybeReceive.t
+      | t <- ThreadID 
+  ]]
+
+System0 = A1::runWithAndHide(System01) \ A1::ChannelInterface
+
+assert System0 :[divergence free]
+
+assert not System0 :[deadlock free] 
+-- deadlocks because all ChanThreads could choose to STOP
+
+System = System0 \ {|A1::spuriousWakeUp|} 
+
+assert not System :[divergence free] -- diverges because of spurious wake ups
+
+------ Specification for synchronisation linearisation.
+
+-- Synchronisation between threads in Alt and channel, passing data value.
+channel altSync : ThreadID . ThreadID . ChanID . Data
+
+-- synchronsation between a sender and receiver
+channel sync : ThreadID . ThreadID . ChanID . Data
+
+-- Lineariser for the Alt thread.
+AltLin(me) = 
+  A1::beginAlt.me -> altSync.me?other:ChanThreads?c?x -> 
+    A1::endAlt.me.index(c).x -> AltLin(me)
+  |~| STOP
+
+alphaAltLin(me) = {| A1::beginAlt.me, A1::endAlt.me, altSync.me |}
+
+-- Lineariser for a channel thread.
+ChanThreadLin(me) = 
+  let Others = diff(ChanThreads, {me}) within
+  C1::beginSend.me?x -> (
+    altSync?altThread!me!c1!x -> C1::endSend.me -> ChanThreadLin(me)
+    [] sync.me?other:Others!c1!x -> C1::endSend.me -> ChanThreadLin(me)
+  )
+  |~|
+  C2::beginSend.me?x -> (
+    altSync?altThread!me!c2!x -> C2::endSend.me -> ChanThreadLin(me)
+    [] sync.me?other:Others!c2!x -> C2::endSend.me -> ChanThreadLin(me)
+  )
+  |~|
+  C1::beginReceive.me -> sync?other:Others!me!c1?x -> 
+    C1::endReceive.me.x -> ChanThreadLin(me) 
+  |~|
+  C2::beginReceive.me -> sync?other:Others!me!c2?x -> 
+    C2::endReceive.me.x -> ChanThreadLin(me) 
+  |~| 
+  C1::beginSendWithin.me?x -> (
+    ( altSync?altThread!me!c1!x -> C1::endSendWithin.me.true -> ChanThreadLin(me)
+      [] 
+      sync.me?other:Others!c1!x -> C1::endSendWithin.me.true -> ChanThreadLin(me)
+    )
+    [> C1::endSendWithin.me.false -> ChanThreadLin(me)
+  )
+  |~|
+  C2::beginSendWithin.me?x -> (
+    ( altSync?altThread!me!c2!x -> C2::endSendWithin.me.true -> ChanThreadLin(me)
+      [] 
+      sync.me?other:Others!c2!x -> C2::endSendWithin.me.true -> ChanThreadLin(me)
+    )
+    [> C2::endSendWithin.me.false -> ChanThreadLin(me)
+  )
+  |~|
+  C1::beginReceiveWithin.me -> (
+    sync?other:Others!me!c1?x -> 
+      C1::endReceiveWithin.me.Some.x -> ChanThreadLin(me) 
+    [> C1::endReceiveWithin.me.None -> ChanThreadLin(me) 
+  )
+  |~|
+  C2::beginReceiveWithin.me -> (
+    sync?other:Others!me!c2?x -> 
+      C2::endReceiveWithin.me.Some.x -> ChanThreadLin(me) 
+    [> C2::endReceiveWithin.me.None -> ChanThreadLin(me) 
+  )
+  |~|
+  STOP
+
+alphaChanThreadLin(me) = {| 
+  C1::beginSend.me, C1::endSend.me, C2::beginSend.me, C2::endSend.me,
+  C1::beginReceive.me, C1::endReceive.me, 
+  C2::beginReceive.me, C2::endReceive.me,  
+  C1::beginSendWithin.me, C1::endSendWithin.me,
+  C2::beginSendWithin.me, C2::endSendWithin.me,
+  C1::beginReceiveWithin.me, C1::endReceiveWithin.me,
+  C2::beginReceiveWithin.me, C2::endReceiveWithin.me,
+  altSync.AltThread.me, sync.me, sync.t.me |
+    t <- diff(ThreadID,{me}) |}
+
+Lin(me) = if me == AltThread then AltLin(me) else ChanThreadLin(me)
+
+alphaLin(me) = 
+  if me == AltThread then alphaAltLin(me) else alphaChanThreadLin(me)
+  
+-- Combine the linearisers to create the specification
+Spec = (|| t <- ThreadID @ [alphaLin(t)] Lin(t)) \ {| altSync, sync |}
+
+assert Spec [T= System
+
+assert Spec [F= System 
