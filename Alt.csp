@@ -26,16 +26,23 @@ module Alt(this, branches, ThreadID, ChanID)
   channel getValueReceived, setValueReceived : ThreadID . Data
   ValueReceived = Var(A, getValueReceived, setValueReceived)
 
+  -- The value sent.  This is not actually part of the implementation, but is
+  -- needed to capture the specification.
+  channel getValueSent, setValueSent : ThreadID . Option
+  ValueSent = Var(None, getValueSent, setValueSent)
+
   -- The array of enabled variables
   channel getEnabled, setEnabled : ThreadID . Index . Bool
   Enabled = Array(Index, false, getEnabled, setEnabled)
 
   -- All variables
-  Variables = Registering ||| Done ||| ToRun ||| ValueReceived ||| Enabled
+  Variables = 
+    Registering ||| Done ||| ToRun ||| ValueReceived ||| ValueSent ||| Enabled
 
   varEvents = {|
     getRegistering, setRegistering, getDone, setDone, getToRun, setToRun, 
-    getValueReceived, setValueReceived, getEnabled, setEnabled
+    getValueReceived, setValueReceived, getValueSent, setValueSent, 
+    getEnabled, setEnabled
   |} 
 
   ---------- 
@@ -49,7 +56,7 @@ module Alt(this, branches, ThreadID, ChanID)
   ---------- Model of code
 
   --------- Run the Alt, and apply cont to the value received.
-  Run :: (ThreadID, (Int, Data) -> Proc) -> Proc
+  Run :: (ThreadID, (AltResult) -> Proc) -> Proc
   Run(me, cont) = -- Register(me, cont)
     JVMMonitor::Synchronized(me, setRegistering.me.true -> SKIP);
     Register(me, cont, 0)
@@ -57,18 +64,29 @@ module Alt(this, branches, ThreadID, ChanID)
   -- Register with branches from index i.
   Register(me, cont, i) = 
     if i == size then AfterLoop(me, cont)
-    else
-      let c = nth(branches, i) within
-      beginRegisterIn.me.this.c.i -> (
-        endRegisterIn.me.this.c.RegisterInSuccess?x -> 
-          setValueReceived.me.x -> setToRun.me.i -> 
-   	  setDone.me.true -> AfterLoop(me, cont)
-        [] 
-        endRegisterIn.me.this.c.RegisterInWaiting -> 
-          setEnabled.me.i.true -> Register(me, cont, i+1)
-      )
+    else Register1(me, cont, i, nth(branches, i)) 
 
-  -- Code after the registration loop
+  Register1(me, cont, i, InPortBranch.c) = 
+    beginRegisterIn.me.this.c.i -> (
+      endRegisterIn.me.this.c.RegisterInSuccess?x -> 
+        setValueReceived.me.x -> setToRun.me.i -> 
+        setDone.me.true -> AfterLoop(me, cont)
+      [] 
+      endRegisterIn.me.this.c.RegisterInWaiting -> 
+        setEnabled.me.i.true -> Register(me, cont, i+1)
+    )
+
+  Register1(me, cont, i, OutPortBranch.c) = 
+-- IMPROVE: value shouldn't be chosen here
+    beginRegisterOut.me.this.c.i$x -> (
+      endRegisterOut.me.this.c.RegisterOutSuccess -> setToRun.me.i -> 
+        setDone.me.true -> setValueSent.me.Some.x -> AfterLoop(me, cont)
+      []
+      endRegisterOut.me.this.c.RegisterOutWaiting -> 
+        setEnabled.me.i.true -> Register(me, cont, i+1)
+    )
+
+  -- Code after the registration loop.  
   AfterLoop(me, cont) = 
     JVMMonitor::Synchronized(me, AfterLoop1(me, cont));
     PostWait(me, cont)
@@ -86,21 +104,34 @@ module Alt(this, branches, ThreadID, ChanID)
   PostWait(me, cont) = 
     getDone.me?done -> Assert1(done); PostWait1(me, cont, 0)
 
+  -- Deregister branches[i..size)
   PostWait1(me, cont, i) = 
     if i == size then RunBranch(me, cont)
     else 
       getToRun.me?toRun -> getEnabled.me.i?enabled -> 
       if i != toRun and enabled then 
-        let c = nth(branches,i) within
-        beginDeregisterIn.me.this.c.i -> endDeregisterIn.me.this.c ->
-        PostWait1(me, cont, i+1)
+        Deregister(me, cont, i, nth(branches,i)); PostWait1(me, cont, i+1)
       else PostWait1(me, cont, i+1)
+
+  -- Deregister branch at index i.
+  Deregister(me, cont, i, InPortBranch.c) = 
+    beginDeregisterIn.me.this.c.i -> endDeregisterIn.me.this.c -> SKIP
+
+  Deregister(me, cont, i, OutPortBranch.c) = 
+    beginDeregisterOut.me.this.c.i -> endDeregisterOut.me.this.c -> SKIP
 
   -- Run the branch toRun.
   RunBranch(me, cont) = 
     getToRun.me?toRun -> 
-    Assert(toRun >= 0, 
-      getValueReceived.me?valueReceived -> cont(toRun, valueReceived))
+    Assert(toRun >= 0, RunBranch1(me, cont, toRun, nth(branches, toRun)))
+
+  RunBranch1(me, cont, toRun, InPortBranch.c) = 
+    getValueSent.me?oValue -> Assert1(oValue == None);
+    getValueReceived.me?valueReceived -> cont(AltReceive.toRun.valueReceived)
+
+  RunBranch1(me, cont, toRun, OutPortBranch.c) = 
+    getValueSent.me?oValue -> 
+    Assert(oValue != None, let Some.x = oValue within cont(AltSend.toRun.x))
 
   ------ Reset for next round
 
@@ -109,7 +140,7 @@ module Alt(this, branches, ThreadID, ChanID)
   -- Clear enabled[i..size).
   Reset1(me,i) = 
     if i < size then setEnabled.me.i.false -> Reset1(me,i+1)
-    else setToRun.me.(-1) -> setDone.me.false -> SKIP
+    else setToRun.me.(-1) -> setDone.me.false -> setValueSent.me.None -> SKIP
 
   -------- The maybeReceive function
 
@@ -120,9 +151,13 @@ module Alt(this, branches, ThreadID, ChanID)
     JVMMonitor::SynchronizedC(me, MaybeReceive1(me, value, index), cont)
 
   -- while(registering) wait() 
-  MaybeReceive1(me, value, index)(cont) = 
+  WaitWhileRegistering(me) = 
     let Test(k) = getRegistering.me?registering -> k(registering) within
-    While(Test, JVMMonitor::Wait(me));
+    While(Test, JVMMonitor::Wait(me))
+
+  -- Body of maybeReceive
+  MaybeReceive1(me, value, index)(cont) = 
+    WaitWhileRegistering(me);
     -- assert(enabled(index))
     getEnabled.me.index?enab -> Assert1(enab);
     -- if(done) ...
@@ -139,12 +174,37 @@ module Alt(this, branches, ThreadID, ChanID)
       setToRun.me.index -> setDone.me.true -> 
       JVMMonitor::Notify(me); cont(true)
 
+  -------- The maybeSend function
+
+  MaybeSend :: (ThreadID, Int, (Option) -> Proc) -> Proc
+  MaybeSend(me, index, cont) =
+    JVMMonitor::SynchronizedC(me, MaybeSend1(me, index), cont)
+
+  MaybeSend1(me, index)(cont) =  
+    WaitWhileRegistering(me);
+    -- assert(numEnabled > 0 && enabled(index))
+    -- getNumEnabled.me?ne -> Assert1(ne > 0); 
+    getEnabled.me.index?enab -> Assert1(enab);
+    -- if(done){ enabled(index) = false; None }
+    getDone.me?done ->
+    if done then setEnabled.me.index.false -> cont(None)
+    else
+      -- enabled(index) = false; toRun = index; done = true; notify();
+      setEnabled.me.index.false -> setToRun.me.index -> setDone.me.true ->
+      JVMMonitor::Notify(me);
+      -- val result = opb.value(); Some(result)
+-- IMPROVE: don't pick x here
+      setValueSent.me.Some$x -> cont(Some.x)
+
   -------- Threads that interact with the alt
 
   -- Thread me interacting with the alt, corresponding to the main run function
   -- and the maybeReceive function.  
   Thread(me) = 
-    beginAlt.me -> Run(me, \ i,x @ endAlt.me.i.x -> Reset(me)); Thread(me)
+    beginAlt.me -> Run(me, \ res @ endAlt.me.res -> Reset(me)); Thread(me)
+    []
+    beginMaybeSend.me?index ->
+       MaybeSend(me, index, \ res @ endMaybeSend.me.res -> Thread(me))
     []
     beginMaybeReceive.me?index.x -> 
       MaybeReceive(me, x, index, \ res @ endMaybeReceive.me.res -> Thread(me))
@@ -160,27 +220,39 @@ module Alt(this, branches, ThreadID, ChanID)
   Interface = union( AltInterface, ChannelInterface )
 
 exports
+  
+  -- The type of information about how an alt ended.
+  datatype AltResult = AltReceive.Index.Data | AltSend.Index.Data
 
   -- Events for invocations of the main run function.
   channel beginAlt: ThreadID
-  channel endAlt: ThreadID . Index . Data
+  channel endAlt: ThreadID . AltResult -- Index . Data
 
-  -- Events for invocations of maybeReceive.
+  -- Events for invocations of maybeReceive, maybeSend.
   channel beginMaybeReceive: ThreadID . Index . Data
   channel endMaybeReceive : ThreadID . Bool
+
+  channel beginMaybeSend : ThreadID . Index
+  channel endMaybeSend : ThreadID . Option 
 
   -- Channels for operations the alt calls on ports.
   channel beginRegisterIn : ThreadID . {this} . ChanID . Index
   channel endRegisterIn : ThreadID . {this} . ChanID . RegisterInResult
+  channel beginRegisterOut : ThreadID . {this} . ChanID . Index . Data
+  channel endRegisterOut : ThreadID . {this} . ChanID . RegisterOutResult
+
   channel beginDeregisterIn : ThreadID . {this} . ChanID . Index
   channel endDeregisterIn : ThreadID . {this} . ChanID
+  channel beginDeregisterOut : ThreadID . {this} . ChanID . Index 
+  channel endDeregisterOut : ThreadID . {this} . ChanID
 
   spuriousWakeUp = JVMMonitor::spuriousWakeup
 
   -- The interface between the alt and channels (in both directions). 
   ChannelInterface = 
-    {| beginRegisterIn, endRegisterIn, beginDeregisterIn, endDeregisterIn, 
-       beginMaybeReceive, endMaybeReceive |}
+    {| beginRegisterIn, endRegisterIn, beginRegisterOut, endRegisterOut,
+       beginDeregisterIn, endDeregisterIn, beginDeregisterOut, endDeregisterOut,
+       beginMaybeSend, endMaybeSend, beginMaybeReceive, endMaybeReceive |}
 
   ----- Administrative functions.
 

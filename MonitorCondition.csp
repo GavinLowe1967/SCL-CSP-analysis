@@ -90,6 +90,8 @@ exports
 
   runWith(P) = P [| events |] Unlocked(initialMap, initialMap)
 
+  runWithAndHide(P) = runWith(P) \ events
+
   -- Interface to threads.
 
   -- Lock the monitor

@@ -39,6 +39,14 @@ in completeSend.
 
 AltTest3.csp: simplified, a single thread treated as waiting in completeSend.
 
+CombinedTest
+------------
+
+CombinedTest.csp: File defining a family of tests on an Alt with two channels.
+
+CombinedTest{II,IO,OI,OO}.csp: files instantiating CombinedTest s.t. the Alt
+uses In/OutPorts of its channels.
+
 -------------------------------------------------------
 
 Assumptions on alt when analysing channel:

@@ -1,4 +1,5 @@
 -- A test on the combination of an alt and two channels.
+-- This file needs to be included in a file that defines the list of branches.
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
@@ -6,16 +7,18 @@ datatype ThreadID = AltThread | T1 | T2 -- | T3 -- | T4
 
 ChanThreads =  diff(ThreadID, {AltThread})
 
-include "Types.csp"
-
 -- Identities of channels
 datatype ChanID = c1 | c2
+
+include "Types.csp"
 
 -- Identities of Alts
 datatype AltID = Alt1 -- | Alt2
 
--- The list of branches in the alt
-branches =  <c1,c2>
+-- The list of branches in the alt.  The main file needs to include a
+-- definition like one of the following.
+-- branches =  <InPortBranch.c1, InPortBranch.c2>
+-- branches =  <InPortBranch.c1, OutPortBranch.c2>
 
 size = length(branches)
 
@@ -44,7 +47,12 @@ instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
 -- The thread that runs the Alt repeatedly. 
 
 TheAltThread(me) = 
-  A1::beginAlt.me -> A1::endAlt.me?i.x -> TheAltThread(me) |~| STOP
+  A1::beginAlt.me -> (
+    A1::endAlt.me.A1::AltReceive?i.x -> TheAltThread(me) 
+    [] 
+    A1::endAlt.me.A1::AltSend?i.x -> TheAltThread(me)
+  )
+  |~| STOP
 
 -- A thread that tries to send on a channel
 
@@ -62,8 +70,10 @@ Thread(me) =
   |~|
   C2::beginSendWithin.me?x -> C2::endSendWithin.me?b -> Thread(me)
   |~|
+-- false &
   C1::beginReceiveWithin.me -> C1::endReceiveWithin.me?ox -> Thread(me)
   |~|
+-- false & -- FIXME
   C2::beginReceiveWithin.me -> C2::endReceiveWithin.me?ox -> Thread(me)
   |~| 
   STOP
@@ -72,7 +82,8 @@ Threads = (||| t <- ChanThreads @ Thread(t)) ||| TheAltThread(AltThread)
 
 -- Put the system together
 
--- Run Threads with C2, and rename events to be consistent with the alt.
+-- Run Threads with C1 and C2, and rename events to be consistent with the
+-- alt.
 System00 = C1::runWithClientsAndHide(C2::runWithClientsAndHide(Threads))
 
 System01 = 
@@ -81,14 +92,29 @@ System01 =
     C1::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.Alt1.c1,
     C1::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.Alt1.c1,
     C1::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.Alt1.c1,
+    C1::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.Alt1.c1,
+    C1::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.Alt1.c1,
+    C1::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.Alt1.c1,
+    C1::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.Alt1.c1,
+
     C1::beginMaybeReceive.t.Alt1 <- A1::beginMaybeReceive.t,
     C1::endMaybeReceive.t.Alt1 <- A1::endMaybeReceive.t,
+    C1::beginMaybeSend.t.Alt1 <- A1::beginMaybeSend.t,
+    C1::endMaybeSend.t.Alt1 <- A1::endMaybeSend.t,
+
     C2::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.Alt1.c2,
     C2::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.Alt1.c2,
     C2::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.Alt1.c2,
     C2::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.Alt1.c2,
+    C2::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.Alt1.c2,
+    C2::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.Alt1.c2,
+    C2::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.Alt1.c2,
+    C2::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.Alt1.c2,
+
     C2::beginMaybeReceive.t.Alt1 <- A1::beginMaybeReceive.t,
-    C2::endMaybeReceive.t.Alt1 <- A1::endMaybeReceive.t
+    C2::endMaybeReceive.t.Alt1 <- A1::endMaybeReceive.t,
+    C2::beginMaybeSend.t.Alt1 <- A1::beginMaybeSend.t,
+    C2::endMaybeSend.t.Alt1 <- A1::endMaybeSend.t
       | t <- ThreadID 
   ]]
 
@@ -105,6 +131,8 @@ assert not System :[divergence free] -- diverges because of spurious wake ups
 
 ------ Specification for synchronisation linearisation.
 
+-- In sync and altSync events, the sender comes first
+
 -- Synchronisation between threads in Alt and channel, passing data value.
 channel altSync : ThreadID . ThreadID . ChanID . Data
 
@@ -113,11 +141,22 @@ channel sync : ThreadID . ThreadID . ChanID . Data
 
 -- Lineariser for the Alt thread.
 AltLin(me) = 
-  A1::beginAlt.me -> altSync.me?other:ChanThreads?c?x -> 
-    A1::endAlt.me.index(c).x -> AltLin(me)
+  let inPorts = { c | InPortBranch.c <- set(branches) }
+      outPorts = { c | OutPortBranch.c <- set(branches) } 
+  within
+  A1::beginAlt.me -> (
+    altSync.me?other:ChanThreads?c:inPorts?x -> 
+      A1::endAlt.me.A1::AltReceive.index(InPortBranch.c).x -> AltLin(me)
+    []
+    altSync?other:ChanThreads!me?c:outPorts?x ->
+      A1::endAlt.me.A1::AltSend.index(OutPortBranch.c).x -> AltLin(me)
+  )
   |~| STOP
 
-alphaAltLin(me) = {| A1::beginAlt.me, A1::endAlt.me, altSync.me |}
+alphaAltLin(me) = union(
+  {| A1::beginAlt.me, A1::endAlt.me, altSync.me |},
+  {| altSync.t.me | t <- ChanThreads |}
+)
 
 -- Lineariser for a channel thread.
 ChanThreadLin(me) = 
@@ -132,11 +171,15 @@ ChanThreadLin(me) =
     [] sync.me?other:Others!c2!x -> C2::endSend.me -> ChanThreadLin(me)
   )
   |~|
-  C1::beginReceive.me -> sync?other:Others!me!c1?x -> 
-    C1::endReceive.me.x -> ChanThreadLin(me) 
+  C1::beginReceive.me -> ( 
+    sync?other:Others!me!c1?x -> C1::endReceive.me.x -> ChanThreadLin(me)
+    [] altSync.me?altThread!c1?x -> C1::endReceive.me.x -> ChanThreadLin(me)
+  )
   |~|
-  C2::beginReceive.me -> sync?other:Others!me!c2?x -> 
-    C2::endReceive.me.x -> ChanThreadLin(me) 
+  C2::beginReceive.me -> (
+    sync?other:Others!me!c2?x -> C2::endReceive.me.x -> ChanThreadLin(me) 
+    [] altSync.me?altThread!c2?x -> C2::endReceive.me.x -> ChanThreadLin(me)
+  )
   |~| 
   C1::beginSendWithin.me?x -> (
     ( altSync?altThread!me!c1!x -> C1::endSendWithin.me.true -> ChanThreadLin(me)
@@ -155,14 +198,22 @@ ChanThreadLin(me) =
   )
   |~|
   C1::beginReceiveWithin.me -> (
-    sync?other:Others!me!c1?x -> 
-      C1::endReceiveWithin.me.Some.x -> ChanThreadLin(me) 
+    ( sync?other:Others!me!c1?x -> C1::endReceiveWithin.me.Some.x -> 
+        ChanThreadLin(me) 
+      []
+      altSync.me?altThread!c1?x -> C1::endReceiveWithin.me.Some.x -> 
+        ChanThreadLin(me) 
+    )
     [> C1::endReceiveWithin.me.None -> ChanThreadLin(me) 
   )
   |~|
   C2::beginReceiveWithin.me -> (
-    sync?other:Others!me!c2?x -> 
-      C2::endReceiveWithin.me.Some.x -> ChanThreadLin(me) 
+    ( sync?other:Others!me!c2?x -> 
+        C2::endReceiveWithin.me.Some.x -> ChanThreadLin(me) 
+      []
+      altSync.me?altThread!c2?x -> C2::endReceiveWithin.me.Some.x -> 
+        ChanThreadLin(me) 
+    )
     [> C2::endReceiveWithin.me.None -> ChanThreadLin(me) 
   )
   |~|
@@ -176,7 +227,7 @@ alphaChanThreadLin(me) = {|
   C2::beginSendWithin.me, C2::endSendWithin.me,
   C1::beginReceiveWithin.me, C1::endReceiveWithin.me,
   C2::beginReceiveWithin.me, C2::endReceiveWithin.me,
-  altSync.AltThread.me, sync.me, sync.t.me |
+  altSync.AltThread.me, altSync.me.AltThread, sync.me, sync.t.me |
     t <- diff(ThreadID,{me}) |}
 
 Lin(me) = if me == AltThread then AltLin(me) else ChanThreadLin(me)
@@ -190,3 +241,5 @@ Spec = (|| t <- ThreadID @ [alphaLin(t)] Lin(t)) \ {| altSync, sync |}
 assert Spec [T= System
 
 assert Spec [F= System 
+
+--assert CHAOS(C1::Interface) [T= C1::runWithAndHide(RUN(C1::Interface))
