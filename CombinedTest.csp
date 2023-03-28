@@ -46,7 +46,13 @@ instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
 
 -- The thread that runs the Alt repeatedly. 
 
+-- Allow all ops
+FLAG = true
+
+CLOSEFLAG = not FLAG
+
 TheAltThread(me) = 
+FLAG & -- FIXME
   A1::beginAlt.me -> (
     A1::endAlt.me.A1::AltReceive?i.x -> TheAltThread(me) 
     [] 
@@ -54,27 +60,31 @@ TheAltThread(me) =
   )
   |~| STOP
 
+
 -- A thread that tries to send on a channel
 
 -- Thread with identity me, which repeatedly sends or receives, or neither.
 Thread(me) = 
-  C1::beginSend.me?x -> C1::endSend.me -> Thread(me) 
+  C1::beginSend.me?x -> C1::endSend.me?res -> Thread(me) 
   |~|
-  C2::beginSend.me?x -> C2::endSend.me -> Thread(me)
+  C2::beginSend.me?x -> C2::endSend.me?res -> Thread(me)
   |~|
-  C1::beginReceive.me -> C1::endReceive.me?x -> Thread(me)
+  C1::beginReceive.me -> C1::endReceive.me?res -> Thread(me)
   |~|
-  C2::beginReceive.me -> C2::endReceive.me?x -> Thread(me)
+  C2::beginReceive.me -> C2::endReceive.me?res -> Thread(me)
   |~|
+FLAG & ( -- FIXME
   C1::beginSendWithin.me?x -> C1::endSendWithin.me?b -> Thread(me)
   |~|
   C2::beginSendWithin.me?x -> C2::endSendWithin.me?b -> Thread(me)
   |~|
--- false &
   C1::beginReceiveWithin.me -> C1::endReceiveWithin.me?ox -> Thread(me)
   |~|
--- false & -- FIXME
   C2::beginReceiveWithin.me -> C2::endReceiveWithin.me?ox -> Thread(me)
+)
+  |~|
+CLOSEFLAG &  C1::beginClose.me -> C1::endClose.me -> Thread(me)
+-- FIXME: and C2
   |~| 
   STOP
 
@@ -139,6 +149,11 @@ channel altSync : ThreadID . ThreadID . ChanID . Data
 -- synchronsation between a sender and receiver
 channel sync : ThreadID . ThreadID . ChanID . Data
 
+-- channel closing linearization point
+channel close: ThreadID . ChanID
+
+channel isClosed: ThreadID . ChanID
+
 -- Lineariser for the Alt thread.
 AltLin(me) = 
   let inPorts = { c | InPortBranch.c <- set(branches) }
@@ -158,27 +173,53 @@ alphaAltLin(me) = union(
   {| altSync.t.me | t <- ChanThreads |}
 )
 
+-- Specification object for a channel: keeps track of whether the channel is
+-- closed.
+ChanSpec(c) = 
+  sync?_?_!c?_ -> ChanSpec(c) 
+  [] altSync?_?_!c?_ -> ChanSpec(c) 
+  [] close?_!c -> ChanSpecClosed(c)
+ChanSpecClosed(c) =
+  isClosed?_!c -> ChanSpecClosed(c) [] close?_!c -> ChanSpecClosed(c)
+alphaChanSpecs = {| sync, altSync, close, isClosed |} 
+
+-- FIXME: extend to C2 closing
 -- Lineariser for a channel thread.
 ChanThreadLin(me) = 
   let Others = diff(ChanThreads, {me}) within
   C1::beginSend.me?x -> (
-    altSync?altThread!me!c1!x -> C1::endSend.me -> ChanThreadLin(me)
-    [] sync.me?other:Others!c1!x -> C1::endSend.me -> ChanThreadLin(me)
+    altSync?altThread!me!c1!x -> C1::endSend.me.SendSuccess -> ChanThreadLin(me)
+    [] 
+    sync.me?other:Others!c1!x -> (
+      isClosed.me.c1 -> C1::endSend.me.SendClosed -> ChanThreadLin(me)
+      [> C1::endSend.me.SendSuccess -> ChanThreadLin(me)
+    )
+    [] 
+    isClosed.me.c1 -> C1::endSend.me.SendClosed -> ChanThreadLin(me)
   )
   |~|
   C2::beginSend.me?x -> (
-    altSync?altThread!me!c2!x -> C2::endSend.me -> ChanThreadLin(me)
-    [] sync.me?other:Others!c2!x -> C2::endSend.me -> ChanThreadLin(me)
+    altSync?altThread!me!c2!x -> C2::endSend.me.SendSuccess -> ChanThreadLin(me)
+    [] 
+    sync.me?other:Others!c2!x -> C2::endSend.me.SendSuccess -> ChanThreadLin(me)
   )
   |~|
   C1::beginReceive.me -> ( 
-    sync?other:Others!me!c1?x -> C1::endReceive.me.x -> ChanThreadLin(me)
-    [] altSync.me?altThread!c1?x -> C1::endReceive.me.x -> ChanThreadLin(me)
+    sync?other:Others!me!c1?x -> C1::endReceive.me.ReceiveSuccess.x ->  
+      ChanThreadLin(me)
+    [] 
+    altSync.me?altThread!c1?x -> C1::endReceive.me.ReceiveSuccess.x -> 
+      ChanThreadLin(me)
+    [] 
+    isClosed.me.c1 -> C1::endReceive.me.ReceiveClosed -> ChanThreadLin(me)
   )
   |~|
   C2::beginReceive.me -> (
-    sync?other:Others!me!c2?x -> C2::endReceive.me.x -> ChanThreadLin(me) 
-    [] altSync.me?altThread!c2?x -> C2::endReceive.me.x -> ChanThreadLin(me)
+    sync?other:Others!me!c2?x -> C2::endReceive.me.ReceiveSuccess.x -> 
+      ChanThreadLin(me) 
+    [] 
+    altSync.me?altThread!c2?x -> C2::endReceive.me.ReceiveSuccess.x ->
+      ChanThreadLin(me)
   )
   |~| 
   C1::beginSendWithin.me?x -> (
@@ -217,6 +258,9 @@ ChanThreadLin(me) =
     [> C2::endReceiveWithin.me.None -> ChanThreadLin(me) 
   )
   |~|
+  C1::beginClose.me -> close.me.c1 -> C1::endClose.me -> ChanThreadLin(me)
+-- FIXME: and C2
+  |~|
   STOP
 
 alphaChanThreadLin(me) = {| 
@@ -227,7 +271,10 @@ alphaChanThreadLin(me) = {|
   C2::beginSendWithin.me, C2::endSendWithin.me,
   C1::beginReceiveWithin.me, C1::endReceiveWithin.me,
   C2::beginReceiveWithin.me, C2::endReceiveWithin.me,
-  altSync.AltThread.me, altSync.me.AltThread, sync.me, sync.t.me |
+  C1::beginClose.me, C1::endClose.me, C2::beginClose.me, C2::endClose.me,
+  
+  altSync.AltThread.me, altSync.me.AltThread, sync.me, sync.t.me, 
+  close.me, isClosed.me |
     t <- diff(ThreadID,{me}) |}
 
 Lin(me) = if me == AltThread then AltLin(me) else ChanThreadLin(me)
@@ -236,10 +283,27 @@ alphaLin(me) =
   if me == AltThread then alphaAltLin(me) else alphaChanThreadLin(me)
   
 -- Combine the linearisers to create the specification
-Spec = (|| t <- ThreadID @ [alphaLin(t)] Lin(t)) \ {| altSync, sync |}
+Spec = (
+  (|| t <- ThreadID @ [alphaLin(t)] Lin(t)) 
+  [| alphaChanSpecs |]
+  (||| c <- ChanID @ ChanSpec(c))
+) \ {| altSync, sync, close, isClosed |}
 
 assert Spec [T= System
 
 assert Spec [F= System 
 
 --assert CHAOS(C1::Interface) [T= C1::runWithAndHide(RUN(C1::Interface))
+
+Reg = 
+  C1::beginClose.T1 -> C1::endClose.T1 -> (
+    C2::beginSend.T1.B -> (
+      C2::beginReceive.T2 -> 
+        C2::endReceive.T2.ReceiveSuccess.B -> STOP
+      |~| STOP
+    )
+    |~| STOP
+  )
+  |~| STOP
+
+assert Reg [F= (Spec [| Events |] Reg)

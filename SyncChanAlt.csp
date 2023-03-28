@@ -6,18 +6,22 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   include "Variable.csp"
   include "Macros.csp"
 
-  -- The value variable: the current or previous value.
+  -- The "value" variable: the current or previous value.
   channel getValue, setValue: ThreadID.Data
   Value = Var(head(seq(Data)), getValue, setValue)  
 
-  -- The full variable: is the current value of value valid?
+  -- The "full" variable: is the current value of value valid?
   channel getFull, setFull: ThreadID.Bool
   Full = Var(false, getFull, setFull)
 
   -- Number of threads
   N = card(ThreadID)
 
-  -- The receiversWaiting variable
+  -- The "isClosed" variable (actually "isChanClosed" in the implementation).
+  channel getIsClosed, setIsClosed : ThreadID.Bool
+  IsClosed = Var(false, getIsClosed, setIsClosed)
+
+  -- The "receiversWaiting" variable
   channel getReceiversWaiting, setReceiversWaiting : ThreadID.{0..N}
   ReceiversWaiting = Var(0, getReceiversWaiting, setReceiversWaiting)
 
@@ -31,13 +35,29 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     getReceiversWaiting.me?r -> 
     Assert(r > 0, setReceiversWaiting.me.r-1 -> SKIP)
 
+  Index = {0.. MaxIndex-1}
+
+  -- Optionally an AltID.  The value NoAlt corresponds to null in the
+  -- implementation.
+  datatype OptAlt = NoAlt | SomeAlt.AltID.Index
+
+  -- The "receivingAlt" variable
+  channel getReceivingAlt, setReceivingAlt : ThreadID.OptAlt
+  ReceivingAlt = Var(NoAlt, getReceivingAlt, setReceivingAlt)
+
+  -- The "sendingAlt" variable
+  channel getSendingAlt, setSendingAlt : ThreadID.OptAlt
+  SendingAlt = Var(NoAlt, getSendingAlt, setSendingAlt)
+
   -- All variables
 
-  Variables = Full ||| Value ||| ReceiversWaiting ||| ReceivingAlt ||| SendingAlt
+  Variables = 
+    Full ||| Value ||| IsClosed ||| ReceiversWaiting ||| 
+    ReceivingAlt ||| SendingAlt
 
   varEvents = 
     {| getFull, setFull, getValue, setValue, 
-       getReceiversWaiting, setReceiversWaiting, 
+       getReceiversWaiting, setReceiversWaiting, getIsClosed, setIsClosed,
        getReceivingAlt, setReceivingAlt, getSendingAlt, setSendingAlt |}
 
   -- Monitor and conditions
@@ -48,21 +68,29 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -------- Sending
 
   -- Thread me sends x
-  Send(me, x) = MonitorCondition::Mutex(me, Send1(me, x))
+  Send :: (ThreadID, Data, (SendResult) -> Proc) -> Proc
+  Send(me, x, cont) = MonitorCondition::MutexC(me, Send1(me, x), cont)
 
   -- slotEmptied.await(!full)
-  Send1(me, x) = 
-    let Test(cont) = getFull.me?f -> cont(not f) -- test of !full
-    within MonitorCondition::AwaitTest(me, SlotEmptied, Test); Send2(me, x)
+  Send1(me, x)(cont) = 
+    let Test(k) = -- test of !full || isClosed
+          getFull.me?f -> if not f then k(true) else getIsClosed.me?cl -> k(cl) 
+    within MonitorCondition::AwaitTest(me, SlotEmptied, Test); Send2(me, x, cont)
 
   -- if(tryAltReceive(x)) slotEmptied.signal() else ...
-  Send2(me, x) = 
-    let cont(res) =  
-      if res then MonitorCondition::Signal(me, SlotEmptied) else Send2a(me, x)
-    within TryAltReceive(me, x, cont)
+  Send2(me, x, cont) = 
+    getIsClosed.me?cl -> if cl then cont(SendClosed) else Send3(me, x, cont)
+
+  Send3(me, x, cont) = 
+    let k(res) =  
+      if res then MonitorCondition::Signal(me, SlotEmptied); cont(SendSuccess)
+      else Send4(me, x, cont)
+    within TryAltReceive(me, x, k)
 
   -- value = x; full = true 
-  Send2a(me, x) = setValue.me.x -> setFull.me.true -> CompleteSend(me)
+  Send4(me, x, cont) = 
+    setValue.me.x -> setFull.me.true -> CompleteSend(me);
+    getIsClosed.me?cl -> if cl then cont(SendClosed) else cont(SendSuccess)
 
   -- maybeSignalToReceiver:
   -- if(receiversWaiting > 0){ slotFull.signal(); receiversWaiting -= 1 }
@@ -113,12 +141,15 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -------- Receiving
 
   -- Thread me receives value, and applies cont to it.
-  Receive :: (ThreadID, (Data) -> Proc) -> Proc
+  Receive :: (ThreadID, (ReceiveResult) -> Proc) -> Proc
   Receive(me, cont) = 
     MonitorCondition::MutexC(me, Receive1(me), cont)
 
-  -- var result = tryAltSend
-  Receive1(me)(cont) = TryAltSend(me, \ res @ ReceiveLoop(me, cont, res))
+  -- checkOpen; var result = tryAltSend
+  Receive1(me)(cont) = 
+    getIsClosed.me?cl ->
+    if cl then cont(ReceiveClosed)
+    else TryAltSend(me, \ res @ ReceiveLoop(me, cont, res))
 
   -- while(result.isEmpty && !full){ ... }
   ReceiveLoop(me, cont, result) = 
@@ -129,10 +160,14 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
       else 
         -- receiversWaiting += 1; slotFull.await()
         IncReceiversWaiting(me); MonitorCondition::Await(me, SlotFull);
-        -- if(!full) result = tryAltSend
-        getFull.me?f1 -> 
-        if not f1 then TryAltSend(me, \ res @ ReceiveLoop(me, cont, res))
-        else ReceiveLoop(me, cont, result)
+        -- checkOpen
+        getIsClosed.me?cl ->
+        if cl then cont(ReceiveClosed)
+        else
+          -- if(!full) result = tryAltSend
+          getFull.me?f1 -> 
+          if not f1 then TryAltSend(me, \ res @ ReceiveLoop(me, cont, res))
+          else ReceiveLoop(me, cont, result)
 
   -- Version using the While1 macro.  I think this is less clear. 
   -- Receive1b(me, cont, result) = 
@@ -148,17 +183,18 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   --   within While1(Test, Body, result, \ res @ Receive2(me, cont, res))
 
   -- Post while loop.  If result is a Some value, return the body.
-  Receive2(me, cont, Some.x) = cont(x)
+  Receive2(me, cont, Some.x) = cont(ReceiveSuccess.x)
 
   -- result is None.  assert(full); ...
   Receive2(me, cont, None) =
-    getFull.me?f -> Assert1(f); CompleteReceive(me, cont)
+    getFull.me?f -> Assert1(f); CompleteReceive(me, \ v @ cont(ReceiveSuccess.v))
 
   -- completeReceive: full = false; continue.signal(); slotEmptied.signal();
   -- unlock and return value
   CompleteReceive(me, cont) = 
     setFull.me.false -> MonitorCondition::Signal(me, Continue); 
-    MonitorCondition::Signal(me, SlotEmptied); getValue.me?v -> cont(v) 
+    MonitorCondition::Signal(me, SlotEmptied); 
+    getValue.me?v -> cont(v) 
 
   ---- receiveWithin
 
@@ -229,21 +265,21 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   ReceiveWithinPostLoop(me, cont, None, false) = 
     getFull.me?f -> Assert1(f); CompleteReceive(me, \ v @ cont(Some.v))
 
+  ------------------ Closing of channel
+
+  Close(me) =  MonitorCondition::Mutex(me, Close1(me))
+
+  Close1(me) = 
+    -- isChanClosed = true
+    setIsClosed.me.true -> 
+    -- slotEmptied.signalAll(); slotFull.signalAll(); continue.signalAll()
+    MonitorCondition::SignalAll(me, SlotEmptied);
+    MonitorCondition::SignalAll(me, SlotFull);
+    MonitorCondition::SignalAll(me, Continue)
+    -- informAltInPortClosed()  // in InPort
+    -- informAltOutPortClosed() // in OutPort
+
   ------------------ Interactions with Alts. 
-
-  Index = {0.. MaxIndex-1}
-
-  -- Optionally an AltID.  The value NoAlt corresponds to null in the
-  -- implementation.
-  datatype OptAlt = NoAlt | SomeAlt.AltID.Index
-
-  -- The receivingAlt variable
-  channel getReceivingAlt, setReceivingAlt : ThreadID.OptAlt
-  ReceivingAlt = Var(NoAlt, getReceivingAlt, setReceivingAlt)
-
-  -- The sendingAlt variable
-  channel getSendingAlt, setSendingAlt : ThreadID.OptAlt
-  SendingAlt = Var(NoAlt, getSendingAlt, setSendingAlt)
 
   ----- tryAltReceive
 
@@ -354,7 +390,7 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
 
   -- A thread that performs operations, wrapping them in begin/end events
   Thread(me) = 
-    beginSend.me?x -> Send(me, x); endSend.me -> Thread(me)
+    beginSend.me?x -> Send(me, x, \ res @ endSend.me.res -> Thread(me))
     []
     beginReceive.me -> Receive(me, \ x @ endReceive.me.x -> Thread(me))
     [] 
@@ -363,6 +399,8 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     []
     beginReceiveWithin.me ->
       ReceiveWithin(me, \ ox @ endReceiveWithin.me.ox -> Thread(me))
+    []
+    beginClose.me -> Close(me); endClose.me -> Thread(me)
     []
     beginRegisterIn.me?alt?index -> 
       RegisterIn(me, alt, index, \rir @ endRegisterIn.me.alt.rir -> Thread(me))
@@ -396,7 +434,8 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -- Interface with client threads
   ClientInterface = {|
     beginSend, endSend, beginReceive, endReceive, 
-    beginSendWithin, endSendWithin, beginReceiveWithin, endReceiveWithin
+    beginSendWithin, endSendWithin, beginReceiveWithin, endReceiveWithin,
+    beginClose, endClose
   |}
 
   -- Interface with alts
@@ -412,10 +451,15 @@ exports
   Interface = union(ClientInterface, AltInterface)
 
   -- Signals before and after invocations or sends and receives
-  channel beginSend, endReceive, beginSendWithin : ThreadID . Data
-  channel beginReceive, endSend, beginReceiveWithin : ThreadID
+  channel beginSend, beginSendWithin : ThreadID . Data
+  channel beginReceive, beginReceiveWithin : ThreadID
+  channel endSend : ThreadID . SendResult
+  channel endReceive : ThreadID . ReceiveResult
   channel endSendWithin: ThreadID . Bool
   channel endReceiveWithin : ThreadID . Option
+
+  -- Signals for closing channel
+  channel beginClose, endClose: ThreadID
 
   -- Signals before and after invocations of registerIn/Out or deregisterIn/Out
   channel beginRegisterIn, beginDeregisterIn, beginDeregisterOut: 

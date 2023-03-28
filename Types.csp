@@ -5,7 +5,14 @@
 
 datatype Data = A | B
 
+-- The eqivalent ofthe Scala type Option[Data]
 datatype Option = None | Some.Data
+
+-- Results returned by receive operations.
+datatype ReceiveResult = ReceiveSuccess.Data | ReceiveClosed
+
+-- Results returned by send operations.
+datatype SendResult = SendSuccess | SendClosed
 
 -- The result of a RegisterIn
 datatype RegisterInResult = RegisterInSuccess.Data | RegisterInWaiting
