@@ -5,6 +5,10 @@
 Assert(b, P) = if b then P else DIV
 Assert1(b) = Assert(b, SKIP)
 
+-- Macro corresponding to if(test) P else Q.  
+If :: (((Bool) -> Proc) -> Proc, Proc, Proc) -> Proc
+If(test, P, Q) = test(\ res @ if res then P else Q)
+
 -- Macro corresponding to while(test){body}.  Note: this won't work when body
 -- updates thread-local parameters.  test is modelled by a function test such
 -- that test(cont) applies the continuation cont to the boolean result.

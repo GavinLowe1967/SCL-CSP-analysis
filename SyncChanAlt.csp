@@ -6,6 +6,9 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   include "Variable.csp"
   include "Macros.csp"
 
+  -- Do we follow the bug in the original version that 
+  BUG2 = true -- false
+
   -- The "value" variable: the current or previous value.
   channel getValue, setValue: ThreadID.Data
   Value = Var(head(seq(Data)), getValue, setValue)  
@@ -90,7 +93,16 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -- value = x; full = true 
   Send4(me, x, cont) = 
     setValue.me.x -> setFull.me.true -> CompleteSend(me);
-    getIsClosed.me?cl -> if cl then cont(SendClosed) else cont(SendSuccess)
+    if BUG2 then (
+      -- Old version: check if closed
+      getIsClosed.me?cl -> if cl then cont(SendClosed) else cont(SendSuccess)
+    )
+    else(
+      -- New version: check full first
+      getFull.me?f -> 
+      if not f then cont(SendSuccess)
+      else getIsClosed.me?cl -> Assert1(cl); cont(SendClosed)
+   )
 
   -- maybeSignalToReceiver:
   -- if(receiversWaiting > 0){ slotFull.signal(); receiversWaiting -= 1 }
@@ -102,18 +114,20 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
 
   -- completeSend: maybeSignalToReceiver; continue.await()
   CompleteSend(me) = 
-    MaybeSignalToReceiver(me); MonitorCondition::Await(me, Continue)
+    MaybeSignalToReceiver(me); MonitorCondition::Await(me, Continue);
+    (if BUG2 then SKIP else MonitorCondition::Signal(me, SlotEmptied)) 
 
   -- Timed sending
 
   -- Thread me does sendWithin(_)(x), and applies cont to it.
-  SendWithin :: (ThreadID, Data, (Bool) -> Proc) -> Proc
+  SendWithin :: (ThreadID, Data, (SendWithinResult) -> Proc) -> Proc
   SendWithin(me, x, cont) = 
     MonitorCondition::MutexC(me, SendWithin1(me, x), cont)
 
   -- val timeout = !slotEmptied.awaitNanos(nanos, !full || isClosed)
   SendWithin1(me, x)(cont) = 
-    let Test(cont1) = getFull.me?f -> cont1(not f) -- test "!full"
+    let Test(k) = -- test "!full || isClosed"
+          getFull.me?f -> if not f then k(true) else getIsClosed.me?c -> k(c) 
         Cont(b) = SendWithin2(me, x, cont, not b) -- continuation on result
     within MonitorCondition::TimedAwaitTest(me, SlotEmptied, Test, Cont)
 
@@ -121,22 +135,41 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -- else{ assert(!full); value = x; full = true    // deposit my value
   --       maybeSignalToReceiver; ... }
   SendWithin2(me, x, cont, timeout) = 
-    if(timeout) then cont(false) 
+    getIsClosed.me?c -> 
+    if c then cont(SendWithinClosed)
+    else if(timeout) then cont(SendWithinTimeout) 
     else
       getFull.me?f -> Assert1(not f); setValue.me.x -> setFull.me.true -> 
       MaybeSignalToReceiver(me); SendWithin3(me, x, cont)
   
   -- val success = continue.awaitNanos(deadline-nanoTime)
   SendWithin3(me, x, cont) = 
-    let cont1(success) = if success then cont(true) else SendWithin4(me, x, cont)
-    within MonitorCondition::TimedAwait(me, Continue, cont1)
+    let k(success) = SendWithin3a(me, x, cont, success)
+        --  if success then cont(SendWithinSuccess) else SendWithin4(me, x, cont)
+    within MonitorCondition::TimedAwait(me, Continue, k)
+
+  -- checkOpen; if(success) true else ...   
+  SendWithin3a(me, x, cont, success) = 
+if BUG2 then
+    -- Old version: 
+    getIsClosed.me?c -> 
+    if c then cont(SendWithinClosed)
+    else if(success) then cont(SendWithinSuccess) 
+    else SendWithin4(me, x, cont)
+else
+    if success then 
+      MonitorCondition::Signal(me, SlotEmptied); cont(SendWithinSuccess) 
+    else
+      getIsClosed.me?c -> 
+      if c then cont(SendWithinClosed) 
+      else SendWithin4(me, x, cont)
   
   -- Case of no corresponding receiver
   -- assert(full && value == x); full = false; slotEmptied.signal(); false
   SendWithin4(me, x, cont) = 
     getFull.me?f -> getValue.me?x1 -> Assert1(f and x == x1);
     setFull.me.false -> MonitorCondition::Signal(me, SlotEmptied);
-    cont(false) 
+    cont(SendWithinTimeout) 
 
   -------- Receiving
 
@@ -193,7 +226,7 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -- unlock and return value
   CompleteReceive(me, cont) = 
     setFull.me.false -> MonitorCondition::Signal(me, Continue); 
-    MonitorCondition::Signal(me, SlotEmptied); 
+    (if BUG2 then MonitorCondition::Signal(me, SlotEmptied) else SKIP); 
     getValue.me?v -> cont(v) 
 
   ---- receiveWithin
@@ -445,17 +478,17 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     beginMaybeReceive, endMaybeReceive, beginMaybeSend, endMaybeSend
   |}
 
-
-exports
   -- Interface with client threads and alts
   Interface = union(ClientInterface, AltInterface)
+
+exports
 
   -- Signals before and after invocations or sends and receives
   channel beginSend, beginSendWithin : ThreadID . Data
   channel beginReceive, beginReceiveWithin : ThreadID
   channel endSend : ThreadID . SendResult
   channel endReceive : ThreadID . ReceiveResult
-  channel endSendWithin: ThreadID . Bool
+  channel endSendWithin: ThreadID . SendWithinResult
   channel endReceiveWithin : ThreadID . Option
 
   -- Signals for closing channel
@@ -475,13 +508,6 @@ exports
 
   channel beginMaybeSend : ThreadID . AltID . Index
   channel endMaybeSend : ThreadID . AltID . Option 
-
-  -- The interface the alt presents to a channel thread.  Note: this doesn't
-  -- include callbacks from the alt to the channel.
-  threadInterface(t) = {|
-    beginSend.t, endSend.t, beginReceive.t, endReceive.t, 
-    beginSendWithin.t, endSendWithin.t, beginReceiveWithin.t, endReceiveWithin.t
-  |}
 
   ------ Administrative functions
 

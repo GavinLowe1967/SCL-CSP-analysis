@@ -1,0 +1,579 @@
+-- A module representing a synchronous channel.  This version does not include
+-- closing of channels.  
+-- 
+-- This file assumes that RegisterInResult is in scope.
+module SyncChan(ThreadID, AltID, Data, MaxIndex)
+  include "Variable.csp"
+  include "Macros.csp"
+
+  -- The "value" variable: the current or previous value.
+  channel getValue, setValue: ThreadID.Data
+  Value = Var(head(seq(Data)), getValue, setValue)  
+
+  -- The "status" variable: the current status of an exchange.
+  datatype StatusT = Empty | Filled | Read
+  channel getStatus, setStatus : ThreadID . StatusT
+  Status = Var(Empty, getStatus, setStatus)
+
+  -- The "isClosed" variable (actually "isChanClosed" in the implementation).
+  channel getIsClosed, setIsClosed : ThreadID.Bool
+  IsClosed = Var(false, getIsClosed, setIsClosed)
+
+  -- macro for if(isClosed) P else Q
+  IfClosed(me, P, Q) = getIsClosed.me?cl -> if cl then P else Q
+
+  -- Number of threads
+  N = card(ThreadID)
+
+  -- The "receiversWaiting" variable
+  channel getReceiversWaiting, setReceiversWaiting : ThreadID.{0..N}
+  ReceiversWaiting = Var(0, getReceiversWaiting, setReceiversWaiting)
+
+  -- macro for receiversWaiting += 1
+  IncReceiversWaiting(me) = 
+    getReceiversWaiting.me?r -> 
+    Assert(r < N, setReceiversWaiting.me.r+1 -> SKIP)
+
+  -- macro for receiversWaiting -= 1
+  DecReceiversWaiting(me) =
+    getReceiversWaiting.me?r -> 
+    Assert(r > 0, setReceiversWaiting.me.r-1 -> SKIP)
+
+  -- The altWaiting variable
+  channel getAltWaiting, setAltWaiting : ThreadID.Bool
+  AltWaiting = Var(false, getAltWaiting, setAltWaiting)
+
+  Index = {0.. MaxIndex-1}
+
+  -- Optionally an AltID.  The value NoAlt corresponds to null in the
+  -- implementation.
+  datatype OptAlt = NoAlt | SomeAlt.AltID.Index
+
+  -- The "receivingAlt" variable
+  channel getReceivingAlt, setReceivingAlt : ThreadID.OptAlt
+  ReceivingAlt = Var(NoAlt, getReceivingAlt, setReceivingAlt)
+
+  -- The "sendingAlt" variable
+  channel getSendingAlt, setSendingAlt : ThreadID.OptAlt
+  SendingAlt = Var(NoAlt, getSendingAlt, setSendingAlt)
+
+  -- All variables
+
+  Variables = 
+    Status ||| Value ||| IsClosed ||| ReceiversWaiting ||| AltWaiting |||
+    ReceivingAlt ||| SendingAlt
+
+  varEvents = 
+    {| getStatus, setStatus, getValue, setValue, 
+       getReceiversWaiting, setReceiversWaiting, getIsClosed, setIsClosed,
+       getAltWaiting, setAltWaiting,
+       getReceivingAlt, setReceivingAlt, getSendingAlt, setSendingAlt |}
+
+  -- Monitor and conditions
+  datatype ConditionID = SlotFull | Continue | SlotEmptied | AltSlotEmptied
+
+  include "MonitorCondition.csp"
+
+  -- The signalSlotEmptied function
+  SignalSlotEmptied(me) =   
+    -- if(altWaiting) altSlotEmptied.signal() else slotEmptied.signal()
+    getAltWaiting.me?aw ->
+    if aw then MonitorCondition::Signal(me, AltSlotEmptied)
+    else MonitorCondition::Signal(me, SlotEmptied)
+
+  -------- Sending
+
+  -- Thread me sends x
+  Send :: (ThreadID, Data, (SendResult) -> Proc) -> Proc
+  Send(me, x, cont) = MonitorCondition::MutexC(me, Send1(me, x), cont)
+
+  -- slotEmptied.await(status == Empty || isClosed)
+  Send1(me, x)(cont) = 
+    let Test(k) = -- test of status == Empty || isClosed
+          getStatus.me?s -> 
+	  if s == Empty then k(true) else getIsClosed.me?cl -> k(cl) 
+    within MonitorCondition::AwaitTest(me, SlotEmptied, Test); Send2(me, x, cont)
+
+  -- checkOpen
+  Send2(me, x, cont) = IfClosed(me, cont(SendClosed), Send3(me, x, cont))
+
+  -- if(tryAltReceive(x)) signalSlotEmptied() (and done) else ...
+  Send3(me, x, cont) = 
+    If(TryAltReceive(me, x), 
+       SignalSlotEmptied(me); cont(SendSuccess), 
+       Send4(me, x, cont))
+
+  -- value = x; status = Filled; completeSend
+  Send4(me, x, cont) = 
+    setValue.me.x -> setStatus.me.Filled -> 
+    If(CompleteSend(me), cont(SendSuccess), cont(SendClosed))
+
+  -- completeSend: cont is a continuation that expects a boolean, with true
+  -- representing success and false that the channel is closed.
+  CompleteSend :: (ThreadID) -> ((Bool) -> Proc) -> Proc
+  CompleteSend(me)(cont) = 
+    -- maybeSignalToReceiver; continue.await() 
+    MaybeSignalToReceiver(me); MonitorCondition::Await(me, Continue);
+    getStatus.me?s -> 
+    if s == Read then      -- status = Empty; signalSlotEmptied()
+      setStatus.me.Empty -> SignalSlotEmptied(me); cont(true) -- success
+    else        -- assert(isClosed); status = Empty; throw new Closed
+      getIsClosed.me?c -> Assert1(c); setStatus.me.Empty -> cont(false) 
+
+  -- maybeSignalToReceiver: if(receiversWaiting > 0) slotFull.signal()
+  MaybeSignalToReceiver(me) = 
+    getReceiversWaiting.me?r ->
+    if r > 0 then MonitorCondition::Signal(me, SlotFull) else SKIP
+
+  -- Timed sending
+
+  -- Thread me does sendWithin(_)(x), and applies cont to it.
+  SendWithin :: (ThreadID, Data, (SendWithinResult) -> Proc) -> Proc
+  SendWithin(me, x, cont) = 
+    MonitorCondition::MutexC(me, SendWithin1(me, x), cont)
+
+  -- val timeout = !slotEmptied.awaitNanos(nanos, status == Empty || isClosed)
+  SendWithin1(me, x)(cont) = 
+    let Test(k) = -- test "status == Empty || isClosed"
+          getStatus.me?s -> 
+	  if s == Empty then k(true) else getIsClosed.me?c -> k(c) 
+        Cont(b) = SendWithin2(me, x, cont, not b) -- continuation on result
+    within MonitorCondition::TimedAwaitTest(me, SlotEmptied, Test, Cont)
+
+  -- code after initial wait; checkOpen
+  SendWithin2(me, x, cont, timeout) = 
+    IfClosed(me, cont(SendWithinClosed), SendWithin2a(me, x, cont, timeout))
+
+  SendWithin2a(me, x, cont, timeout) = 
+    if timeout then cont(SendWithinTimeout) 
+    else If(TryAltReceive(me, x), 
+            SignalSlotEmptied(me); cont(SendWithinSuccess),
+            SendWithin3(me, x, cont))
+
+  -- Final top-level branch; store value
+  SendWithin3(me, x, cont) = 
+    -- assert(status == Empty); value = x; status = Filled
+    IfStrict(getStatus.me?s -> Assert1(s == Empty)); 
+    setValue.me.x -> setStatus.me.Filled ->
+    -- maybeSignalToReceiver 
+    MaybeSignalToReceiver(me); 
+    -- val success = continue.awaitNanos(deadline-nanoTime)
+    MonitorCondition::TimedAwait(me, Continue, SendWithin4(me, x, cont))
+
+  -- if(status == Read) ...
+  SendWithin4(me, x, cont)(success) = 
+    getStatus.me?s ->
+    if s == Read then
+      -- assert(success); status = Empty; signalSlotEmptied(); true
+      Assert1(success); setStatus.me.Empty ->
+      SignalSlotEmptied(me); cont(SendWithinSuccess)
+    else
+      -- assert(status == Filled && value == x)
+      Assert1(s == Filled); getValue.me?v -> Assert1(v == x);
+      -- checkOpen
+      IfClosed(me, cont(SendWithinClosed), SendWithin5(me, cont, success))
+
+  -- assert(!success); status = Empty; signalSlotEmptied(); false
+  SendWithin5(me, cont, success) = 
+    Assert1(not success); setStatus.me.Empty -> 
+    SignalSlotEmptied(me); cont(SendWithinTimeout) 
+
+  -------- Receiving
+
+  -- Thread me receives value, and applies cont to it.
+  Receive :: (ThreadID, (ReceiveResult) -> Proc) -> Proc
+  Receive(me, cont) = 
+    MonitorCondition::MutexC(me, Receive1(me), cont)
+
+  -- checkOpen; var result = tryAltSend
+  Receive1(me)(cont) = 
+    IfClosed(me, cont(ReceiveClosed), 
+      TryAltSend(me, \ res @ ReceiveLoop(me, cont, res)) )
+
+  -- while(result.isEmpty && status != Filled){ ... }
+  ReceiveLoop(me, cont, result) = 
+    if result != None then Receive2(me, cont, result)
+    else 
+      getStatus.me?s -> 
+      if s == Filled then Receive2(me, cont, result)
+      else 
+        -- receiversWaiting += 1; slotFull.await(); receiversWaiting -= 1
+        IncReceiversWaiting(me); MonitorCondition::Await(me, SlotFull);
+        DecReceiversWaiting(me);
+        -- if(status != Filled) ...
+        getStatus.me?s -> 
+        if s != Filled then
+          TryAltSend(me, \ res @ ReceiveLoop2(me, cont, res))
+        else ReceiveLoop(me, cont, result)
+
+  -- if(result == None) checkOpen else go round the loop
+  ReceiveLoop2(me, cont, result) = 
+    if result == None then
+      IfClosed(me, cont(ReceiveClosed), ReceiveLoop(me, cont, result))
+    else ReceiveLoop(me, cont, result)
+
+  -- After loop.  result match{ ... }.
+  Receive2(me, cont, Some.x) = cont(ReceiveSuccess.x)
+
+  Receive2(me, cont, None) = CompleteReceive(me, \ v @ cont(ReceiveSuccess.v))
+
+  -- completeReceive.  The continuation cont is applied to the value received.
+  CompleteReceive :: (ThreadID, (Data) -> Proc) -> Proc 
+  CompleteReceive(me, cont) = 
+    -- require(status == Filled)
+    IfStrict(getStatus.me?s -> Assert1(s == Filled)); 
+    -- status = Read; continue.signal(); value
+    setStatus.me!Read -> MonitorCondition::Signal(me, Continue); 
+    getValue.me?v -> cont(v) 
+
+  ---- receiveWithin
+
+  -- Thread me does receiveWithin(_) with continuation cont. 
+  ReceiveWithin :: (ThreadID, (ReceiveWithinResult) -> Proc) -> Proc
+  ReceiveWithin(me, cont) = 
+    MonitorCondition::MutexC(me, ReceiveWithin1(me), cont)
+
+  -- checkOpen; var result = tryAltSend
+  ReceiveWithin1(me)(cont) = 
+    IfClosed(me, cont(ReceiveWithinClosed),
+      TryAltSend(me, \ result @ ReceiveWithin2(me, cont, result)))
+
+  -- if(result.isEmpty && status != Filled){ ... }
+  ReceiveWithin2(me, cont, result) = 
+    if result == None then 
+      getStatus.me?s -> 
+      if s != Filled then 
+        -- receiversWaiting += 1; do{...}
+	IncReceiversWaiting(me); ReceiveWithinLoopBody(me, cont, result)
+      else ReceiveWithinPostIf(me, cont, result, false)
+    else ReceiveWithinPostIf(me, cont, result, false)
+
+  -- timeout = !slotFull.awaitNanos(deadline-nanoTime)
+  ReceiveWithinLoopBody(me, cont, result) = 
+    -- Below b represents the result of the awaitNanos. 
+    MonitorCondition::TimedAwait(me, SlotFull, \b @ 
+      ReceiveWithinLoopBody2(me, cont, result, not b))
+
+  -- if(!timeout && status != Filled) ...
+  ReceiveWithinLoopBody2(me, cont, result, timeout) = 
+    if not timeout then
+      getStatus.me?s -> 
+      if s != Filled then -- result = tryAltSend
+        TryAltSend(me, \ res @ ReceiveWithinLoopBody3(me, cont, res, timeout))
+      else ReceiveWithinLoopEnd(me, cont, result, timeout)
+    else ReceiveWithinLoopEnd(me, cont, result, timeout)
+
+  -- if(result == None && isClosed){ receiversWaiting -= 1; throw new Closed}
+  ReceiveWithinLoopBody3(me, cont, result, timeout) =
+    if result == None then
+      IfClosed(me, DecReceiversWaiting(me); cont(ReceiveWithinClosed),
+        ReceiveWithinLoopEnd(me, cont, result, timeout) )
+    else ReceiveWithinLoopEnd(me, cont, result, timeout)
+
+  -- test at end of do loop
+  ReceiveWithinLoopEnd(me, cont, result, timeout) = 
+    let CaseFalse = -- if test false, receiversWaiting -= 1 
+      DecReceiversWaiting(me); ReceiveWithinPostIf(me, cont, result, timeout)
+    within
+    if(result == None) then 
+      getStatus.me?s -> 
+      if s != Filled and not timeout then 
+        ReceiveWithinLoopBody(me, cont, result) 
+      else CaseFalse
+    else CaseFalse
+
+  -- Code after if(...){ ... }
+  ReceiveWithinPostIf(me, cont, Some.x, timeout) =
+    Assert1(not timeout); cont(ReceiveWithinSuccess.x)
+
+  ReceiveWithinPostIf(me, cont, None, timeout) = 
+    -- if(status == Filled) Some(completeReceive)
+    getStatus.me?s -> 
+    if s == Filled then CompleteReceive(me, \ v @ cont(ReceiveWithinSuccess.v))
+    else   -- assert(timeout); checkOpen; None
+      Assert1(timeout);
+      IfClosed(me, cont(ReceiveWithinClosed), cont(ReceiveWithinTimeout))
+
+  ------------------ Closing of channel
+
+  Close(me) =  MonitorCondition::Mutex(me, Close1(me))
+
+  Close1(me) = 
+    -- if(!isChanClosed) ...
+    getIsClosed.me?cl -> if not cl then Close2(me) else SKIP
+
+  Close2(me) = 
+    -- isChanClosed = true
+    setIsClosed.me.true -> 
+    -- slotEmptied.signalAll();  altSlotEmptied.signal()
+    -- slotFull.signalAll(); continue.signalAll()
+    MonitorCondition::SignalAll(me, SlotEmptied);
+    MonitorCondition::Signal(me, AltSlotEmptied);
+    MonitorCondition::SignalAll(me, SlotFull);
+    MonitorCondition::SignalAll(me, Continue);
+    InformAltInPortClosed(me); InformAltOutPortClosed(me)
+
+  -- informAltInPortClosed (in InPort.scala)
+  InformAltInPortClosed(me) = 
+    getReceivingAlt.me.NoAlt -> SKIP
+    []
+    getReceivingAlt.me.SomeAlt?alt.index -> ClosePort(me, alt, index);
+      setReceivingAlt.me.NoAlt -> SKIP
+
+  -- informAltOutPortClosed (in OutPort.scala)
+  InformAltOutPortClosed(me) = 
+    getSendingAlt.me.NoAlt -> SKIP
+    []
+    getSendingAlt.me.SomeAlt?alt.index -> ClosePort(me, alt, index);
+      setSendingAlt.me.NoAlt -> SKIP
+
+  -- call alt.portClosed
+  ClosePort(me, alt, index) = 
+    beginPortClosed.me.alt.index -> endPortClosed.me.alt -> SKIP
+
+  ------------------ Interactions with Alts. 
+
+  ----- tryAltReceive (in InPort.scala)
+
+  -- Try to have current registered alt (if any) receive x.  Return true if
+  -- successful.
+  TryAltReceive :: (ThreadID, Data) -> ((Bool) -> Proc) -> Proc
+  TryAltReceive(me, x)(cont) = 
+    getReceivingAlt.me.SomeAlt?alt?index -> (
+      -- assert(!canReceive); receivingAlt = null
+      IfStrict(getStatus.me?s -> Assert1(s != Filled)); 
+      setReceivingAlt.me.NoAlt ->
+      -- alt.maybeReceive(x, index, iter); Try to have alt receive x.
+      beginMaybeReceive.me.alt.index.x -> endMaybeReceive.me.alt?res -> cont(res)
+    )
+    []  
+    getReceivingAlt.me.NoAlt -> cont(false) -- no registered alt
+
+  ----- tryAltSend (in OutPort)
+  -- Try to have current alt (if any) send a value.  
+  TryAltSend(me, cont) = 
+    getSendingAlt.me.SomeAlt?alt?index -> setSendingAlt.me.NoAlt ->
+      -- Try to have alt send value
+      beginMaybeSend.me.alt.index -> endMaybeSend.me.alt?res -> cont(res)
+    []
+    getSendingAlt.me.NoAlt -> cont(None)
+
+  ----- registerIn/Out (in InPort.scala/OutPort.scala)
+
+-- IMPROVE, include iter.
+
+  -- Thread me, in an alt, does registerIn with continuation cont
+  RegisterIn :: (ThreadID, AltID, Int, (RegisterInResult) -> Proc) -> Proc
+  RegisterIn(me, alt, index, cont) = 
+    MonitorCondition::MutexC(me, RegisterIn1(me, alt, index), cont)
+
+  -- checkCanRegisterIn
+  RegisterIn1(me, alt, index)(cont) = 
+    CheckNoAlts(me); RegisterIn2(me, alt, index, cont)
+
+  -- Check no alts are registered: checkCanregisterIn/Out in Chan.scala
+  CheckNoAlts(me) = 
+    getReceivingAlt.me?a -> Assert1(a == NoAlt);
+    getSendingAlt.me?a -> Assert1(a == NoAlt) 
+
+  -- If(canReceive) ...; canReceive in SyncChan just reads full
+  RegisterIn2(me, alt, index, cont) = 
+    -- if(isClosed) RegisterInClosed
+    IfClosed(me, cont(RegisterInClosed),
+      -- if(canReceive) ... (defined in SyncChan as Status == Filled)
+      getStatus.me?s -> 
+      if s == Filled then
+        -- val result = completeReceive; RegisterInSuccess(result)
+        CompleteReceive(me, \ v @ cont(RegisterInSuccess.v))
+      else -- receivingAlt = (alt,index); RegisterInWaiting
+        setReceivingAlt.me.(SomeAlt.alt.index) -> cont(RegisterInWaiting) )
+
+  -- Thread me, in an alt, does registerOut with continuation cont
+  RegisterOut:: (ThreadID, AltID, Int, Data, (RegisterOutResult) -> Proc) -> Proc
+  RegisterOut(me, alt, index, x, cont) = 
+    MonitorCondition::MutexC(me, RegisterOut1(me, alt, index, x), cont)
+
+  -- checkCanRegisterOut; if(isClosedOut) RegisterOutClosed
+  RegisterOut1(me, alt, index, x)(cont) = 
+    CheckNoAlts(me); 
+    IfClosed(me, cont(RegisterOutClosed), RegisterOut2(me, alt, index, x, cont))
+
+  -- if(trySend(value)) ...
+  RegisterOut2(me, alt, index, x, cont) =
+    TrySend(me, x, RegisterOut3(me, alt, index, cont))
+
+  -- Process the result of trySend
+  RegisterOut3(me, alt, index, cont)(RegisterOutSuccess) = 
+    cont(RegisterOutSuccess)
+  RegisterOut3(me, alt, index, cont)(RegisterOutWaiting) = 
+    setSendingAlt.me.(SomeAlt.alt.index) -> cont(RegisterOutWaiting)
+  RegisterOut3(me, alt, index, cont)(RegisterOutClosed) = 
+    cont(RegisterOutClosed)
+
+  -- trySend(x).  Called by an alt within registerOut.  We replace the results
+  -- true, false, ClosedException of the concrete code with
+  -- RegisterOutSuccess, RegisterOutWaiting, RegisterOutClosed.
+  TrySend :: (ThreadID, Data, (RegisterOutResult) -> Proc) -> Proc
+  TrySend(me, x, cont) =
+    -- Maybe wait for the slot to be emptied
+    let Test(k) = 
+      -- test of status == Empty || receiversWaiting == 0 || isClosed
+      getStatus.me?s -> 
+      if s == Empty then k(true) 
+      else 
+        getReceiversWaiting.me?rw ->
+        if rw == 0 then k(true) else getIsClosed.me?c -> k(c)
+    within 
+      -- assert(!altWaiting); altWaiting = true
+      getAltWaiting.me?aw -> Assert1(not aw); setAltWaiting.me.true ->
+      -- altSlotEmptied.await(...)
+      MonitorCondition::AwaitTest(me, AltSlotEmptied, Test); 
+      -- altWaiting = false; ...
+      setAltWaiting.me.false -> TrySend1(me, x, cont)
+  
+  TrySend1 :: (ThreadID, Data, (RegisterOutResult) -> Proc) -> Proc
+  TrySend1(me, x, cont) =  
+    -- if(receiversWaiting == 0) ...
+    getReceiversWaiting.me?rw -> 
+    if rw == 0 then 
+      -- checkOpen
+      IfClosed(me, cont(RegisterOutClosed),
+        getStatus.me?s ->
+        --  if(status == Empty) slotEmptied.signal()
+        (if s == Empty then MonitorCondition::Signal(me, SlotEmptied) else SKIP);
+        cont(RegisterOutWaiting) ) -- cont(false)
+    else -- if(status == Empty) ... 
+      getStatus.me?s -> 
+      if s == Empty then 
+        -- store value, completeSend, return true
+        setValue.me.x -> setStatus.me.Filled -> 
+        If(CompleteSend(me), cont(RegisterOutSuccess), cont(RegisterOutClosed))
+      else cont(RegisterOutClosed)
+
+  ----- deregisterIn/Out
+
+  -- Thread me in Alt alt performing a deregisterIn
+  DeregisterIn :: (ThreadID, AltID, Int) -> Proc
+  DeregisterIn(me, alt, index) = 
+    MonitorCondition::Mutex(me, DeregisterIn1(me, alt, index))
+
+  DeregisterIn1(me, alt, index) = 
+    IfStrict(
+      getReceivingAlt.me?a -> Assert1(a == (SomeAlt.alt.index) or a == NoAlt));
+    setReceivingAlt.me.NoAlt -> SKIP
+
+  DeregisterOut(me, alt, index) = 
+    MonitorCondition::Mutex(me, DeregisterOut1(me, alt, index))
+
+  DeregisterOut1(me, alt, index) = 
+    IfStrict(
+      getSendingAlt.me?a -> Assert1(a == (SomeAlt.alt.index) or a == NoAlt));
+    setSendingAlt.me.NoAlt -> SKIP
+
+  ---------- Threads
+
+  -- A thread that performs operations, wrapping them in begin/end events
+  Thread(me) = 
+    beginSend.me?x -> Send(me, x, \ res @ endSend.me.res -> Thread(me))
+    []
+    beginReceive.me -> Receive(me, \ x @ endReceive.me.x -> Thread(me))
+    [] 
+    beginSendWithin.me?x -> 
+      SendWithin(me, x, \ b @ endSendWithin.me.b -> Thread(me))
+    []
+    beginReceiveWithin.me ->
+      ReceiveWithin(me, \ ox @ endReceiveWithin.me.ox -> Thread(me))
+    []
+    beginClose.me -> Close(me); endClose.me -> Thread(me)
+    []
+    beginRegisterIn.me?alt?index -> 
+      RegisterIn(me, alt, index, \rir @ endRegisterIn.me.alt.rir -> Thread(me))
+    [] 
+    beginDeregisterIn.me?alt.index -> 
+      (DeregisterIn(me, alt, index); endDeregisterIn.me.alt -> Thread(me))
+    []
+    beginRegisterOut.me?alt.index.value ->
+      RegisterOut(me, alt, index, value, 
+        \ror @ endRegisterOut.me.alt.ror -> Thread(me))
+    []
+    beginDeregisterOut.me?alt.index -> 
+      (DeregisterOut(me, alt, index); endDeregisterOut.me.alt -> Thread(me))
+
+  Threads = ||| t : ThreadID @ Thread(t)
+
+  --------  All internal processes and events
+
+  -- Internal processes and their events
+  Internals = MonitorCondition::runWith(Threads [| varEvents |] Variables)
+
+  internals = union(varEvents, MonitorCondition::events)
+
+  -- Compression.  This creates a slight compilation bottleneck. 
+  -- transparent diamond
+  -- compress(P) = diamond(P)
+  -- Internals0 = 
+  --   compress(MonitorCondition::runWithAndHide(Threads)) [| varEvents |] Variables
+  -- Internals = compress(Internals0 \ internals)
+
+  -- Interface with client threads
+  ClientInterface = {|
+    beginSend, endSend, beginReceive, endReceive, 
+    beginSendWithin, endSendWithin, beginReceiveWithin, endReceiveWithin,
+    beginClose, endClose
+  |}
+
+  -- Interface with alts
+  -- AltInterface = {|
+  --   beginRegisterIn, endRegisterIn, beginDeregisterIn, endDeregisterIn,
+  --   beginRegisterOut, endRegisterOut, beginDeregisterOut, endDeregisterOut,
+  --   beginMaybeReceive, endMaybeReceive, beginMaybeSend, endMaybeSend,
+  --   beginPortClosed, endPortClosed
+  -- |}
+
+  -- Interface with client threads and alts
+  -- Interface = union(ClientInterface, AltInterface)
+
+exports
+
+  -- Signals before and after invocations or sends and receives
+  channel beginSend, beginSendWithin : ThreadID . Data
+  channel beginReceive, beginReceiveWithin : ThreadID
+  channel endSend : ThreadID . SendResult
+  channel endReceive : ThreadID . ReceiveResult
+  channel endSendWithin: ThreadID . SendWithinResult
+  channel endReceiveWithin : ThreadID . ReceiveWithinResult
+
+  -- Signals for closing channel
+  channel beginClose, endClose: ThreadID
+
+  -- Signals before and after invocations of registerIn/Out or deregisterIn/Out
+  channel beginRegisterIn, beginDeregisterIn, beginDeregisterOut: 
+    ThreadID . AltID . Index
+  channel beginRegisterOut: ThreadID . AltID . Index . Data
+  channel endRegisterIn: ThreadID . AltID . RegisterInResult
+  channel endRegisterOut: ThreadID . AltID . RegisterOutResult
+  channel endDeregisterIn, endDeregisterOut: ThreadID . AltID
+
+  -- Events for calling back to Alts. 
+  channel beginMaybeReceive: ThreadID . AltID . Index . Data 
+  channel endMaybeReceive: ThreadID . AltID . Bool
+
+  channel beginMaybeSend : ThreadID . AltID . Index
+  channel endMaybeSend : ThreadID . AltID . Option 
+
+  channel beginPortClosed : ThreadID . AltID . Index
+  channel endPortClosed : ThreadID . AltID
+
+  ------ Administrative functions
+
+  -- Run P with this channel
+  -- runWith(P) = P [| Interface |] Internals
+
+  -- Run P with this channel, and hide internals
+  -- runWithAndHide(P) = runWith(P) \ internals
+
+  -- Run with P on the client interface, but leave the interface with alts
+  -- open.
+  runWithClientsAndHide(P) = (P [| ClientInterface |] Internals) \ internals
+
+endmodule

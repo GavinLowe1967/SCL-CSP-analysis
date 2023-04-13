@@ -1,3 +1,24 @@
+Wednesday: support closing in receiveWithin.  Then changes as below 
+
+In implementation:
+
+- Move slotEmptied.signal to completeSend;
+
+- After continue.await (in send4), 
+  assert(!full || closed), throw ClosedException if
+  full, otherwise slotEmptied.signal
+  
+- And similarly in sendWithinNanos
+
+This doesn't work.  Can have a sender t1 waiting on continue, and a timed
+sender t2 waiting on slotEmptied.  Then a receiver can empty the slot and
+signal.  If t2 timesout, it can fill the slot.  Then when t1 runs, it finds
+the slot full and throws an exception.  
+
+
+Otherwise t1 (sender) and t2 (receiver) can synchronise, t2 can return, then
+t2 can close channel, and t1 throws exception.
+
 Components
 ----------
 

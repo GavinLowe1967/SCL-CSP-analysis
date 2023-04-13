@@ -8,17 +8,30 @@ datatype Data = A | B
 -- The eqivalent ofthe Scala type Option[Data]
 datatype Option = None | Some.Data
 
+------ Results of send/receive operations
+
 -- Results returned by receive operations.
 datatype ReceiveResult = ReceiveSuccess.Data | ReceiveClosed
+
+datatype ReceiveWithinResult = 
+  ReceiveWithinSuccess.Data | ReceiveWithinTimeout | ReceiveWithinClosed
 
 -- Results returned by send operations.
 datatype SendResult = SendSuccess | SendClosed
 
+-- result returned by sendWithin operations. 
+datatype SendWithinResult = 
+  SendWithinSuccess | SendWithinTimeout | SendWithinClosed
+
+------- Results of reginsterIn/Out
+
 -- The result of a RegisterIn
-datatype RegisterInResult = RegisterInSuccess.Data | RegisterInWaiting
+datatype RegisterInResult = 
+  RegisterInSuccess.Data | RegisterInWaiting | RegisterInClosed
 
 -- The result of a RegisterOut
-datatype RegisterOutResult = RegisterOutSuccess | RegisterOutWaiting
+datatype RegisterOutResult = 
+  RegisterOutSuccess | RegisterOutWaiting | RegisterOutClosed
 
 -- The types of branches of Alts
 datatype AltBranch = InPortBranch.ChanID | OutPortBranch.ChanID
