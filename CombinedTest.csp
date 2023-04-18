@@ -48,7 +48,6 @@ include "Alt.csp"
 -- Create the alt.
 instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
 
--- include "Macros.csp"
 
 ------ Threads
 
@@ -107,14 +106,14 @@ System00 = C1::runWithClientsAndHide(C2::runWithClientsAndHide(Threads))
 
 System01 = 
   System00 [[
-    C1::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.Alt1.c1,
-    C1::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.Alt1.c1,
-    C1::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.Alt1.c1,
-    C1::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.Alt1.c1,
-    C1::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.Alt1.c1,
-    C1::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.Alt1.c1,
-    C1::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.Alt1.c1,
-    C1::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.Alt1.c1,
+    C1::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.c1,
+    C1::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.c1,
+    C1::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.c1,
+    C1::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.c1,
+    C1::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.c1,
+    C1::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.c1,
+    C1::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.c1,
+    C1::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.c1,
 
     C1::beginMaybeReceive.t.Alt1 <- A1::beginMaybeReceive.t,
     C1::endMaybeReceive.t.Alt1 <- A1::endMaybeReceive.t,
@@ -123,14 +122,14 @@ System01 =
     C1::beginPortClosed.t.Alt1 <- A1::beginPortClosed.t,
     C1::endPortClosed.t.Alt1 <- A1::endPortClosed.t,
 
-    C2::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.Alt1.c2,
-    C2::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.Alt1.c2,
-    C2::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.Alt1.c2,
-    C2::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.Alt1.c2,
-    C2::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.Alt1.c2,
-    C2::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.Alt1.c2,
-    C2::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.Alt1.c2,
-    C2::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.Alt1.c2,
+    C2::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.c2,
+    C2::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.c2,
+    C2::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.c2,
+    C2::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.c2,
+    C2::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.c2,
+    C2::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.c2,
+    C2::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.c2,
+    C2::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.c2,
 
     C2::beginMaybeReceive.t.Alt1 <- A1::beginMaybeReceive.t,
     C2::endMaybeReceive.t.Alt1 <- A1::endMaybeReceive.t,
@@ -223,13 +222,7 @@ ChanThreadLin(me) =
 
 -- Thread me sending x on c; endSend.me will signal the end of the sending. 
 LinSending(me, x, c, endSend) = 
-  sync.me?other:others(me)!c!x -> (
-    -- Note: it's possible that this thread synchronises (and the receiver
-    -- returns), but then this thread sees that the channel has closed.
-    -- isClosed.me.c -> endSend.me.SendClosed -> ChanThreadLin(me)
-    -- [> 
-    endSend.me.SendSuccess -> ChanThreadLin(me)
-  )
+  sync.me?other:others(me)!c!x -> endSend.me.SendSuccess -> ChanThreadLin(me)
   [] 
   altSync?altThread!me!c!x -> endSend.me.SendSuccess -> ChanThreadLin(me)
   [] 
@@ -247,11 +240,8 @@ LinReceiving(me, c, endReceive) =
 -- Thread me within sendWithin(x) on c; endSendWithin.me will signal the end
 -- of the sending.
 LinSendingWithin(me, x, c, endSendWithin) = 
-  ( sync.me?other:others(me)!c!x -> (
-      -- isClosed.me.c -> endSendWithin.me.SendWithinClosed -> ChanThreadLin(me)
-      -- [> 
-      endSendWithin.me.SendWithinSuccess -> ChanThreadLin(me)
-    )
+  ( sync.me?other:others(me)!c!x -> endSendWithin.me.SendWithinSuccess -> 
+      ChanThreadLin(me)
     [] 
     altSync?altThread!me!c!x -> endSendWithin.me.SendWithinSuccess -> 
       ChanThreadLin(me)

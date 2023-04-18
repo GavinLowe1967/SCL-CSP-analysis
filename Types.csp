@@ -3,7 +3,7 @@
 -- This files assumes that the type ChanID of channel identities has been
 -- defined.
 
-datatype Data = A | B
+datatype Data = A  | B
 
 -- The eqivalent ofthe Scala type Option[Data]
 datatype Option = None | Some.Data
@@ -31,7 +31,7 @@ datatype RegisterInResult =
 
 -- The result of a RegisterOut
 datatype RegisterOutResult = 
-  RegisterOutSuccess | RegisterOutWaiting | RegisterOutClosed
+  RegisterOutSuccess.Data | RegisterOutWaiting | RegisterOutClosed
 
 -- The types of branches of Alts
 datatype AltBranch = InPortBranch.ChanID | OutPortBranch.ChanID

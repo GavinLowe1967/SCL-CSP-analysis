@@ -117,8 +117,12 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     getStatus.me?s -> 
     if s == Read then      -- status = Empty; signalSlotEmptied()
       setStatus.me.Empty -> SignalSlotEmptied(me); cont(true) -- success
-    else        -- assert(isClosed); status = Empty; throw new Closed
-      getIsClosed.me?c -> Assert1(c); setStatus.me.Empty -> cont(false) 
+    else        
+      -- assert(isClosed)
+      getIsClosed.me?c -> Assert1(c); 
+      -- if(receiversWaiting == 0) throw new Closed 
+      getReceiversWaiting.me?rw ->
+      if(rw == 0) then cont(false) else cont(true)
 
   -- maybeSignalToReceiver: if(receiversWaiting > 0) slotFull.signal()
   MaybeSignalToReceiver(me) = 
@@ -389,22 +393,22 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
         setReceivingAlt.me.(SomeAlt.alt.index) -> cont(RegisterInWaiting) )
 
   -- Thread me, in an alt, does registerOut with continuation cont
-  RegisterOut:: (ThreadID, AltID, Int, Data, (RegisterOutResult) -> Proc) -> Proc
-  RegisterOut(me, alt, index, x, cont) = 
-    MonitorCondition::MutexC(me, RegisterOut1(me, alt, index, x), cont)
+  RegisterOut:: (ThreadID, AltID, Int, (RegisterOutResult) -> Proc) -> Proc
+  RegisterOut(me, alt, index, cont) = 
+    MonitorCondition::MutexC(me, RegisterOut1(me, alt, index), cont)
 
   -- checkCanRegisterOut; if(isClosedOut) RegisterOutClosed
-  RegisterOut1(me, alt, index, x)(cont) = 
+  RegisterOut1(me, alt, index)(cont) = 
     CheckNoAlts(me); 
-    IfClosed(me, cont(RegisterOutClosed), RegisterOut2(me, alt, index, x, cont))
+    IfClosed(me, cont(RegisterOutClosed), RegisterOut2(me, alt, index, cont))
 
   -- if(trySend(value)) ...
-  RegisterOut2(me, alt, index, x, cont) =
-    TrySend(me, x, RegisterOut3(me, alt, index, cont))
+  RegisterOut2(me, alt, index, cont) =
+    TrySend(me, RegisterOut3(me, alt, index, cont))
 
   -- Process the result of trySend
-  RegisterOut3(me, alt, index, cont)(RegisterOutSuccess) = 
-    cont(RegisterOutSuccess)
+  RegisterOut3(me, alt, index, cont)(RegisterOutSuccess.x) = 
+    cont(RegisterOutSuccess.x)
   RegisterOut3(me, alt, index, cont)(RegisterOutWaiting) = 
     setSendingAlt.me.(SomeAlt.alt.index) -> cont(RegisterOutWaiting)
   RegisterOut3(me, alt, index, cont)(RegisterOutClosed) = 
@@ -413,8 +417,8 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -- trySend(x).  Called by an alt within registerOut.  We replace the results
   -- true, false, ClosedException of the concrete code with
   -- RegisterOutSuccess, RegisterOutWaiting, RegisterOutClosed.
-  TrySend :: (ThreadID, Data, (RegisterOutResult) -> Proc) -> Proc
-  TrySend(me, x, cont) =
+  TrySend :: (ThreadID, (RegisterOutResult) -> Proc) -> Proc
+  TrySend(me, cont) =
     -- Maybe wait for the slot to be emptied
     let Test(k) = 
       -- test of status == Empty || receiversWaiting == 0 || isClosed
@@ -429,10 +433,10 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
       -- altSlotEmptied.await(...)
       MonitorCondition::AwaitTest(me, AltSlotEmptied, Test); 
       -- altWaiting = false; ...
-      setAltWaiting.me.false -> TrySend1(me, x, cont)
+      setAltWaiting.me.false -> TrySend1(me, cont)
   
-  TrySend1 :: (ThreadID, Data, (RegisterOutResult) -> Proc) -> Proc
-  TrySend1(me, x, cont) =  
+  TrySend1 :: (ThreadID, (RegisterOutResult) -> Proc) -> Proc
+  TrySend1(me, cont) =  
     -- if(receiversWaiting == 0) ...
     getReceiversWaiting.me?rw -> 
     if rw == 0 then 
@@ -445,9 +449,10 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     else -- if(status == Empty) ... 
       getStatus.me?s -> 
       if s == Empty then 
-        -- store value, completeSend, return true
-        setValue.me.x -> setStatus.me.Filled -> 
-        If(CompleteSend(me), cont(RegisterOutSuccess), cont(RegisterOutClosed))
+        -- store value
+        setValue.me$x -> setStatus.me.Filled -> 
+	-- call completeSend, and assert that this succeeds
+	CompleteSend(me)(\ res @ Assert1(res); cont(RegisterOutSuccess.x))
       else cont(RegisterOutClosed)
 
   ----- deregisterIn/Out
@@ -492,9 +497,8 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     beginDeregisterIn.me?alt.index -> 
       (DeregisterIn(me, alt, index); endDeregisterIn.me.alt -> Thread(me))
     []
-    beginRegisterOut.me?alt.index.value ->
-      RegisterOut(me, alt, index, value, 
-        \ror @ endRegisterOut.me.alt.ror -> Thread(me))
+    beginRegisterOut.me?alt.index ->
+      RegisterOut(me, alt, index, \ror @ endRegisterOut.me.alt.ror -> Thread(me))
     []
     beginDeregisterOut.me?alt.index -> 
       (DeregisterOut(me, alt, index); endDeregisterOut.me.alt -> Thread(me))
@@ -523,15 +527,13 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   |}
 
   -- Interface with alts
-  -- AltInterface = {|
-  --   beginRegisterIn, endRegisterIn, beginDeregisterIn, endDeregisterIn,
-  --   beginRegisterOut, endRegisterOut, beginDeregisterOut, endDeregisterOut,
-  --   beginMaybeReceive, endMaybeReceive, beginMaybeSend, endMaybeSend,
-  --   beginPortClosed, endPortClosed
-  -- |}
+  AltInterface = {|
+    beginRegisterIn, endRegisterIn, beginDeregisterIn, endDeregisterIn,
+    beginRegisterOut, endRegisterOut, beginDeregisterOut, endDeregisterOut,
+    beginMaybeReceive, endMaybeReceive, beginMaybeSend, endMaybeSend,
+    beginPortClosed, endPortClosed
+  |}
 
-  -- Interface with client threads and alts
-  -- Interface = union(ClientInterface, AltInterface)
 
 exports
 
@@ -549,7 +551,7 @@ exports
   -- Signals before and after invocations of registerIn/Out or deregisterIn/Out
   channel beginRegisterIn, beginDeregisterIn, beginDeregisterOut: 
     ThreadID . AltID . Index
-  channel beginRegisterOut: ThreadID . AltID . Index . Data
+  channel beginRegisterOut: ThreadID . AltID . Index 
   channel endRegisterIn: ThreadID . AltID . RegisterInResult
   channel endRegisterOut: ThreadID . AltID . RegisterOutResult
   channel endDeregisterIn, endDeregisterOut: ThreadID . AltID
@@ -564,13 +566,16 @@ exports
   channel beginPortClosed : ThreadID . AltID . Index
   channel endPortClosed : ThreadID . AltID
 
+  -- Interface with client threads and alts
+  Interface = union(ClientInterface, AltInterface)
+
   ------ Administrative functions
 
   -- Run P with this channel
-  -- runWith(P) = P [| Interface |] Internals
+  runWith(P) = P [| Interface |] Internals
 
   -- Run P with this channel, and hide internals
-  -- runWithAndHide(P) = runWith(P) \ internals
+  runWithAndHide(P) = runWith(P) \ internals
 
   -- Run with P on the client interface, but leave the interface with alts
   -- open.

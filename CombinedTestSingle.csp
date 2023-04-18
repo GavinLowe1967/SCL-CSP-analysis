@@ -101,14 +101,14 @@ System00 = C1::runWithClientsAndHide(Threads)
 
 System01 = 
   System00 [[
-    C1::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.Alt1.c1,
-    C1::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.Alt1.c1,
-    C1::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.Alt1.c1,
-    C1::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.Alt1.c1,
-    C1::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.Alt1.c1,
-    C1::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.Alt1.c1,
-    C1::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.Alt1.c1,
-    C1::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.Alt1.c1,
+    C1::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.c1,
+    C1::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.c1,
+    C1::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.c1,
+    C1::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.c1,
+    C1::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.c1,
+    C1::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.c1,
+    C1::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.c1,
+    C1::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.c1,
 
     C1::beginMaybeReceive.t.Alt1 <- A1::beginMaybeReceive.t,
     C1::endMaybeReceive.t.Alt1 <- A1::endMaybeReceive.t,
@@ -116,20 +116,6 @@ System01 =
     C1::endMaybeSend.t.Alt1 <- A1::endMaybeSend.t,
     C1::beginPortClosed.t.Alt1 <- A1::beginPortClosed.t,
     C1::endPortClosed.t.Alt1 <- A1::endPortClosed.t
-
-    -- C2::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.Alt1.c2,
-    -- C2::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.Alt1.c2,
-    -- C2::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.Alt1.c2,
-    -- C2::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.Alt1.c2,
-    -- C2::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.Alt1.c2,
-    -- C2::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.Alt1.c2,
-    -- C2::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.Alt1.c2,
-    -- C2::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.Alt1.c2,
-
-    -- C2::beginMaybeReceive.t.Alt1 <- A1::beginMaybeReceive.t,
-    -- C2::endMaybeReceive.t.Alt1 <- A1::endMaybeReceive.t,
-    -- C2::beginMaybeSend.t.Alt1 <- A1::beginMaybeSend.t,
-    -- C2::endMaybeSend.t.Alt1 <- A1::endMaybeSend.t
       | t <- ThreadID 
   ]]
 

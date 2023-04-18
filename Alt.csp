@@ -77,28 +77,27 @@ module Alt(this, branches, ThreadID, ChanID)
 
   -- Register with an InPort
   Register(me, cont, i, InPortBranch.c) = 
-    beginRegisterIn.me.this.c.i -> (
-      endRegisterIn.me.this.c.RegisterInSuccess?x -> 
+    beginRegisterIn.me.c.i -> (
+      endRegisterIn.me.c.RegisterInSuccess?x -> 
         setValueReceived.me.x -> setToRun.me.i -> 
         setDone.me.true -> AfterLoop(me, cont)
       [] 
-      endRegisterIn.me.this.c.RegisterInWaiting -> 
+      endRegisterIn.me.c.RegisterInWaiting -> 
         setEnabled.me.i.true -> IncNumEnabled(me); RegisterLoop(me, cont, i+1)
       []
-      endRegisterIn.me.this.c.RegisterInClosed -> RegisterLoop(me, cont, i+1)
+      endRegisterIn.me.c.RegisterInClosed -> RegisterLoop(me, cont, i+1)
     )
 
   -- Register with an OutPort
   Register(me, cont, i, OutPortBranch.c) = 
--- IMPROVE: value shouldn't be chosen here
-    beginRegisterOut.me.this.c.i$x -> (
-      endRegisterOut.me.this.c.RegisterOutSuccess -> setToRun.me.i -> 
+    beginRegisterOut.me.c.i -> (
+      endRegisterOut.me.c.RegisterOutSuccess?x -> setToRun.me.i -> 
         setDone.me.true -> setValueSent.me.Some.x -> AfterLoop(me, cont)
       []
-      endRegisterOut.me.this.c.RegisterOutWaiting -> 
+      endRegisterOut.me.c.RegisterOutWaiting -> 
         setEnabled.me.i.true -> IncNumEnabled(me); RegisterLoop(me, cont, i+1)
       []
-      endRegisterOut.me.this.c.RegisterOutClosed ->
+      endRegisterOut.me.c.RegisterOutClosed ->
         setEnabled.me.i.false -> RegisterLoop(me, cont, i+1)
     )
 
@@ -138,10 +137,10 @@ module Alt(this, branches, ThreadID, ChanID)
 
   -- Deregister branch at index i.
   Deregister(me, cont, i, InPortBranch.c) = 
-    beginDeregisterIn.me.this.c.i -> endDeregisterIn.me.this.c -> SKIP
+    beginDeregisterIn.me.c.i -> endDeregisterIn.me.c -> SKIP
 
   Deregister(me, cont, i, OutPortBranch.c) = 
-    beginDeregisterOut.me.this.c.i -> endDeregisterOut.me.this.c -> SKIP
+    beginDeregisterOut.me.c.i -> endDeregisterOut.me.c -> SKIP
 
   -- Run the branch toRun.
   RunBranch(me, cont) = 
@@ -288,16 +287,15 @@ exports
   channel endMaybeSend : ThreadID . Option 
 
   -- Channels for operations the alt calls on ports.
-  channel beginRegisterIn : ThreadID . {this} . ChanID . Index
-  channel endRegisterIn : ThreadID . {this} . ChanID . RegisterInResult
-  channel beginRegisterOut : ThreadID . {this} . ChanID . Index . Data
-  channel endRegisterOut : ThreadID . {this} . ChanID . RegisterOutResult
+  channel beginRegisterIn : ThreadID . ChanID . Index
+  channel endRegisterIn : ThreadID . ChanID . RegisterInResult
+  channel beginRegisterOut : ThreadID . ChanID . Index 
+  channel endRegisterOut : ThreadID . ChanID . RegisterOutResult
 
-  channel beginDeregisterIn : ThreadID . {this} . ChanID . Index
-  channel endDeregisterIn : ThreadID . {this} . ChanID
-  channel beginDeregisterOut : ThreadID . {this} . ChanID . Index 
-  channel endDeregisterOut : ThreadID . {this} . ChanID
--- IMPROVE: remove {this} fields
+  channel beginDeregisterIn : ThreadID . ChanID . Index
+  channel endDeregisterIn : ThreadID . ChanID
+  channel beginDeregisterOut : ThreadID . ChanID . Index 
+  channel endDeregisterOut : ThreadID . ChanID
 
   channel beginPortClosed : ThreadID . Index
   channel endPortClosed : ThreadID 
