@@ -159,11 +159,8 @@ Spec1(pendingEnds, pendingSends, pendingReceives, regStatus,
     )
     |~|
     C1::beginDeregisterIn.AltThread.Alt1?index -> (
-      if regStatus == (PendingInReg.index) then
-        let newPendingEnds = 
-          union(pendingEnds, {(AltThread, C1::endDeregisterIn.AltThread.Alt1)})
-        within
-        Spec1(newPendingEnds, pendingSends, pendingReceives, 
+      if regStatus == (InReg.index) then
+        Spec1(pendingEnds, pendingSends, pendingReceives, 
           PendingInDereg.index, pendingMaybeReceives, 
           union(pendingThreads, {AltThread}))
       else ProtocolFail
@@ -184,7 +181,7 @@ Spec1(pendingEnds, pendingSends, pendingReceives, regStatus,
               {(AltThread, C1::endRegisterIn.AltThread.Alt1.RegisterInWaiting)})
         within 
           Spec1(newPendingEnds, pendingSends, pendingReceives, InReg.index, 
-            pendingMaybeReceives, pendingThreads)
+            pendingMaybeReceives, add(pendingThreads, AltThread))
     within
     if pendingSends != {} then 
       NoSync 
@@ -200,37 +197,42 @@ Spec1(pendingEnds, pendingSends, pendingReceives, regStatus,
     else NoSync
   )
   []
-  -- Allow pending deregistration attempt to be linearised
-  isPendingInDereg(regStatus) & (
-    let PendingInDereg.index = regStatus within
-    Spec1(pendingEnds, pendingSends, pendingReceives, NoReg, 
-      pendingMaybeReceives, remove(pendingThreads, AltThread)) 
-  )
-  []
-  -- Allow calls to maybeReceive.  The calling thread retains the lock, so
-  -- there can be at most one such.
-  isRegIn(regStatus) and pendingSends != {} and pendingMaybeReceives == {} & (
-    let index = getIndex(regStatus) within
+  -- Linearisation of deregistrations and calls to maybeReceive
+  isRegIn(regStatus) and pendingMaybeReceives == {} & (
+    let index = getIndex(regStatus)
+        Dereg = 
+          let newPendingEnds = 
+            add(pendingEnds, (AltThread,C1::endDeregisterIn.AltThread.Alt1))
+          within
+          Spec1(newPendingEnds, pendingSends, pendingReceives, NoReg, 
+            pendingMaybeReceives, pendingThreads) 
+    within
+    if pendingSends != {} then
+      let MR = -- calls to maybeReceive
       |~| (t,x) <- pendingSends @
         C1::beginMaybeReceive.t.Alt1.index.x -> 
         Spec1(pendingEnds, remove(pendingSends, (t,x)), pendingReceives, 
           regStatus, add(pendingMaybeReceives, (t,index,x)), pendingThreads)
+      within
+      if isPendingInDereg(regStatus) then MR |~| Dereg else MR
+    else if isPendingInDereg(regStatus) then Dereg else STOP
   )
   []
   -- Allow returns from maybeReceive
   ( [] (t,index,x) <- pendingMaybeReceives @
       C1::endMaybeReceive.t.Alt1?res ->
       let newPendingMaybeReceives = remove(pendingMaybeReceives, (t,index,x)) 
+          newRegStatus = if isPendingInDereg(regStatus) then regStatus else NoReg
       within
       if res then
         -- Synchronisation
         let newPendingEnds = add(pendingEnds, (t,C1::endSend.t.SendSuccess))
         within
-          Spec1(newPendingEnds, pendingSends, pendingReceives, NoReg,
+          Spec1(newPendingEnds, pendingSends, pendingReceives, newRegStatus,
             newPendingMaybeReceives, pendingThreads)
       else -- failed to synchronise
-        Spec1(pendingEnds, add(pendingSends, (t,x)), pendingReceives, NoReg, 
-          newPendingMaybeReceives, pendingThreads)
+        Spec1(pendingEnds, add(pendingSends, (t,x)), pendingReceives, 
+          newRegStatus, newPendingMaybeReceives, pendingThreads)
   )
 
 
