@@ -1,0 +1,60 @@
+-- A test on the combination of an idealised alt and idealised channels. 
+
+
+-- Thread identities.  Thread AltThread will run the Alt; other threads will
+-- act on channels.
+datatype ThreadID = AltThread | T1 | T2 -- | T3 -- | T4
+
+others(t) = diff(ChanThreads, {t})
+
+ChanThreads =  diff(ThreadID, {AltThread})
+
+-- Identities of channels
+datatype ChanID = Chan0 | Chan1
+
+include "Types.csp"
+
+-- Identities of Alts
+datatype AltID = Alt1
+
+include "NewSyncChan.csp" 
+
+-- The list of branches in the alt
+branches =  <InPortBranch.Chan0, OutPortBranch.Chan1>
+
+size = length(branches)
+
+
+include "IdealisedChan.csp"
+
+-- Create channel
+instance C1 = SyncChan(ThreadID, AltID, Data, size)
+
+instance IC0 = IdealisedChan(size)
+
+instance IC1 = IdealisedChan(size)
+
+include "Alt.csp"
+
+-- Create the alt.
+instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
+
+include "IdealisedAlt.csp"
+
+IdealisedChannel1 =
+  IC0::ChannelSpec[[
+    C1::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.Chan0,
+    C1::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.Chan0,
+    C1::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.Chan0,
+    C1::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.Chan0,
+    C1::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.Chan0,
+    C1::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.Chan0,
+    C1::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.Chan0,
+    C1::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.Chan0,
+    C1::beginMaybeReceive.t.Alt1 <- A1::beginMaybeReceive.t,
+    C1::endMaybeReceive.t.Alt1 <- A1::endMaybeReceive.t,
+    C1::beginMaybeSend.t.Alt1 <- A1::beginMaybeSend.t,
+    C1::endMaybeSend.t.Alt1 <- A1::endMaybeSend.t,
+    C1::beginPortClosed.t.Alt1 <- A1::beginPortClosed.t,
+    C1::endPortClosed.t.Alt1 <- A1::endPortClosed.t
+      | t <- ThreadID ]]

@@ -1,0 +1,71 @@
+-- Check of an alt against its idealised model. 
+
+-- Thread identities.  Thread AltThread will run the Alt; other threads will
+-- act on channels.
+datatype ThreadID = AltThread | T1 | T2 | T3 -- | T4
+
+ChanThreads =  diff(ThreadID, {AltThread})
+
+-- Identities of channels
+datatype ChanID = Chan0 | Chan1
+
+include "Types.csp"
+
+-- Identities of Alts
+datatype AltID = Alt1
+
+-- Strict = true
+
+-- -- Execute P if Strict is set.  Used for optional assertions. 
+-- IfStrict(P) = if Strict then P else SKIP
+
+include "Alt.csp"
+
+-- The list of branches in the alt
+branches =  <InPortBranch.Chan0, OutPortBranch.Chan1>
+-- branches =  < InPortBranch.Chan0, InPortBranch.Chan1 >
+
+-- Create the alt.
+instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
+
+-- The alt thread
+TheAltThread = 
+  A1::beginAlt.AltThread -> A1::endAlt.AltThread?_ -> TheAltThread
+  |~|
+  STOP
+
+-- A channel thread
+ChanThread(me) = 
+  A1::beginMaybeReceive.me?index?x -> A1::endMaybeReceive.me?_ -> ChanThread(me)
+  |~|
+  A1::beginMaybeSend.me?index -> A1::endMaybeSend.me?_ -> ChanThread(me)
+  |~|
+  A1::beginPortClosed.me?index -> A1::endPortClosed.me -> ChanThread(me)
+  |~|
+  STOP
+
+Threads = (||| t <- ChanThreads @ ChanThread(t)) ||| TheAltThread
+
+-- Events that we don't try to constrain
+FreeEvents = {|  
+  A1::beginRegisterIn, A1::endRegisterIn,  
+  A1::beginRegisterOut, A1::endRegisterOut,
+  A1::beginDeregisterIn, A1::endDeregisterIn, 
+  A1::beginDeregisterOut, A1::endDeregisterOut
+|}
+
+-- Build the system
+System = A1::runWithAndHide(Threads ||| RUN(FreeEvents))
+
+include "IdealisedAlt.csp"
+
+assert IdealisedAlt::SpecF [T= System
+
+assert IdealisedAlt::SpecF [F= System
+
+assert IdealisedAlt::SpecD [FD= System
+
+-- I think the FD refinement implies the F refinement if Spec1 is divergence
+-- free.
+
+assert IdealisedAlt::Spec1 :[ divergence free ]

@@ -35,3 +35,8 @@ While1(test, body, state, cont) =
   test(state)(\ b @ 
     if b then body(state)(\ state' @ While1(test, body, state', cont)) 
     else cont(state))
+
+Strict = true
+
+-- Execute P if Strict is set.  Used for optional assertions. 
+IfStrict(P) = if Strict then P else SKIP

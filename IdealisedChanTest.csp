@@ -1,0 +1,75 @@
+-- A test on a SyncChan, comparing it to an idealised specification. 
+
+-- Thread identities.  Thread AltThread will run the Alt; other threads will
+-- act on channels.
+datatype ThreadID = AltThread | T1 | T2 -- | T3 -- | T4
+
+others(t) = diff(ChanThreads, {t})
+
+ChanThreads =  diff(ThreadID, {AltThread})
+
+-- Identities of channels
+datatype ChanID = Chan1
+
+include "Types.csp"
+
+-- Identities of Alts
+datatype AltID = Alt1
+
+
+include "NewSyncChan.csp" 
+
+-- Max # branches in an alt
+size = 2 
+
+-- Create channel
+instance C1 = SyncChan(ThreadID, AltID, Data, size)
+
+-- A channel thread, which alternates between begins and ends.
+Thread(me) = 
+  C1::beginSend.me?x -> C1::endSend.me?res -> Thread(me) 
+  |~|
+  C1::beginReceive.me -> C1::endReceive.me?res -> Thread(me)
+  |~|
+false & (
+  C1::beginSendWithin.me?x -> C1::endSendWithin.me?b -> Thread(me)
+  |~|
+  C1::beginReceiveWithin.me -> C1::endReceiveWithin.me?ox -> Thread(me)
+)
+  |~|
+  C1::beginClose.me -> C1::endClose.me -> Thread(me)
+  |~| 
+  STOP
+
+-- The alt thread, which alternates between begin and end events.
+TheAltThread(me, alt) = 
+  C1::beginRegisterIn.me.alt$index -> C1::endRegisterIn.me.alt?_ ->
+    TheAltThread(me, alt)
+  |~|
+  C1::beginDeregisterIn.me.alt$index -> C1::endDeregisterIn.me.alt ->
+    TheAltThread(me, alt)
+  |~| 
+  C1::beginRegisterOut.me.alt$index -> C1::endRegisterOut.me.alt?_ ->
+    TheAltThread(me, alt)
+  |~|
+  C1::beginDeregisterOut.me.alt$index -> C1::endDeregisterOut.me.alt ->
+    TheAltThread(me, alt)
+  |~|
+  STOP
+
+Threads = (||| t <- ChanThreads @ Thread(t))  ||| TheAltThread(AltThread, Alt1)
+
+-- The system to test
+System = C1::runWithAndHide(Threads ||| RUN(C1::AltCallBacks))
+
+include "IdealisedChan.csp"
+
+instance IC = IdealisedChan(size)
+
+assert IC::SpecF [T= System
+
+assert IC::SpecF [F= System
+
+assert IC::SpecD [FD= System
+
+assert IC::ChannelSpec :[ divergence free ]

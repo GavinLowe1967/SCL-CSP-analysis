@@ -3,7 +3,7 @@
 -- This files assumes that the type ChanID of channel identities has been
 -- defined.
 
-datatype Data = A  | B
+datatype Data = A | B
 
 -- The eqivalent ofthe Scala type Option[Data]
 datatype Option = None | Some.Data

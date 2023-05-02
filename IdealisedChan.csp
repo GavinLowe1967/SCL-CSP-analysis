@@ -1,335 +1,286 @@
--- A test on a SyncChan, comparing it to an idealised specification. 
+-- An idealised model of a SyncChan.
 
--- Thread identities.  Thread AltThread will run the Alt; other threads will
--- act on channels.
-datatype ThreadID = AltThread | T1 | T2  | T3 -- | T4
+-- This module assumes that the following are in scope: (1) the definitions in
+-- Types.csp; (2) a definition of ThreadID, including AltThread, and a
+-- corresponding definition of ChanThreads; (3) C1, an instance of a SyncChan
+-- based on size and ThreadID.  The events of the exported definitions are
+-- taken from C1.
 
-others(t) = diff(ChanThreads, {t})
+module IdealisedChan(size)
 
-ChanThreads =  diff(ThreadID, {AltThread})
+  -- Possible indices of branches.
+  Index = {0..size-1}
 
--- Identities of channels
-datatype ChanID = Chan1
-
-include "Types.csp"
-
--- Identities of Alts
-datatype AltID = Alt1
-
-Strict = true
-
--- Execute P if Strict is set.  Used for optional assertions. 
-IfStrict(P) = if Strict then P else SKIP
-
-include "NewSyncChan.csp" 
-
--- Max # branches in an alt
-size = 2 
-
--- Possible indices of branches.
-Index = {0..size-1}
-
--- Create channel
-instance C1 = SyncChan(ThreadID, AltID, Data, size)
-
--- A regulator that ensures a channel thread alternates between begins and ends.
-
-Reg(me) = 
-  C1::beginSend.me?x -> C1::endSend.me?res -> Reg(me) 
-  |~|
-  C1::beginReceive.me -> C1::endReceive.me?res -> Reg(me)
-  |~|
-false & (
-  C1::beginSendWithin.me?x -> C1::endSendWithin.me?b -> Reg(me)
-  |~|
-  C1::beginReceiveWithin.me -> C1::endReceiveWithin.me?ox -> Reg(me)
-)
-  |~|
-false &  C1::beginClose.me -> C1::endClose.me -> Reg(me)
-  |~| 
-  STOP
-
--- A regulator that ensures that the alt thread alternates between begin and
--- end events.
-AltReg(me, alt) = 
-  C1::beginRegisterIn.me.alt$index -> C1::endRegisterIn.me.alt?_ ->
-    AltReg(me, alt)
-  |~|
-  C1::beginDeregisterIn.me.alt$index -> C1::endDeregisterIn.me.alt ->
-    AltReg(me, alt)
-  |~| 
-  C1::beginRegisterOut.me.alt$index -> C1::endRegisterOut.me.alt?_ ->
-    AltReg(me, alt)
-  |~|
-  C1::beginDeregisterOut.me.alt$index -> C1::endDeregisterOut.me.alt ->
-    AltReg(me, alt)
-  |~|
-  STOP
-
-Regs = (||| t <- ChanThreads @ Reg(t))  ||| AltReg(AltThread, Alt1)
-
--- Events that we don't try to constrain
-FreeEvents = 
-  {| C1::beginMaybeReceive, C1::endMaybeReceive, 
-     C1::beginMaybeSend, C1::endMaybeSend |}
-
-System0 = C1::runWithAndHide(Regs ||| RUN(FreeEvents))
-
-------------------------- Idealised specification
-
-
-{-
--- channel closing linearization point
-channel close: ThreadID . ChanID
-
-channel isClosed: ThreadID . ChanID
--}
-
-
--- Macros for set operations
-add(set,x) = union(set,{x})
-remove(set,x) = diff(set,{x})
-
---------- Lineariser for registration and deregistration
-
--- Linearisation points of registerIn corresponding to a synchronisation,
--- waiting, or an out-of-protocol call.
-channel registerInSync : ChanThreads . Data
-channel registerInWait : Index 
-channel registerError 
--- Linearisation points of deregistration at inport, corresponding to legal or
--- out-of-protocol cases.
-channel deregisterIn, deregisterInError : Index
--- Linearisation points of registerOut
-channel registerOutSync : ChanThreads . Data
-channel registerOutWait : Index
--- Linearisation points of deregistration at outport, corresponding to legal or
--- out-of-protocol cases.
-channel deregisterOut, deregisterOutError : Index
-
--- Signal from Spec0 that the Alt has broken the contract.  
--- channel error
-
--- Lineariser for registration and deregistration events; but allowing
--- arbitrary behaviour after error.
-RegLin = 
-  C1::beginRegisterIn.AltThread.Alt1?index -> (
+  -- Macros for set operations
+  add(set,x) = union(set,{x})
+  remove(set,x) = diff(set,{x})
+  
+  --------- Lineariser for registration and deregistration
+  
+  -- Linearisation points of registerIn corresponding to a synchronisation,
+  -- waiting, or an out-of-protocol call.
+  channel registerInSync : ChanThreads . Data
+  channel registerInWait : Index 
+  channel registerError 
+  -- Linearisation points of deregistration at inport, corresponding to legal or
+  -- out-of-protocol cases.
+  channel deregisterIn, deregisterInError : Index
+  -- Linearisation points of registerOut
+  channel registerOutSync : ChanThreads . Data
+  channel registerOutWait : Index
+  -- Linearisation points of deregistration at outport, corresponding to legal or
+  -- out-of-protocol cases.
+  channel deregisterOut, deregisterOutError : Index
+  
+  -- Lineariser for registration and deregistration events.
+  RegLin = 
+    C1::beginRegisterIn.AltThread.Alt1?index -> RegLinRegIn(index)
+    |~|
+    C1::beginDeregisterIn.AltThread.Alt1?index -> RegLinDeregIn(index)
+    |~|
+    C1::beginRegisterOut.AltThread.Alt1?index -> RegLinRegOut(index)
+    |~|
+    C1::beginDeregisterOut.AltThread.Alt1?index -> RegLinDeregOut(index)
+    |~|
+    STOP
+  
+  -- Alt registering at inport against index.
+  RegLinRegIn(index) = 
     registerInSync?t?x -> C1::endRegisterIn.AltThread.Alt1.RegisterInSuccess.x ->
     RegLin
     []
     registerInWait.index -> C1::endRegisterIn.AltThread.Alt1.RegisterInWaiting ->
     RegLin
     []
-    registerError -> STOP
-  )
-  |~|
-  C1::beginDeregisterIn.AltThread.Alt1?index -> (
-    deregisterIn.index -> C1::endDeregisterIn.AltThread.Alt1 -> RegLin
+    isClosed.AltThread -> C1::endRegisterIn.AltThread.Alt1.RegisterInClosed ->
+    RegLin
     []
-    deregisterInError.index -> STOP
-  )
-  |~|
-  C1::beginRegisterOut.AltThread.Alt1?index -> (
-    ( |~| x : Data @
-       registerOutSync?t!x -> 
+    registerError -> STOP
+  
+  -- Alt deregistering at inport against index.
+  RegLinDeregIn(index) = 
+    deregisterIn.index -> C1::endDeregisterIn.AltThread.Alt1 -> RegLin
+    [] deregisterInError.index -> STOP
+  
+  -- Alt deregistering at outport against index.
+  RegLinRegOut(index) = 
+    ( |~| x : Data @ registerOutSync?t!x -> 
        C1::endRegisterOut.AltThread.Alt1.RegisterOutSuccess.x -> RegLin
     )
     []
     registerOutWait.index -> 
     C1::endRegisterOut.AltThread.Alt1.RegisterOutWaiting -> RegLin
     []
-    registerError -> STOP
-  )  
-  |~|
-  C1::beginDeregisterOut.AltThread.Alt1?index -> (
-    deregisterOut.index -> C1::endDeregisterOut.AltThread.Alt1 -> RegLin
+    isClosed.AltThread -> C1::endRegisterOut.AltThread.Alt1.RegisterOutClosed ->
+    RegLin
     []
-    deregisterOutError.index -> STOP
+    registerError -> STOP
+  
+  -- Alt deregistering at outport against index.
+  RegLinDeregOut(index) = 
+    deregisterOut.index -> C1::endDeregisterOut.AltThread.Alt1 -> RegLin
+    [] deregisterOutError.index -> STOP
+  
+  alphaRegLin = union(
+    C1::AltRegistrationEvents, 
+    {| registerInSync, registerInWait, registerOutSync, registerOutWait,
+       registerError, isClosed.AltThread,
+       deregisterIn, deregisterInError, deregisterOut, deregisterOutError |}
   )
-  |~|
-  STOP
-
-alphaRegLin = {|
-  C1::beginRegisterIn, C1::endRegisterIn, 
-  registerInSync, registerInWait, registerError,
-  C1::beginDeregisterIn, C1::endDeregisterIn, 
-  deregisterIn, deregisterInError,
-  C1::beginRegisterOut, C1::endRegisterOut,
-  registerOutSync, registerOutWait,
-  C1::beginDeregisterOut, C1::endDeregisterOut, 
-  deregisterOut, deregisterOutError
-|}
-
------------- Linearisers for channel thread ops
-
--- In sync and altSync events, the sender comes first
-
--- synchronsation between a sender and receiver
-channel sync : ChanThreads . ChanThreads . Data
-
--- A thread, having synchronised with either a channel thread or the alt
--- thread, commits to returning.  This corresponds to that thread re-acquiring
--- the lock in the implementation.  Subsequently, the corresponding end event
--- cannot be refused.
-channel commit : ChanThreads
-
--- The channel chooses to call maybeReceive by a particular thread.
-channel callMaybeReceive : ChanThreads . Index . Data
-
-channel callMaybeSend : ChanThreads . Index
-
--- A lineariser for thread me
-Lin(me) = 
-  C1::beginSend.me?x -> SendingLin(me, x)
-  |~|
-  C1::beginReceive.me -> ReceivingLin(me)
-  |~|
-  STOP
-
--- Lineariser for thread me inside send(x).
-SendingLin(me, x) = 
-  sync.me?other:others(me)!x -> commit.me -> EndSendingLin(me)
-  []
-  registerInSync.me.x -> commit.me -> EndSendingLin(me)
-  []
-  callMaybeReceive.me?index!x -> C1::beginMaybeReceive.me.Alt1.index.x -> 
-  C1::endMaybeReceive.me.Alt1?res -> 
-  (if res then EndSendingLin(me) else SendingLin(me, x))
-
-EndSendingLin(me) = C1::endSend.me.SendSuccess -> Lin(me)
-
--- Lineariser for thread me inside receive.
-ReceivingLin(me) =  
-  sync?other:others(me)!me?x -> EndReceivingLin(me, x)
-  []
-  registerOutSync.me?x -> EndReceivingLin(me, x)
-  []
-  callMaybeSend.me?index -> C1::beginMaybeSend.me.Alt1.index -> (
-    C1::endMaybeSend.me.Alt1.Some?x -> EndReceivingLin(me, x)
-    [] C1::endMaybeSend.me.Alt1.None -> ReceivingLin(me)
+  
+  ------------ Linearisers for channel thread ops
+  
+  -- synchronsation between a sender (first field) and receiver (second field).
+  channel sync : ChanThreads . ChanThreads . Data
+  
+  -- A thread, having synchronised with either a channel thread or the alt
+  -- thread, commits to returning.  This corresponds to that thread re-acquiring
+  -- the lock in the implementation.  Subsequently, the corresponding end event
+  -- cannot be refused.
+  channel commit : ChanThreads
+  
+  -- The channel chooses to call maybeReceive or maybeSend by a particular
+  -- thread.
+  channel callMaybeReceive : ChanThreads . Index . Data
+  channel callMaybeSend : ChanThreads . Index
+  
+  -- channel closing linearization point
+  channel close : ChanThreads
+  
+  channel isClosed : ThreadID
+  
+  -- A lineariser for thread me
+  Lin(me) = 
+    C1::beginSend.me?x -> SendingLin(me, x)
+    |~|
+    C1::beginReceive.me -> ReceivingLin(me)
+    |~|
+    C1::beginClose.me -> close.me -> isClosed.me -> C1::endClose.me -> Lin(me)
+    -- Note: the isClosed event means the endClose happens only after the
+    -- registered port (if any) has been informed.
+    |~|
+    STOP
+  
+  -- Lineariser for thread me inside send(x).
+  SendingLin(me, x) = 
+    sync.me?other:others(me)!x -> commit.me -> EndSendingLin(me)
+    []
+    registerInSync.me.x -> commit.me -> EndSendingLin(me)
+    []
+    callMaybeReceive.me?index!x -> C1::beginMaybeReceive.me.Alt1.index.x -> 
+    C1::endMaybeReceive.me.Alt1?res -> 
+    (if res then EndSendingLin(me) else SendingLin(me, x))
+    []
+    isClosed.me -> C1::endSend.me.SendClosed -> Lin(me)
+  
+  EndSendingLin(me) = C1::endSend.me.SendSuccess -> Lin(me)
+  
+  -- Lineariser for thread me inside receive.
+  ReceivingLin(me) =  
+    sync?other:others(me)!me?x -> EndReceivingLin(me, x)
+    []
+    registerOutSync.me?x -> EndReceivingLin(me, x)
+    []
+    callMaybeSend.me?index -> C1::beginMaybeSend.me.Alt1.index -> (
+      C1::endMaybeSend.me.Alt1.Some?x -> EndReceivingLin(me, x)
+      [] C1::endMaybeSend.me.Alt1.None -> ReceivingLin(me)
+    )
+    [] 
+    isClosed.me -> C1::endReceive.me.ReceiveClosed -> Lin(me)
+  
+  EndReceivingLin(me, x) =  C1::endReceive.me.ReceiveSuccess.x -> Lin(me)
+  
+  -- Alphabet for Lin(me)
+  alphaLin(me) = union(
+    {| C1::beginSend.me, C1::endSend.me, C1::beginReceive.me, C1::endReceive.me,
+       callMaybeReceive.me, C1::beginMaybeReceive.me, C1::endMaybeReceive.me,
+       callMaybeSend.me, C1::beginMaybeSend.me, C1::endMaybeSend.me,
+       sync.me, commit.me, registerInSync.me, registerOutSync.me, 
+       C1::beginClose.me, C1::endClose.me, close.me, isClosed.me  |},
+    {| sync.other.me | other <- others(me) |}
   )
-
-EndReceivingLin(me, x) =  C1::endReceive.me.ReceiveSuccess.x -> Lin(me)
-
--- Alphabet for Lin(me)
-alphaLin(me) = union(
-  {| C1::beginSend.me, C1::endSend.me, C1::beginReceive.me, C1::endReceive.me,
-     callMaybeReceive.me, C1::beginMaybeReceive.me, C1::endMaybeReceive.me,
-     callMaybeSend.me, C1::beginMaybeSend.me, C1::endMaybeSend.me,
-     sync.me, commit.me, registerInSync.me, registerOutSync.me  |},
-  {| sync.other.me | other <- others(me) |}
-)
-
--- All the linearisers for channel threads. 
-Lins = || t <- ChanThreads @ [alphaLin(t)] Lin(t)
-
-alphaLins = Union({ alphaLin(t) | t <- ChanThreads })
-
---------------------------- Main specification
-
--- A representation of how the alt is registered with the channel.  
-datatype RegStatus = NoReg | InReg.Index | OutReg.Index
-
--- Is there an alt currently registered at the InPort?
-isRegIn(InReg._) = true
-isRegIn(_) = false
-
-isRegOut(OutReg._) = true
-isRegOut(_) = false
-
--- Indexes (at most one) for which deregistration is legal.
-legalDeregIns(InReg.index) = {index}
-legalDeregIns(_) = {}
-
-legalDeregOuts(OutReg.index) = {index}
-legalDeregOuts(_) = {}
-
--- Synchronisation between threads in Alt and channel, passing data value.
---channel altSync : ThreadID . ThreadID . ChanID . Data
-
-channel modellingError
-
--- regStatus records whether and how an alt is registered.
-ChanState :: (RegStatus) -> Proc
-ChanState(regStatus) = 
--- Linearisation of register calls.  Note: if there's a pending send, it's
--- nondeterministic whether the registerIn will synchronise with it.
-  regStatus == NoReg & (
-    registerInSync?t.x -> ChanState(NoReg) 
-    [] registerInWait?index -> ChanState(InReg.index)
-    [] registerOutSync?t.x -> ChanState(NoReg)
-    [] registerOutWait?index -> ChanState(OutReg.index)
+  
+  -- All the linearisers for channel threads. 
+  Lins = || t <- ChanThreads @ [alphaLin(t)] Lin(t)
+  
+  alphaLins = Union({ alphaLin(t) | t <- ChanThreads })
+  
+  --------------------------- Main specification
+  
+  -- A representation of how the alt is registered with the channel.  
+  datatype RegStatus = NoReg | InReg.Index | OutReg.Index
+  
+  -- Is the alt currently registered at the inport or outport?
+  isRegIn(InReg._) = true
+  isRegIn(_) = false
+  
+  isRegOut(OutReg._) = true
+  isRegOut(_) = false
+  
+  -- Indexes (at most one) against which the alt is registered.
+  regInIndices(InReg.index) = {index}
+  regInIndices(_) = {}
+  
+  regOutIndices(OutReg.index) = {index}
+  regOutIndices(_) = {}
+  
+  channel modellingError
+  
+  -- regStatus records whether and how an alt is registered.
+  ChanState :: (RegStatus) -> Proc
+  ChanState(regStatus) = 
+    let regIns = regInIndices(regStatus)
+        regOuts = regOutIndices(regStatus)
+    within
+  -- Linearisation of register calls.  Note: if there's a pending send, it's
+  -- nondeterministic whether the registerIn will synchronise with it.
+    regStatus == NoReg & (
+      registerInSync?t.x -> ChanState(NoReg) 
+      [] registerInWait?index -> ChanState(InReg.index)
+      [] registerOutSync?t.x -> ChanState(NoReg)
+      [] registerOutWait?index -> ChanState(OutReg.index)
+    )
+    []
+  -- Illegal call of registerIn or registerOut
+    regStatus != NoReg & registerError -> STOP
+    []   
+  -- Deregistration from inport.
+    deregisterIn?index:regIns ->  ChanState(NoReg)
+    []
+  -- Illegal deregistration from inport
+    deregisterInError?index:diff(Index, regIns) -> STOP
+    []
+  -- Deregistration from outport
+    deregisterOut?index:regOuts -> ChanState(NoReg)
+    []
+  -- Illegal deregistration from outport
+    deregisterOutError?index:diff(Index, regOuts) -> STOP
+    []
+  -- Synchronisation between standard send and receive
+    sync?t1?t2:others(t1)?x -> ChanState(regStatus)
+    []
+  -- A thread, having synchronised with either a channel thread or the alt
+  -- thread, commits to returning
+    commit?_ -> ChanState(regStatus)
+    []
+  -- Calls to maybeReceive
+    callMaybeReceive?t?index:regIns?x -> C1::beginMaybeReceive.t.Alt1.index.x -> 
+      C1::endMaybeReceive.t!Alt1?res -> ChanState(NoReg)
+    []
+  -- Calls to maybeSend
+    callMaybeSend?t?index:regOuts -> C1::beginMaybeSend.t.Alt1.index -> 
+      C1::endMaybeSend.t.Alt1?res -> ChanState(NoReg)
+    -- The initial event of each process in the last two branches is hidden, so
+    -- this process may nondeterministically choose to go down that route.
+    []
+    close?t -> (
+      if regStatus == NoReg then ChanStateClosed
+      else     -- inform the registered port
+        C1::beginPortClosed.t.Alt1?index:union(regIns,regOuts) ->
+        C1::endPortClosed.t.Alt1 -> ChanStateClosed
+    )
+  
+  ChanStateClosed = 
+    isClosed?_ -> ChanStateClosed
+    [] close?_ -> ChanStateClosed
+    [] deregisterIn?_ -> ChanStateClosed
+    [] deregisterOut?_ -> ChanStateClosed
+  
+  alphaChanState = union(
+    C1::AltCallBacks, -- FreeEvents,
+    {| registerInSync, registerInWait, registerError, 
+       deregisterIn, deregisterInError,
+       registerOutSync, registerOutWait, deregisterOut, deregisterOutError,
+       callMaybeReceive, callMaybeSend, sync, commit, modellingError, 
+       close, isClosed
+    |}
   )
-  []
--- Illegal call of registerIn or registerOut
-  regStatus != NoReg & registerError -> STOP
-  []   
--- Deregistration from inport.
-  deregisterIn?index:legalDeregIns(regStatus) ->  ChanState(NoReg)
-  []
--- Illegal deregistration from inport
-  deregisterInError?index:diff(Index, legalDeregIns(regStatus)) -> STOP
-  []
--- Deregistration from outport
-  deregisterOut?index:legalDeregOuts(regStatus) -> ChanState(NoReg)
-  []
--- Illegal deregistration from outport
-  deregisterOutError?index:diff(Index, legalDeregOuts(regStatus)) -> STOP
-  []
--- Synchronisation between standard send and receive
-  sync?t1?t2:others(t1)?x -> ChanState(regStatus)
-  []
--- A thread, having synchronised with either a channel thread or the alt
--- thread, commits to returning
-  commit?_ -> ChanState(regStatus)
-  []
--- Calls to maybeReceive
-  isRegIn(regStatus) & (
-    let InReg.index = regStatus within
-    callMaybeReceive?t!index?x -> C1::beginMaybeReceive.t.Alt1.index.x -> 
-    C1::endMaybeReceive.t!Alt1?res -> ChanState(NoReg)
-  )
-  []
--- Calls to maybeSend
-  isRegOut(regStatus) & (
-    let OutReg.index = regStatus within
-    callMaybeSend?t!index -> C1::beginMaybeSend.t.Alt1.index -> 
-    C1::endMaybeSend.t.Alt1?res -> ChanState(NoReg)
-  )
-  -- The initial event of each process in the last two branches is hidden, so
-  -- this process may nondeterministically choose to go down that route.
+  
+  -- Put the specification together
+  ChannelSpec0 = 
+    let syncSet = inter(union(alphaChanState, alphaRegLin), alphaLins)
+    within
+     (ChanState(NoReg) [ alphaChanState || alphaRegLin ] RegLin) 
+     [| syncSet |] Lins
+     
+  -- Error events
+  Errors = {| registerError, deregisterInError, deregisterOutError |}
+  
+exports
 
-alphaChanState = {|
-  registerInSync, registerInWait, registerError, deregisterIn, deregisterInError,
-  registerOutSync, registerOutWait, deregisterOut, deregisterOutError,
-  callMaybeReceive, C1::beginMaybeReceive, C1::endMaybeReceive, 
-  callMaybeSend, C1::beginMaybeSend, C1::endMaybeSend,
-  sync, commit, modellingError
-|}
+  -- Specification, with error events visible.
+  ChannelSpec = 
+    let internals = 
+          {| registerInSync, registerInWait, registerOutSync, registerOutWait, 
+             deregisterIn, deregisterOut, close, isClosed,
+             sync, commit, callMaybeReceive, callMaybeSend |}
+    within ChannelSpec0 \ internals
 
--- Put the specification together
-ChannelSpec0 = 
-  let syncSet = inter(union(alphaChanState, alphaRegLin), alphaLins) within
-  ( (ChanState(NoReg) [ alphaChanState || alphaRegLin ] RegLin) 
-    [| syncSet |] Lins
-  ) 
-  \ {| registerInSync, registerInWait, registerOutSync, registerOutWait, 
-       deregisterIn, deregisterOut,
-       sync, commit, callMaybeReceive, callMaybeSend |}
-
--- Allow arbitrary behaviour after an error event; first for stable failures.
-Errors = {| registerError, deregisterInError, deregisterOutError |}
-
-SpecF =  (ChannelSpec0 [| Errors |> CHAOS(C1::Interface) ) \ Errors
-
--- Now for FD model.
-SpecD = (ChannelSpec0 [| Errors |> DIV ) \ Errors
-
-assert SpecF [T= System0
-
-assert SpecF [F= System0
-
-assert SpecD [FD= System0
-
-transparent normal
---assert CHAOS(Events) [F= normal(Spec)
+  -- If an error event happens, allow arbitrary behaviour.  The definitions
+  -- are different for the stable failures and failures-divergences models.
+  SpecF =  (ChannelSpec [| Errors |> CHAOS(C1::Interface) ) \ Errors
+  
+  SpecD = (ChannelSpec [| Errors |> DIV ) \ Errors
+  
+endmodule
+  

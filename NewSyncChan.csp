@@ -519,22 +519,6 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   --   compress(MonitorCondition::runWithAndHide(Threads)) [| varEvents |] Variables
   -- Internals = compress(Internals0 \ internals)
 
-  -- Interface with client threads
-  ClientInterface = {|
-    beginSend, endSend, beginReceive, endReceive, 
-    beginSendWithin, endSendWithin, beginReceiveWithin, endReceiveWithin,
-    beginClose, endClose
-  |}
-
-  -- Interface with alts
-  AltInterface = {|
-    beginRegisterIn, endRegisterIn, beginDeregisterIn, endDeregisterIn,
-    beginRegisterOut, endRegisterOut, beginDeregisterOut, endDeregisterOut,
-    beginMaybeReceive, endMaybeReceive, beginMaybeSend, endMaybeSend,
-    beginPortClosed, endPortClosed
-  |}
-
-
 exports
 
   -- Signals before and after invocations or sends and receives
@@ -565,6 +549,28 @@ exports
 
   channel beginPortClosed : ThreadID . AltID . Index
   channel endPortClosed : ThreadID . AltID
+
+  -- Interface with client threads
+  ClientInterface = {|
+    beginSend, endSend, beginReceive, endReceive, 
+    beginSendWithin, endSendWithin, beginReceiveWithin, endReceiveWithin,
+    beginClose, endClose
+  |}
+
+  -- Events for callbacks to an alt.
+  AltCallBacks = {|
+    beginMaybeReceive, endMaybeReceive, beginMaybeSend, endMaybeSend,
+    beginPortClosed, endPortClosed
+  |}
+
+  -- Events for registration and deregistrtion of an alt. 
+  AltRegistrationEvents = {|
+    beginRegisterIn, endRegisterIn, beginDeregisterIn, endDeregisterIn,
+    beginRegisterOut, endRegisterOut, beginDeregisterOut, endDeregisterOut
+  |}
+
+  -- Interface with alts
+  AltInterface = union(AltCallBacks, AltRegistrationEvents)
 
   -- Interface with client threads and alts
   Interface = union(ClientInterface, AltInterface)

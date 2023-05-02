@@ -268,8 +268,6 @@ module Alt(this, branches, ThreadID, ChanID)
   ---- Interface with clients
   AltInterface = {| beginAlt, endAlt |}
 
-  Interface = union( AltInterface, ChannelInterface )
-
 exports
   
   -- The type of information about how an alt ended.
@@ -300,7 +298,7 @@ exports
   channel beginPortClosed : ThreadID . Index
   channel endPortClosed : ThreadID 
 
-  spuriousWakeUp = JVMMonitor::spuriousWakeup
+  spuriousWakeup = JVMMonitor::spuriousWakeup
 
   -- The interface between the alt and channels (in both directions). 
   ChannelInterface = 
@@ -309,6 +307,8 @@ exports
        beginMaybeSend, endMaybeSend, beginMaybeReceive, endMaybeReceive,
        beginPortClosed, endPortClosed
     |}
+
+  Interface = union( AltInterface, ChannelInterface )
 
   ----- Administrative functions.
 

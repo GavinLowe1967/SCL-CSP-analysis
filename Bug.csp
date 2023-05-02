@@ -1,0 +1,11 @@
+datatype Data = X | Y
+
+datatype T = A.Data | B.Data | C
+
+select(A.x) = true
+select(Z.x) = true
+select(_) = false
+
+get(A.x) = x
+get(Z.x) = x
+ 

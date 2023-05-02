@@ -1,0 +1,365 @@
+-- An idealised model of an alt.
+
+-- This module assumes that the following are in scope: (1) the definitions in
+-- Types.csp; (2) a definition of ThreadID, including AltThread, and a
+-- corresponding definition of ChanThreads; (3) a definition of branches,
+-- defining the branches of an alt; (4) A1, an instance of an Alt based on
+-- branches and ThreadID.  The events of the exported definitions are taken
+-- from A1.
+
+module IdealisedAlt
+  -- The number of branches
+  size = length(branches)
+
+  -- Indices of branches
+  Index = {0..size-1}
+
+  -- The n'th element of a sequence
+  nth(xs, 0) = head(xs)
+  nth(xs, n) = nth(tail(xs), n-1)
+
+  --------- Linearisers for maybeReceive, maybeSend, portClosed
+  
+  -- Linearisation point for maybeReceive, maybeSend and portClosed, including
+  -- erroneous calls.
+  channel maybeReceive : ChanThreads.Index.Data.Bool
+  channel maybeSend : ChanThreads.Index.Option
+  channel portClosed : ChanThreads . Index
+  channel maybeReceiveError, maybeSendError, portClosedError : ChanThreads.Index
+  
+  -- Lineariser for thread me
+  Lin(me) = 
+    (|~| x : Data @ 
+       A1::beginMaybeReceive.me?index.x -> LinMaybeReceive(me, index, x))
+    |~|
+    A1::beginMaybeSend.me?index -> LinMaybeSend(me, index)
+    |~|
+    A1::beginPortClosed.me?index -> LinPortClosed(me, index)
+    |~|
+    STOP
+  
+  -- Linearisation of a call to maybeReceive
+  LinMaybeReceive(me, index, x) = 
+    maybeReceive.me.index.x?res -> A1::endMaybeReceive.me.res -> Lin(me)
+    [] maybeReceiveError.me.index -> STOP
+    [] (A1::spuriousWakeup.me -> LinMaybeReceive(me, index, x) |~| STOP)
+  
+  -- Linearisation of a call to maybeSend
+  LinMaybeSend(me, index) = 
+    maybeSend.me.index?res -> A1::endMaybeSend.me.res -> Lin(me)
+    [] maybeSendError.me.index -> STOP
+    [] (A1::spuriousWakeup.me -> LinMaybeSend(me, index) |~| STOP)
+  
+  -- Linearisation of a call to portClosed
+  LinPortClosed(me, index) = 
+    portClosed.me.index -> A1::endPortClosed.me -> Lin(me)
+    [] portClosedError.me.index -> STOP
+    [] (A1::spuriousWakeup.me -> LinPortClosed(me, index) |~| STOP)
+  
+  alphaLin(me) =  {| 
+    A1::beginMaybeReceive.me, A1::endMaybeReceive.me, 
+    A1::beginMaybeSend.me, A1::endMaybeSend.me, 
+    maybeReceive.me, maybeReceiveError, maybeSend.me, maybeSendError.me,
+    A1::beginPortClosed.me, A1::endPortClosed.me, 
+    portClosed.me, portClosedError.me,
+    A1::spuriousWakeup.me 
+  |}
+  
+  Lins = ||| t <- ChanThreads @ Lin(t)
+  
+  alphaLins = Union({ alphaLin(t) | t <- ChanThreads })
+  
+  --------- Process that keeps track of registrations, and detects
+  --------- out-of-protocol call backs.
+  
+  channel modellingError
+  
+  -- Check that test holds.  If not, it is a modelling error: performing
+  -- modellingError in the spec will cause the refinement checks to fail.  This
+  -- will also reduce the size of the specification process.
+  expect(test, P) = if test then P else modellingError -> STOP 
+  
+  -- Linearisation points of registration
+  channel registerIn, registerOut : ChanID . Index
+  -- Linearisation points of deregistration
+  channel deregisterIn, deregisterOut : ChanID . Index
+  -- Linearisation point of a register detecting the channel is closed
+  channel registerInClosed, registerOutClosed : ChanID . Index
+  
+  -- Channels for AltSpec to get a port to deregister, or to find that there is
+  -- no more such.  This is necessary to capture the case where the AltThread
+  -- decides to deregister a branch, but there's a concurrent callback from that
+  -- branch.
+  channel getToDeregisterIn, getToDeregisterOut : ChanID . Index
+  channel deregisterDone
+  
+  -- Channel for AltSpec to indicate that it has finished registration.  The
+  -- first Bool indicates whether it has successfully synchronised.  The second
+  -- indicates whether all channels are closed.
+  channel endRegister : Bool . Bool
+  
+  -- Channel to inform AltSpec that there has been a successful callback. 
+  channel endWait : A1::AltResult
+  
+  -- Information about what is registered for each index. 
+  datatype RegInfo = NoReg | InPortReg.ChanID | OutPortReg.ChanID | Closed
+  
+  -- Selectors over RegInfo
+  isInPortReg(InPortReg._) = true
+  isInPortReg(_) = false
+  
+  isOutPortReg(OutPortReg._) = true
+  isOutPortReg(_) = false
+  
+  -- Me maintain a map reg from Index to RegInfo, indicating the registration
+  -- against each index.  Initially all have no registration.
+  initRegMap = mapFromList(< (i, NoReg) | i <- <0..size-1> >)
+  
+  -- Given reg, the indices against which the alt is registered at an inport or
+  -- outport.
+  getInRegs(reg) = { i | i <- Index, isInPortReg(mapLookup(reg, i)) }
+  getOutRegs(reg) = { i | i <- Index, isOutPortReg(mapLookup(reg, i)) }
+  
+  -- Are all ports closed in reg?
+  allClosed(reg) = { i | i <- Index, mapLookup(reg, i) == Closed } == Index
+  
+  -- Process that keeps track of registrations, and detects out-of-protocol call
+  -- backs.
+  RegTracker = RegTracker1(initRegMap)
+  
+  -- Registration phase. 
+  RegTracker1(reg) = 
+    let inRegs = getInRegs(reg)
+        outRegs = getOutRegs(reg)
+    within
+    registerIn?c?index -> expect( 
+      nth(branches,index) == (InPortBranch.c) and mapLookup(reg, index) == NoReg,
+      RegTracker1(mapUpdate(reg, index, InPortReg.c))
+    )
+    []
+    registerOut?c?index -> expect( 
+      nth(branches,index) == (OutPortBranch.c) and 
+        mapLookup(reg, index) == NoReg,
+      RegTracker1(mapUpdate(reg, index, OutPortReg.c))
+    )
+    [] 
+    registerInClosed?c?index -> expect( 
+      nth(branches,index) == (InPortBranch.c) and mapLookup(reg, index) == NoReg,
+      RegTracker1(mapUpdate(reg, index, Closed))
+    )
+    [] 
+    registerOutClosed?c?index -> expect( 
+      nth(branches,index) == (OutPortBranch.c) and 
+        mapLookup(reg, index) == NoReg,
+      RegTracker1(mapUpdate(reg, index, Closed))
+    )
+    []
+    -- AltSpec indicates end of registration
+    let ac = allClosed(reg) within
+    endRegister?found!ac -> (
+      if ac then RegTracker 
+      else if found then RegTracker2(reg) 
+      else RegTracker3(reg)
+    )
+    []
+    -- Block maybeReceive, maybeSend and port closed here; but calls from
+    -- non-registered indices would be outside of the protocol.
+    maybeReceiveError?t?index:diff(Index,inRegs) -> STOP
+    []
+    maybeSendError?t?index:diff(Index,outRegs) -> STOP
+    []
+    portClosedError?t?index:diff(Index,union(inRegs,outRegs)) -> STOP
+  
+  -- The alt has identified a branch to run.  Allow deregistration
+  RegTracker2(reg) = 
+    let inRegs = getInRegs(reg) 
+        outRegs = getOutRegs(reg)
+        allRegs = union(inRegs,outRegs)
+    within
+  -- Allow AltSpec to get an index to deregister
+    ([] i : inRegs @ 
+        let InPortReg.c = mapLookup(reg, i) within  
+        getToDeregisterIn.c.i -> RegTracker2(reg)
+    )
+    []
+    ([] i : outRegs @
+        let OutPortReg.c = mapLookup(reg, i) within
+        getToDeregisterOut.c.1 -> RegTracker2(reg)
+    )
+    []
+  -- indicate deregistering done
+    allRegs == {} & deregisterDone -> RegTracker -- reset
+    []
+  -- Deregister at index.
+    deregisterIn?c?index -> (
+      let ri = mapLookup(reg, index) within
+      expect(ri == (InPortReg.c) or ri == NoReg or ri == Closed,
+        RegTracker2(mapUpdate(reg, index, NoReg)) )
+    )
+    [] 
+    deregisterOut?c?index -> (
+      let ro = mapLookup(reg, index) within
+      expect(ro == (OutPortReg.c) or ro == NoReg or ro == Closed,
+        RegTracker2(mapUpdate(reg, index, NoReg)) )
+    )
+    []
+  -- Call back of portClosed
+    portClosed?t?index:allRegs -> RegTracker2(mapUpdate(reg, index, Closed))
+      -- Note: shouldn't trigger AltAbort here
+    []
+    portClosedError?t?index:diff(Index,allRegs) -> STOP
+    []
+  -- Call back of maybeReceive gets result false here
+    maybeReceive?t?index:inRegs?_!false -> 
+      RegTracker2(mapUpdate(reg, index, NoReg)) -- remove from map
+    []
+  -- Similarly for maybeSend
+    maybeSend?t?index:outRegs!None -> 
+      RegTracker2(mapUpdate(reg, index, NoReg)) -- remove from map
+    []
+  -- Illegal callback
+    maybeReceiveError?t?index:diff(Index,inRegs) -> STOP
+    []
+    maybeSendError?t?index:diff(Index,outRegs) -> STOP
+  
+  -- The alt has finished registering, unsuccessfully.  Wait for a callback. 
+  RegTracker3(reg) = 
+    let inRegs = getInRegs(reg) 
+        outRegs = getOutRegs(reg)
+        allRegs = union(inRegs,outRegs)
+    within
+  -- Callbacks of maybeReceive and maybeSend, including erroneous ones
+    maybeReceive?t?index:inRegs?x!true ->  -- callback succeeds
+    endWait.A1::AltReceive.index.x -> RegTracker2(mapUpdate(reg, index, NoReg))
+    []
+    maybeReceiveError?t?index:diff(Index,inRegs) -> STOP
+    []
+    (|~| x : Data @ 
+       maybeSend?t?index:outRegs!Some.x -> 
+       endWait.A1::AltSend.index.x -> RegTracker2(mapUpdate(reg, index, NoReg)) 
+    )
+    []
+    maybeSendError?t?index:diff(Index,outRegs) -> STOP
+    []
+  -- Callbacks of portClosed; if all ports are closed, inform the AltSpec. 
+    portClosed?t?index:allRegs -> ( 
+      let reg' = mapUpdate(reg, index, Closed) within
+      if allClosed(reg') then endWait.A1::AltAbort -> RegTracker 
+      else RegTracker3(mapUpdate(reg, index, Closed))
+    )
+    []
+    portClosedError?t?index:diff(Index,allRegs) -> STOP
+  
+  alphaRegTracker = {| 
+    registerIn, registerOut, registerInClosed, registerOutClosed, endRegister, 
+    getToDeregisterIn, getToDeregisterOut, deregisterDone, 
+    deregisterIn, deregisterOut, 
+    maybeReceive, maybeReceiveError, maybeSend, maybeSendError, 
+    portClosed, portClosedError,
+    endWait, modellingError 
+  |}
+    
+  -------------- The main thread of the alt
+  
+  AltSpec = 
+    A1::beginAlt.AltThread -> Register(0)
+    |~| STOP
+  
+  -- Register with branches [i..).  registered records those already registered.
+  Register(i) = 
+    if i == size then endRegister.false?ac -> (
+      if ac then A1::endAlt.AltThread.A1::AltAbort -> AltSpec else Waiting
+    ) 
+    else Register1(i, nth(branches, i))
+  
+  -- Register with the i'th branch, and continue
+  Register1(i, InPortBranch.c) = 
+    A1::beginRegisterIn.AltThread.c.i -> (
+      A1::endRegisterIn.AltThread.c.RegisterInSuccess?x -> 
+      endRegister.true?_ -> Deregister(A1::AltReceive.i.x)
+      []
+      A1::endRegisterIn.AltThread.c.RegisterInWaiting -> 
+      registerIn.c.i -> Register(i+1)
+      []
+      A1::endRegisterIn.AltThread.c.RegisterInClosed -> 
+      registerInClosed.c.i -> Register(i+1)
+    )
+  
+  Register1(i, OutPortBranch.c) =
+    A1::beginRegisterOut.AltThread.c.i -> (
+      A1::endRegisterOut.AltThread.c.RegisterOutSuccess?x ->
+      endRegister.true?_ -> Deregister(A1::AltSend.i.x)
+      []
+      A1::endRegisterOut.AltThread.c.RegisterOutWaiting -> 
+      registerOut.c.i -> Register(i+1)
+      []
+      A1::endRegisterOut.AltThread.c.RegisterOutClosed -> 
+      registerOutClosed.c.i -> Register(i+1)
+    )
+  
+  -- Deregister all registered ports, then return result
+  Deregister(result) =
+    getToDeregisterIn?c.i -> 
+    A1::beginDeregisterIn.AltThread.c.i -> deregisterIn.c.i -> 
+    A1::endDeregisterIn.AltThread.c -> Deregister(result)
+    []
+    getToDeregisterOut?c.i ->
+    A1::beginDeregisterOut.AltThread.c.i -> deregisterOut.c.i -> 
+    A1::endDeregisterOut.AltThread.c -> Deregister(result)
+    []
+    deregisterDone -> A1::endAlt.AltThread.result -> AltSpec
+  
+  -- Registration failed to synchronise.  Wait until there is a successful
+  -- callback.
+  Waiting = 
+    endWait?result -> (
+      if result == A1::AltAbort then A1::endAlt.AltThread.result -> AltSpec
+      else Deregister(result)
+    )
+    []
+    (A1::spuriousWakeup.AltThread -> Waiting |~| STOP)
+   
+  alphaAltSpec = {|
+    A1::beginAlt, A1::endAlt, 
+    A1::beginRegisterIn, A1::endRegisterIn, registerIn, registerInClosed,
+    A1::beginDeregisterIn, A1::endDeregisterIn, deregisterIn,
+    A1::beginRegisterOut, A1::endRegisterOut, registerOut, registerOutClosed,
+    A1::beginDeregisterOut, A1::endDeregisterOut, deregisterOut,
+    endRegister, getToDeregisterIn, getToDeregisterOut, deregisterDone, 
+    endWait, A1::spuriousWakeup.AltThread 
+  |}
+  
+  -------- Combined spec
+  
+  transparent normal
+  
+  -- Combine AltSpec and RegTracker
+  Spec00 = 
+    let internals = {| 
+      registerIn, registerOut, registerInClosed, registerOutClosed, endRegister, 
+      getToDeregisterIn, getToDeregisterOut,
+      deregisterDone, deregisterIn, deregisterOut, endWait 
+    |}
+    within (AltSpec [ alphaAltSpec || alphaRegTracker ] RegTracker) \ internals
+  
+  -- Add Lins
+  Spec0 = 
+    normal(Spec00) [ union(alphaAltSpec, alphaRegTracker) || alphaLins ] Lins
+  
+  -- Error events
+  Errors = {| maybeReceiveError, maybeSendError, portClosedError |}
+  
+exports
+  -- Specification, with error events visible.
+  Spec1 = Spec0 \ {| maybeReceive, maybeSend, portClosed |}
+  
+  -- If an error event happens, allow arbitrary behaviour.  The definitions
+  -- are different for the stable failures and failures-divergences models.
+  SpecF =  
+    let events = union(A1::Interface, {|A1::spuriousWakeup|}) within
+    ( Spec1 [| Errors |> CHAOS(events) ) \ Errors
+  -- Normalisation of the above takes a long time, because of the CHAOS(events)
+  
+  SpecD =  ( Spec1 [| Errors |> DIV ) \ Errors
+  
+endmodule
