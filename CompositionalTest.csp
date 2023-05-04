@@ -20,15 +20,17 @@ datatype AltID = Alt1
 include "NewSyncChan.csp" 
 
 -- The list of branches in the alt
-branches =  <InPortBranch.Chan0, OutPortBranch.Chan1>
+-- branches =  <InPortBranch.Chan0, OutPortBranch.Chan1>
+branches =  <InPortBranch.Chan0, InPortBranch.Chan1>
 
 size = length(branches)
 
+Index = {0..size-1}
 
 include "IdealisedChan.csp"
 
 -- Create channel
-instance C1 = SyncChan(ThreadID, AltID, Data, size)
+-- instance C1 = SyncChan(ThreadID, AltID, Data, size)
 
 instance IC0 = IdealisedChan(size)
 
@@ -37,24 +39,95 @@ instance IC1 = IdealisedChan(size)
 include "Alt.csp"
 
 -- Create the alt.
-instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
+-- instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
 
 include "IdealisedAlt.csp"
 
-IdealisedChannel1 =
-  IC0::ChannelSpec[[
-    C1::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.Chan0,
-    C1::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.Chan0,
-    C1::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.Chan0,
-    C1::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.Chan0,
-    C1::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.Chan0,
-    C1::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.Chan0,
-    C1::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.Chan0,
-    C1::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.Chan0,
-    C1::beginMaybeReceive.t.Alt1 <- A1::beginMaybeReceive.t,
-    C1::endMaybeReceive.t.Alt1 <- A1::endMaybeReceive.t,
-    C1::beginMaybeSend.t.Alt1 <- A1::beginMaybeSend.t,
-    C1::endMaybeSend.t.Alt1 <- A1::endMaybeSend.t,
-    C1::beginPortClosed.t.Alt1 <- A1::beginPortClosed.t,
-    C1::endPortClosed.t.Alt1 <- A1::endPortClosed.t
+-- Rename events of IdealisedChans to be consistent with A1
+
+transparent normal
+
+compress(P) = normal(P)
+
+IdealisedChannel0 =
+  compress(IC0::ChannelSpec)[[
+    IC0::beginRegisterIn.t.Alt1 <- IdealisedAlt::beginRegisterIn.t.Chan0,
+    IC0::endRegisterIn.t.Alt1 <- IdealisedAlt::endRegisterIn.t.Chan0,
+    IC0::beginRegisterOut.t.Alt1 <- IdealisedAlt::beginRegisterOut.t.Chan0,
+    IC0::endRegisterOut.t.Alt1 <- IdealisedAlt::endRegisterOut.t.Chan0,
+    IC0::beginDeregisterIn.t.Alt1 <- IdealisedAlt::beginDeregisterIn.t.Chan0,
+    IC0::endDeregisterIn.t.Alt1 <- IdealisedAlt::endDeregisterIn.t.Chan0,
+    IC0::beginDeregisterOut.t.Alt1 <- IdealisedAlt::beginDeregisterOut.t.Chan0,
+    IC0::endDeregisterOut.t.Alt1 <- IdealisedAlt::endDeregisterOut.t.Chan0,
+    IC0::beginMaybeReceive.t.Alt1 <- IdealisedAlt::beginMaybeReceive.t,
+    IC0::endMaybeReceive.t.Alt1 <- IdealisedAlt::endMaybeReceive.t,
+    IC0::beginMaybeSend.t.Alt1 <- IdealisedAlt::beginMaybeSend.t,
+    IC0::endMaybeSend.t.Alt1 <- IdealisedAlt::endMaybeSend.t,
+    IC0::beginPortClosed.t.Alt1 <- IdealisedAlt::beginPortClosed.t,
+    IC0::endPortClosed.t.Alt1 <- IdealisedAlt::endPortClosed.t
       | t <- ThreadID ]]
+
+IdealisedChannel1 =
+  compress(IC1::ChannelSpec)[[
+    IC1::beginRegisterIn.t.Alt1 <- IdealisedAlt::beginRegisterIn.t.Chan1,
+    IC1::endRegisterIn.t.Alt1 <- IdealisedAlt::endRegisterIn.t.Chan1,
+    IC1::beginRegisterOut.t.Alt1 <- IdealisedAlt::beginRegisterOut.t.Chan1,
+    IC1::endRegisterOut.t.Alt1 <- IdealisedAlt::endRegisterOut.t.Chan1,
+    IC1::beginDeregisterIn.t.Alt1 <- IdealisedAlt::beginDeregisterIn.t.Chan1,
+    IC1::endDeregisterIn.t.Alt1 <- IdealisedAlt::endDeregisterIn.t.Chan1,
+    IC1::beginDeregisterOut.t.Alt1 <- IdealisedAlt::beginDeregisterOut.t.Chan1,
+    IC1::endDeregisterOut.t.Alt1 <- IdealisedAlt::endDeregisterOut.t.Chan1,
+    IC1::beginMaybeReceive.t.Alt1 <- IdealisedAlt::beginMaybeReceive.t,
+    IC1::endMaybeReceive.t.Alt1 <- IdealisedAlt::endMaybeReceive.t,
+    IC1::beginMaybeSend.t.Alt1 <- IdealisedAlt::beginMaybeSend.t,
+    IC1::endMaybeSend.t.Alt1 <- IdealisedAlt::endMaybeSend.t,
+    IC1::beginPortClosed.t.Alt1 <- IdealisedAlt::beginPortClosed.t,
+    IC1::endPortClosed.t.Alt1 <- IdealisedAlt::endPortClosed.t
+      | t <- ThreadID ]]
+
+-- The combination of the idealised channels and alts.
+System00 = 
+  (IdealisedChannel0 ||| IdealisedChannel1) 
+  [| IdealisedAlt::ChannelInterface |] 
+  IdealisedAlt::IdealisedAltSpec
+-- improve: compress Alt? 
+
+System0 = System00 \ IdealisedAlt::ChannelInterface
+
+Alpha = Union({ 
+  IdealisedAlt::AltInterface, IC0::ClientInterface, IC1::ClientInterface,
+  {| IdealisedAlt::spuriousWakeup |} 
+})
+
+
+-- Currently fails: a channel can call portClosed before the corresponding
+-- registerIn has finished, giving an error in RegTracker1.  In the
+-- implementation, the linearisation is blocked until after registration is
+-- over.
+
+-- The alt thread
+TheAltThread = 
+  IdealisedAlt::beginAlt.AltThread -> IdealisedAlt::endAlt.AltThread?_ -> 
+  TheAltThread
+  |~|
+  STOP
+
+ChanThread(me) = 
+  IC0::beginSend.me$x -> IC0::endSend.me?res -> ChanThread(me)
+  |~|
+  IC1::beginSend.me$x -> IC1::endSend.me?res -> ChanThread(me)
+  |~|
+  IC0::beginReceive.me -> IC0::endReceive.me?res -> ChanThread(me)
+  |~|
+  IC1::beginReceive.me -> IC1::endReceive.me?res -> ChanThread(me)
+-- FIXME: and other operations
+  |~|
+  STOP
+
+AllThreads = TheAltThread ||| (||| t <- ChanThreads @ ChanThread(t))
+
+System = System0 [| Alpha |] AllThreads
+
+assert CHAOS(Alpha) [T= System
+
+assert CHAOS(Alpha) [F= System

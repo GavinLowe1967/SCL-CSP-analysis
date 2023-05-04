@@ -4,7 +4,7 @@
 -- act on channels.
 datatype ThreadID = AltThread | T1 | T2 -- | T3 -- | T4
 
-others(t) = diff(ChanThreads, {t})
+--others(t) = diff(ChanThreads, {t})
 
 ChanThreads =  diff(ThreadID, {AltThread})
 
@@ -15,7 +15,6 @@ include "Types.csp"
 
 -- Identities of Alts
 datatype AltID = Alt1
-
 
 include "NewSyncChan.csp" 
 
@@ -60,11 +59,32 @@ TheAltThread(me, alt) =
 Threads = (||| t <- ChanThreads @ Thread(t))  ||| TheAltThread(AltThread, Alt1)
 
 -- The system to test
-System = C1::runWithAndHide(Threads ||| RUN(C1::AltCallBacks))
+System0 = C1::runWithAndHide(Threads ||| RUN(C1::AltCallBacks))
+
 
 include "IdealisedChan.csp"
 
 instance IC = IdealisedChan(size)
+
+System = System0[[
+  C1::beginSend <- IC::beginSend, C1::endSend <- IC::endSend,
+  C1::beginReceive <- IC::beginReceive, C1::endReceive <- IC::endReceive,
+  C1::beginClose <- IC::beginClose, C1::endClose <- IC::endClose,
+  C1::beginRegisterOut <- IC::beginRegisterOut, 
+  C1::endRegisterOut <- IC::endRegisterOut,
+  C1::beginRegisterIn <- IC::beginRegisterIn, 
+  C1::endRegisterIn <- IC::endRegisterIn,
+  C1::beginDeregisterOut <- IC::beginDeregisterOut, 
+  C1::endDeregisterOut <- IC::endDeregisterOut,
+  C1::beginDeregisterIn <- IC::beginDeregisterIn, 
+  C1::endDeregisterIn <- IC::endDeregisterIn,
+  C1::beginMaybeReceive <- IC::beginMaybeReceive,
+  C1::endMaybeReceive <- IC::endMaybeReceive,
+  C1::beginMaybeSend <- IC::beginMaybeSend,
+  C1::endMaybeSend <- IC::endMaybeSend,
+  C1::beginPortClosed <- IC::beginPortClosed,
+  C1::endPortClosed <- IC::endPortClosed
+]]  
 
 assert IC::SpecF [T= System
 

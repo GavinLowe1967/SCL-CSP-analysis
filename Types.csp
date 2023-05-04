@@ -8,6 +8,9 @@ datatype Data = A | B
 -- The eqivalent ofthe Scala type Option[Data]
 datatype Option = None | Some.Data
 
+-- The type of information about how an alt ended.
+datatype AltResult = AltReceive.Index.Data | AltSend.Index.Data | AltAbort
+
 ------ Results of send/receive operations
 
 -- Results returned by receive operations.

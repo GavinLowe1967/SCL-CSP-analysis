@@ -2,7 +2,7 @@
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
-datatype ThreadID = AltThread | T1 | T2 | T3 -- | T4
+datatype ThreadID = AltThread | T1 | T2 -- | T3 -- | T4
 
 ChanThreads =  diff(ThreadID, {AltThread})
 
@@ -24,6 +24,8 @@ include "Alt.csp"
 -- The list of branches in the alt
 branches =  <InPortBranch.Chan0, OutPortBranch.Chan1>
 -- branches =  < InPortBranch.Chan0, InPortBranch.Chan1 >
+
+Index = {0..length(branches)-1}
 
 -- Create the alt.
 instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
@@ -55,7 +57,30 @@ FreeEvents = {|
 |}
 
 -- Build the system
-System = A1::runWithAndHide(Threads ||| RUN(FreeEvents))
+System0 = A1::runWithAndHide(Threads ||| RUN(FreeEvents))
+
+System = System0[[
+  A1::beginAlt <- IdealisedAlt::beginAlt,
+  A1::endAlt <- IdealisedAlt::endAlt,
+  -- Registration
+  A1::beginRegisterIn <- IdealisedAlt::beginRegisterIn,
+  A1::endRegisterIn <- IdealisedAlt::endRegisterIn,
+  A1::beginRegisterOut <- IdealisedAlt::beginRegisterOut,
+  A1::endRegisterOut <- IdealisedAlt::endRegisterOut,
+  A1::beginDeregisterIn <- IdealisedAlt::beginDeregisterIn,
+  A1::endDeregisterIn <- IdealisedAlt::endDeregisterIn,
+  A1::beginDeregisterOut <- IdealisedAlt::beginDeregisterOut,
+  A1::endDeregisterOut <- IdealisedAlt::endDeregisterOut,
+  -- Call backs
+  A1::beginMaybeSend <- IdealisedAlt::beginMaybeSend,
+  A1::endMaybeSend <- IdealisedAlt::endMaybeSend,
+  A1::beginMaybeReceive <- IdealisedAlt::beginMaybeReceive,
+  A1::endMaybeReceive <- IdealisedAlt::endMaybeReceive,
+  A1::beginPortClosed <- IdealisedAlt::beginPortClosed,
+  A1::endPortClosed <- IdealisedAlt::endPortClosed
+]]
+[[ A1::spuriousWakeup <- IdealisedAlt::spuriousWakeup ]]
+-- Note: the split of renamings is to make the FDR debug more readable.
 
 include "IdealisedAlt.csp"
 
@@ -68,4 +93,4 @@ assert IdealisedAlt::SpecD [FD= System
 -- I think the FD refinement implies the F refinement if Spec1 is divergence
 -- free.
 
-assert IdealisedAlt::Spec1 :[ divergence free ]
+assert IdealisedAlt::IdealisedAltSpec :[ divergence free ]

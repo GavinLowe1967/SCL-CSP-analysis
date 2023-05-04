@@ -520,60 +520,8 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -- Internals = compress(Internals0 \ internals)
 
 exports
-
-  -- Signals before and after invocations or sends and receives
-  channel beginSend, beginSendWithin : ThreadID . Data
-  channel beginReceive, beginReceiveWithin : ThreadID
-  channel endSend : ThreadID . SendResult
-  channel endReceive : ThreadID . ReceiveResult
-  channel endSendWithin: ThreadID . SendWithinResult
-  channel endReceiveWithin : ThreadID . ReceiveWithinResult
-
-  -- Signals for closing channel
-  channel beginClose, endClose: ThreadID
-
-  -- Signals before and after invocations of registerIn/Out or deregisterIn/Out
-  channel beginRegisterIn, beginDeregisterIn, beginDeregisterOut: 
-    ThreadID . AltID . Index
-  channel beginRegisterOut: ThreadID . AltID . Index 
-  channel endRegisterIn: ThreadID . AltID . RegisterInResult
-  channel endRegisterOut: ThreadID . AltID . RegisterOutResult
-  channel endDeregisterIn, endDeregisterOut: ThreadID . AltID
-
-  -- Events for calling back to Alts. 
-  channel beginMaybeReceive: ThreadID . AltID . Index . Data 
-  channel endMaybeReceive: ThreadID . AltID . Bool
-
-  channel beginMaybeSend : ThreadID . AltID . Index
-  channel endMaybeSend : ThreadID . AltID . Option 
-
-  channel beginPortClosed : ThreadID . AltID . Index
-  channel endPortClosed : ThreadID . AltID
-
-  -- Interface with client threads
-  ClientInterface = {|
-    beginSend, endSend, beginReceive, endReceive, 
-    beginSendWithin, endSendWithin, beginReceiveWithin, endReceiveWithin,
-    beginClose, endClose
-  |}
-
-  -- Events for callbacks to an alt.
-  AltCallBacks = {|
-    beginMaybeReceive, endMaybeReceive, beginMaybeSend, endMaybeSend,
-    beginPortClosed, endPortClosed
-  |}
-
-  -- Events for registration and deregistrtion of an alt. 
-  AltRegistrationEvents = {|
-    beginRegisterIn, endRegisterIn, beginDeregisterIn, endDeregisterIn,
-    beginRegisterOut, endRegisterOut, beginDeregisterOut, endDeregisterOut
-  |}
-
-  -- Interface with alts
-  AltInterface = union(AltCallBacks, AltRegistrationEvents)
-
-  -- Interface with client threads and alts
-  Interface = union(ClientInterface, AltInterface)
+  -- Definition of the interface of the channel.  Shared with ChanInterface.
+  include "ChanInterface.csp"
 
   ------ Administrative functions
 

@@ -1,0 +1,39 @@
+-- The interface of an Alt or an IdealisedAlt  
+
+  -- Events for invocations of the main run function.
+  channel beginAlt: ThreadID
+  channel endAlt: ThreadID . AltResult 
+
+  -- Events for invocations of maybeReceive, maybeSend and portClosed.
+  channel beginMaybeReceive: ThreadID . Index . Data
+  channel endMaybeReceive : ThreadID . Bool
+
+  channel beginMaybeSend : ThreadID . Index
+  channel endMaybeSend : ThreadID . Option 
+
+  channel beginPortClosed : ThreadID . Index
+  channel endPortClosed : ThreadID 
+
+  -- Channels for operations the alt calls on ports.
+  channel beginRegisterIn : ThreadID . ChanID . Index
+  channel endRegisterIn : ThreadID . ChanID . RegisterInResult
+  channel beginRegisterOut : ThreadID . ChanID . Index 
+  channel endRegisterOut : ThreadID . ChanID . RegisterOutResult
+
+  channel beginDeregisterIn : ThreadID . ChanID . Index
+  channel endDeregisterIn : ThreadID . ChanID
+  channel beginDeregisterOut : ThreadID . ChanID . Index 
+  channel endDeregisterOut : ThreadID . ChanID
+
+  ---- Interface with clients
+  AltInterface = {| beginAlt, endAlt |}
+
+  -- The interface between the alt and channels (in both directions). 
+  ChannelInterface = 
+    {| beginRegisterIn, endRegisterIn, beginRegisterOut, endRegisterOut,
+       beginDeregisterIn, endDeregisterIn, beginDeregisterOut, endDeregisterOut,
+       beginMaybeSend, endMaybeSend, beginMaybeReceive, endMaybeReceive,
+       beginPortClosed, endPortClosed
+    |}
+
+  Interface = union( AltInterface, ChannelInterface )

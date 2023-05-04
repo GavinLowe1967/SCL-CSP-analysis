@@ -265,50 +265,12 @@ module Alt(this, branches, ThreadID, ChanID)
   
   InternalEvents = union(varEvents, JVMMonitor::events)
 
-  ---- Interface with clients
-  AltInterface = {| beginAlt, endAlt |}
-
 exports
-  
-  -- The type of information about how an alt ended.
-  datatype AltResult = AltReceive.Index.Data | AltSend.Index.Data | AltAbort
 
-  -- Events for invocations of the main run function.
-  channel beginAlt: ThreadID
-  channel endAlt: ThreadID . AltResult -- Index . Data
-
-  -- Events for invocations of maybeReceive, maybeSend.
-  channel beginMaybeReceive: ThreadID . Index . Data
-  channel endMaybeReceive : ThreadID . Bool
-
-  channel beginMaybeSend : ThreadID . Index
-  channel endMaybeSend : ThreadID . Option 
-
-  -- Channels for operations the alt calls on ports.
-  channel beginRegisterIn : ThreadID . ChanID . Index
-  channel endRegisterIn : ThreadID . ChanID . RegisterInResult
-  channel beginRegisterOut : ThreadID . ChanID . Index 
-  channel endRegisterOut : ThreadID . ChanID . RegisterOutResult
-
-  channel beginDeregisterIn : ThreadID . ChanID . Index
-  channel endDeregisterIn : ThreadID . ChanID
-  channel beginDeregisterOut : ThreadID . ChanID . Index 
-  channel endDeregisterOut : ThreadID . ChanID
-
-  channel beginPortClosed : ThreadID . Index
-  channel endPortClosed : ThreadID 
+  -- The interface.  Shared with an IdealisedAlt.
+  include "AltInterface.csp"  
 
   spuriousWakeup = JVMMonitor::spuriousWakeup
-
-  -- The interface between the alt and channels (in both directions). 
-  ChannelInterface = 
-    {| beginRegisterIn, endRegisterIn, beginRegisterOut, endRegisterOut,
-       beginDeregisterIn, endDeregisterIn, beginDeregisterOut, endDeregisterOut,
-       beginMaybeSend, endMaybeSend, beginMaybeReceive, endMaybeReceive,
-       beginPortClosed, endPortClosed
-    |}
-
-  Interface = union( AltInterface, ChannelInterface )
 
   ----- Administrative functions.
 

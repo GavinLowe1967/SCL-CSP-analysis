@@ -2,9 +2,8 @@
 
 -- This module assumes that the following are in scope: (1) the definitions in
 -- Types.csp; (2) a definition of ThreadID, including AltThread, and a
--- corresponding definition of ChanThreads; (3) C1, an instance of a SyncChan
--- based on size and ThreadID.  The events of the exported definitions are
--- taken from C1.
+-- corresponding definition of ChanThreads; (3) a definition of AltID,
+-- including Alt1.
 
 module IdealisedChan(size)
 
@@ -14,6 +13,9 @@ module IdealisedChan(size)
   -- Macros for set operations
   add(set,x) = union(set,{x})
   remove(set,x) = diff(set,{x})
+
+  -- Channel threads other than t.
+  others(t) = diff(ChanThreads, {t})
   
   --------- Lineariser for registration and deregistration
   
@@ -34,55 +36,55 @@ module IdealisedChan(size)
   
   -- Lineariser for registration and deregistration events.
   RegLin = 
-    C1::beginRegisterIn.AltThread.Alt1?index -> RegLinRegIn(index)
+    beginRegisterIn.AltThread.Alt1?index -> RegLinRegIn(index)
     |~|
-    C1::beginDeregisterIn.AltThread.Alt1?index -> RegLinDeregIn(index)
+    beginDeregisterIn.AltThread.Alt1?index -> RegLinDeregIn(index)
     |~|
-    C1::beginRegisterOut.AltThread.Alt1?index -> RegLinRegOut(index)
+    beginRegisterOut.AltThread.Alt1?index -> RegLinRegOut(index)
     |~|
-    C1::beginDeregisterOut.AltThread.Alt1?index -> RegLinDeregOut(index)
+    beginDeregisterOut.AltThread.Alt1?index -> RegLinDeregOut(index)
     |~|
     STOP
   
   -- Alt registering at inport against index.
   RegLinRegIn(index) = 
-    registerInSync?t?x -> C1::endRegisterIn.AltThread.Alt1.RegisterInSuccess.x ->
+    registerInSync?t?x -> endRegisterIn.AltThread.Alt1.RegisterInSuccess.x ->
     RegLin
     []
-    registerInWait.index -> C1::endRegisterIn.AltThread.Alt1.RegisterInWaiting ->
+    registerInWait.index -> endRegisterIn.AltThread.Alt1.RegisterInWaiting ->
     RegLin
     []
-    isClosed.AltThread -> C1::endRegisterIn.AltThread.Alt1.RegisterInClosed ->
+    isClosed.AltThread -> endRegisterIn.AltThread.Alt1.RegisterInClosed ->
     RegLin
     []
     registerError -> STOP
   
   -- Alt deregistering at inport against index.
   RegLinDeregIn(index) = 
-    deregisterIn.index -> C1::endDeregisterIn.AltThread.Alt1 -> RegLin
+    deregisterIn.index -> endDeregisterIn.AltThread.Alt1 -> RegLin
     [] deregisterInError.index -> STOP
   
   -- Alt deregistering at outport against index.
   RegLinRegOut(index) = 
     ( |~| x : Data @ registerOutSync?t!x -> 
-       C1::endRegisterOut.AltThread.Alt1.RegisterOutSuccess.x -> RegLin
+       endRegisterOut.AltThread.Alt1.RegisterOutSuccess.x -> RegLin
     )
     []
     registerOutWait.index -> 
-    C1::endRegisterOut.AltThread.Alt1.RegisterOutWaiting -> RegLin
+    endRegisterOut.AltThread.Alt1.RegisterOutWaiting -> RegLin
     []
-    isClosed.AltThread -> C1::endRegisterOut.AltThread.Alt1.RegisterOutClosed ->
+    isClosed.AltThread -> endRegisterOut.AltThread.Alt1.RegisterOutClosed ->
     RegLin
     []
     registerError -> STOP
   
   -- Alt deregistering at outport against index.
   RegLinDeregOut(index) = 
-    deregisterOut.index -> C1::endDeregisterOut.AltThread.Alt1 -> RegLin
+    deregisterOut.index -> endDeregisterOut.AltThread.Alt1 -> RegLin
     [] deregisterOutError.index -> STOP
   
   alphaRegLin = union(
-    C1::AltRegistrationEvents, 
+    AltRegistrationEvents, 
     {| registerInSync, registerInWait, registerOutSync, registerOutWait,
        registerError, isClosed.AltThread,
        deregisterIn, deregisterInError, deregisterOut, deregisterOutError |}
@@ -111,11 +113,11 @@ module IdealisedChan(size)
   
   -- A lineariser for thread me
   Lin(me) = 
-    C1::beginSend.me?x -> SendingLin(me, x)
+    beginSend.me?x -> SendingLin(me, x)
     |~|
-    C1::beginReceive.me -> ReceivingLin(me)
+    beginReceive.me -> ReceivingLin(me)
     |~|
-    C1::beginClose.me -> close.me -> isClosed.me -> C1::endClose.me -> Lin(me)
+    beginClose.me -> close.me -> isClosed.me -> endClose.me -> Lin(me)
     -- Note: the isClosed event means the endClose happens only after the
     -- registered port (if any) has been informed.
     |~|
@@ -127,13 +129,13 @@ module IdealisedChan(size)
     []
     registerInSync.me.x -> commit.me -> EndSendingLin(me)
     []
-    callMaybeReceive.me?index!x -> C1::beginMaybeReceive.me.Alt1.index.x -> 
-    C1::endMaybeReceive.me.Alt1?res -> 
+    callMaybeReceive.me?index!x -> beginMaybeReceive.me.Alt1.index.x -> 
+    endMaybeReceive.me.Alt1?res -> 
     (if res then EndSendingLin(me) else SendingLin(me, x))
     []
-    isClosed.me -> C1::endSend.me.SendClosed -> Lin(me)
+    isClosed.me -> endSend.me.SendClosed -> Lin(me)
   
-  EndSendingLin(me) = C1::endSend.me.SendSuccess -> Lin(me)
+  EndSendingLin(me) = endSend.me.SendSuccess -> Lin(me)
   
   -- Lineariser for thread me inside receive.
   ReceivingLin(me) =  
@@ -141,22 +143,22 @@ module IdealisedChan(size)
     []
     registerOutSync.me?x -> EndReceivingLin(me, x)
     []
-    callMaybeSend.me?index -> C1::beginMaybeSend.me.Alt1.index -> (
-      C1::endMaybeSend.me.Alt1.Some?x -> EndReceivingLin(me, x)
-      [] C1::endMaybeSend.me.Alt1.None -> ReceivingLin(me)
+    callMaybeSend.me?index -> beginMaybeSend.me.Alt1.index -> (
+      endMaybeSend.me.Alt1.Some?x -> EndReceivingLin(me, x)
+      [] endMaybeSend.me.Alt1.None -> ReceivingLin(me)
     )
     [] 
-    isClosed.me -> C1::endReceive.me.ReceiveClosed -> Lin(me)
+    isClosed.me -> endReceive.me.ReceiveClosed -> Lin(me)
   
-  EndReceivingLin(me, x) =  C1::endReceive.me.ReceiveSuccess.x -> Lin(me)
+  EndReceivingLin(me, x) =  endReceive.me.ReceiveSuccess.x -> Lin(me)
   
   -- Alphabet for Lin(me)
   alphaLin(me) = union(
-    {| C1::beginSend.me, C1::endSend.me, C1::beginReceive.me, C1::endReceive.me,
-       callMaybeReceive.me, C1::beginMaybeReceive.me, C1::endMaybeReceive.me,
-       callMaybeSend.me, C1::beginMaybeSend.me, C1::endMaybeSend.me,
+    {| beginSend.me, endSend.me, beginReceive.me, endReceive.me,
+       callMaybeReceive.me, beginMaybeReceive.me, endMaybeReceive.me,
+       callMaybeSend.me, beginMaybeSend.me, endMaybeSend.me,
        sync.me, commit.me, registerInSync.me, registerOutSync.me, 
-       C1::beginClose.me, C1::endClose.me, close.me, isClosed.me  |},
+       beginClose.me, endClose.me, close.me, isClosed.me  |},
     {| sync.other.me | other <- others(me) |}
   )
   
@@ -224,20 +226,20 @@ module IdealisedChan(size)
     commit?_ -> ChanState(regStatus)
     []
   -- Calls to maybeReceive
-    callMaybeReceive?t?index:regIns?x -> C1::beginMaybeReceive.t.Alt1.index.x -> 
-      C1::endMaybeReceive.t!Alt1?res -> ChanState(NoReg)
+    callMaybeReceive?t?index:regIns?x -> beginMaybeReceive.t.Alt1.index.x -> 
+      endMaybeReceive.t!Alt1?res -> ChanState(NoReg)
     []
   -- Calls to maybeSend
-    callMaybeSend?t?index:regOuts -> C1::beginMaybeSend.t.Alt1.index -> 
-      C1::endMaybeSend.t.Alt1?res -> ChanState(NoReg)
+    callMaybeSend?t?index:regOuts -> beginMaybeSend.t.Alt1.index -> 
+      endMaybeSend.t.Alt1?res -> ChanState(NoReg)
     -- The initial event of each process in the last two branches is hidden, so
     -- this process may nondeterministically choose to go down that route.
     []
     close?t -> (
       if regStatus == NoReg then ChanStateClosed
       else     -- inform the registered port
-        C1::beginPortClosed.t.Alt1?index:union(regIns,regOuts) ->
-        C1::endPortClosed.t.Alt1 -> ChanStateClosed
+        beginPortClosed.t.Alt1?index:union(regIns,regOuts) ->
+        endPortClosed.t.Alt1 -> ChanStateClosed
     )
   
   ChanStateClosed = 
@@ -247,7 +249,7 @@ module IdealisedChan(size)
     [] deregisterOut?_ -> ChanStateClosed
   
   alphaChanState = union(
-    C1::AltCallBacks, -- FreeEvents,
+    AltCallBacks, 
     {| registerInSync, registerInWait, registerError, 
        deregisterIn, deregisterInError,
        registerOutSync, registerOutWait, deregisterOut, deregisterOutError,
@@ -268,6 +270,9 @@ module IdealisedChan(size)
   
 exports
 
+  -- Definition of the interface of the channel.  Shared with SyncChan.
+  include "ChanInterface.csp"
+
   -- Specification, with error events visible.
   ChannelSpec = 
     let internals = 
@@ -278,7 +283,7 @@ exports
 
   -- If an error event happens, allow arbitrary behaviour.  The definitions
   -- are different for the stable failures and failures-divergences models.
-  SpecF =  (ChannelSpec [| Errors |> CHAOS(C1::Interface) ) \ Errors
+  SpecF =  (ChannelSpec [| Errors |> CHAOS(Interface) ) \ Errors
   
   SpecD = (ChannelSpec [| Errors |> DIV ) \ Errors
   
