@@ -26,7 +26,11 @@
   channel endDeregisterOut : ThreadID . ChanID
 
   ---- Interface with clients
+
+  -- Events of the thread running the alt. 
   AltInterface = {| beginAlt, endAlt |}
+
+  altInterface(t) = {| beginAlt.t, endAlt.t |}
 
   -- The interface between the alt and channels (in both directions). 
   ChannelInterface = 
@@ -35,5 +39,11 @@
        beginMaybeSend, endMaybeSend, beginMaybeReceive, endMaybeReceive,
        beginPortClosed, endPortClosed
     |}
+
+  -- Callback events for thread t
+  callBacks(t) = {| 
+    beginMaybeReceive.t, endMaybeReceive.t, beginMaybeSend.t, endMaybeSend.t,
+    beginPortClosed.t, endPortClosed.t
+  |}
 
   Interface = union( AltInterface, ChannelInterface )

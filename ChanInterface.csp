@@ -48,6 +48,14 @@
     beginRegisterOut, endRegisterOut, beginDeregisterOut, endDeregisterOut
   |}
 
+  -- Events for registration and deregistration of alt a by thread t.
+  altRegistrationEvents(t, a) = {|
+    beginRegisterIn.t.a, endRegisterIn.t.a, 
+    beginDeregisterIn.t.a, endDeregisterIn.t.a,
+    beginRegisterOut.t.a, endRegisterOut.t.a, 
+    beginDeregisterOut.t.a, endDeregisterOut.t.a
+  |}
+
   -- Interface with alts
   AltInterface = union(AltCallBacks, AltRegistrationEvents)
 

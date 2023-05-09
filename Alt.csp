@@ -103,8 +103,14 @@ module Alt(this, branches, ThreadID, ChanID)
 
   -- Code after the registration loop.  
   AfterLoop(me, cont) = 
-    JVMMonitor::Synchronized(me, AfterLoop1(me, cont));
-    PostWait(me, cont)
+    JVMMonitor::Lock(me); AfterLoop1(me, cont)
+    --JVMMonitor::Synchronized(me, AfterLoop1(me, cont))-- ;
+    -- PostWait(me, cont)
+
+  -- Note: we can't use the Synchronized contruct here, because we need to
+  -- release the lock in the AltAbort case.
+
+-- IMPROVE structure
 
   -- The body of the synchronized block. 
   AfterLoop1(me, cont) = 
@@ -118,8 +124,12 @@ module Alt(this, branches, ThreadID, ChanID)
       within
       While(Test, JVMMonitor::Wait(me));  
       -- if(numEnabled == 0) throw new AltAbort
-      getNumEnabled.me?ne -> if ne == 0 then cont(AltAbort) else SKIP
-    else SKIP
+      getNumEnabled.me?ne -> 
+      if ne == 0 then JVMMonitor::Unlock(me); cont(AltAbort) 
+      else AfterLoop2(me, cont) -- SKIP
+    else AfterLoop2(me, cont) -- SKIP
+
+  AfterLoop2(me, cont) = JVMMonitor::Unlock(me); PostWait(me, cont)
 
   -- Code after the (possible) wait
   PostWait(me, cont) = 

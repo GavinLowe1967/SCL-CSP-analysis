@@ -11,15 +11,16 @@ ChanThreads =  diff(ThreadID, {AltThread})
 -- Identities of channels
 datatype ChanID = Chan1
 
+-- Max # branches in an alt
+size = 2 
+Index = {0..size-1}
+
 include "Types.csp"
 
 -- Identities of Alts
 datatype AltID = Alt1
 
 include "NewSyncChan.csp" 
-
--- Max # branches in an alt
-size = 2 
 
 -- Create channel
 instance C1 = SyncChan(ThreadID, AltID, Data, size)
@@ -40,27 +41,13 @@ false & (
   |~| 
   STOP
 
--- The alt thread, which alternates between begin and end events.
-TheAltThread(me, alt) = 
-  C1::beginRegisterIn.me.alt$index -> C1::endRegisterIn.me.alt?_ ->
-    TheAltThread(me, alt)
-  |~|
-  C1::beginDeregisterIn.me.alt$index -> C1::endDeregisterIn.me.alt ->
-    TheAltThread(me, alt)
-  |~| 
-  C1::beginRegisterOut.me.alt$index -> C1::endRegisterOut.me.alt?_ ->
-    TheAltThread(me, alt)
-  |~|
-  C1::beginDeregisterOut.me.alt$index -> C1::endDeregisterOut.me.alt ->
-    TheAltThread(me, alt)
-  |~|
-  STOP
-
+-- The alt thread, which registers and deregisters.
+TheAltThread(me, alt) = RUN(C1::altRegistrationEvents(me, alt))
+  
 Threads = (||| t <- ChanThreads @ Thread(t))  ||| TheAltThread(AltThread, Alt1)
 
 -- The system to test
 System0 = C1::runWithAndHide(Threads ||| RUN(C1::AltCallBacks))
-
 
 include "IdealisedChan.csp"
 

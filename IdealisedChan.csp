@@ -36,15 +36,22 @@ module IdealisedChan(size)
   
   -- Lineariser for registration and deregistration events.
   RegLin = 
+    -- beginRegisterIn.AltThread.Alt1?index -> RegLinRegIn(index)
+    -- |~|
+    -- beginDeregisterIn.AltThread.Alt1?index -> RegLinDeregIn(index)
+    -- |~|
+    -- beginRegisterOut.AltThread.Alt1?index -> RegLinRegOut(index)
+    -- |~|
+    -- beginDeregisterOut.AltThread.Alt1?index -> RegLinDeregOut(index)
+    -- |~|
+    -- STOP
     beginRegisterIn.AltThread.Alt1?index -> RegLinRegIn(index)
-    |~|
+    []
     beginDeregisterIn.AltThread.Alt1?index -> RegLinDeregIn(index)
-    |~|
+    []
     beginRegisterOut.AltThread.Alt1?index -> RegLinRegOut(index)
-    |~|
+    []
     beginDeregisterOut.AltThread.Alt1?index -> RegLinDeregOut(index)
-    |~|
-    STOP
   
   -- Alt registering at inport against index.
   RegLinRegIn(index) = 
@@ -206,11 +213,16 @@ module IdealisedChan(size)
   -- Illegal call of registerIn or registerOut
     regStatus != NoReg & registerError -> STOP
     []   
-  -- Deregistration from inport.
+  -- Deregistration from inport, including if there is no registered port.
     deregisterIn?index:regIns ->  ChanState(NoReg)
     []
+    regStatus == NoReg & deregisterIn?index ->  ChanState(NoReg)
+    -- deregisterIn?index:diff(Index, regOuts) -> ChanState(NoReg)
+    []
   -- Illegal deregistration from inport
-    deregisterInError?index:diff(Index, regIns) -> STOP
+    regStatus != NoReg & deregisterInError?index:diff(Index, regIns) -> STOP
+    -- deregisterInError?index:regOuts -> STOP
+-- FIXME: update below as above
     []
   -- Deregistration from outport
     deregisterOut?index:regOuts -> ChanState(NoReg)

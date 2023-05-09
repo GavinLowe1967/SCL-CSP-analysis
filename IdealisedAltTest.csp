@@ -2,7 +2,7 @@
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
-datatype ThreadID = AltThread | T1 | T2 -- | T3 -- | T4
+datatype ThreadID = AltThread | T1 | T2   | T3 -- | T4
 
 ChanThreads =  diff(ThreadID, {AltThread})
 
@@ -30,23 +30,22 @@ Index = {0..length(branches)-1}
 -- Create the alt.
 instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
 
--- The alt thread
-TheAltThread = 
-  A1::beginAlt.AltThread -> A1::endAlt.AltThread?_ -> TheAltThread
-  |~|
-  STOP
+-- -- The alt thread
+-- TheAltThread = RUN(A1::altInterface(AltThread))
+--   -- A1::beginAlt.AltThread -> A1::endAlt.AltThread?_ -> TheAltThread
+--   -- |~|
+--   -- STOP
 
--- A channel thread
-ChanThread(me) = 
-  A1::beginMaybeReceive.me?index?x -> A1::endMaybeReceive.me?_ -> ChanThread(me)
-  |~|
-  A1::beginMaybeSend.me?index -> A1::endMaybeSend.me?_ -> ChanThread(me)
-  |~|
-  A1::beginPortClosed.me?index -> A1::endPortClosed.me -> ChanThread(me)
-  |~|
-  STOP
+-- -- A channel thread
+-- ChanThread(me) = RUN(A1::callBacks(me))
 
-Threads = (||| t <- ChanThreads @ ChanThread(t)) ||| TheAltThread
+-- Threads = (||| t <- ChanThreads @ ChanThread(t)) ||| TheAltThread
+
+-- Events corresponding to operation calls
+ThreadEvents = union(
+  A1::altInterface(AltThread), 
+  Union({ A1::callBacks(t) | t <- ChanThreads })
+)
 
 -- Events that we don't try to constrain
 FreeEvents = {|  
@@ -57,7 +56,8 @@ FreeEvents = {|
 |}
 
 -- Build the system
-System0 = A1::runWithAndHide(Threads ||| RUN(FreeEvents))
+System0 = A1::runWithAndHide(RUN(union(ThreadEvents, FreeEvents))) 
+-- Threads ||| RUN(FreeEvents))
 
 System = System0[[
   A1::beginAlt <- IdealisedAlt::beginAlt,

@@ -3,7 +3,7 @@
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
-datatype ThreadID = AltThread | T1 | T2 -- | T3 -- | T4
+datatype ThreadID = AltThread | T1 | T2 --| T3 -- | T4
 
 others(t) = diff(ChanThreads, {t})
 
@@ -27,6 +27,11 @@ size = length(branches)
 
 Index = {0..size-1}
 
+-- Index of channel c in branches
+index(c) = 
+  let index1(c,cs) = if c == head(cs) then 0 else 1 + index1(c, tail(cs))
+  within index1(c, branches)
+
 include "IdealisedChan.csp"
 
 -- Create channel
@@ -45,9 +50,10 @@ include "IdealisedAlt.csp"
 
 -- Rename events of IdealisedChans to be consistent with A1
 
-transparent normal
+transparent normal, sbisim, diamond
 
 compress(P) = normal(P)
+-- compress(P) = sbisim(diamond(P))
 
 IdealisedChannel0 =
   compress(IC0::ChannelSpec)[[
@@ -89,21 +95,19 @@ IdealisedChannel1 =
 System00 = 
   (IdealisedChannel0 ||| IdealisedChannel1) 
   [| IdealisedAlt::ChannelInterface |] 
-  IdealisedAlt::IdealisedAltSpec
+  -- compress(IdealisedAlt::IdealisedAltSpec)
+  sbisim(diamond(IdealisedAlt::IdealisedAltSpec))
 -- improve: compress Alt? 
 
 System0 = System00 \ IdealisedAlt::ChannelInterface
 
+-- Alphabet of System0
 Alpha = Union({ 
   IdealisedAlt::AltInterface, IC0::ClientInterface, IC1::ClientInterface,
   {| IdealisedAlt::spuriousWakeup |} 
 })
 
-
--- Currently fails: a channel can call portClosed before the corresponding
--- registerIn has finished, giving an error in RegTracker1.  In the
--- implementation, the linearisation is blocked until after registration is
--- over.
+------ Threads that interact with the system
 
 -- The alt thread
 TheAltThread = 
@@ -128,6 +132,115 @@ AllThreads = TheAltThread ||| (||| t <- ChanThreads @ ChanThread(t))
 
 System = System0 [| Alpha |] AllThreads
 
+-- Check no Error events happen.
+
 assert CHAOS(Alpha) [T= System
 
 assert CHAOS(Alpha) [F= System
+
+------- Synchronisation linearisation (copied from CombinedTest.csp)
+
+-- Synchronisation between threads in Alt and channel, passing data value.
+channel altSync : ThreadID . ThreadID . ChanID . Data
+
+-- synchronsation between a sender and receiver
+channel sync : ThreadID . ThreadID . ChanID . Data
+
+-- channel closing linearization point
+channel close: ThreadID . ChanID
+
+channel isClosed: ThreadID . ChanID
+
+-- Specification object for a channel: keeps track of whether the channel is
+-- closed, allowing appropriate events before and after.
+ChanSpec(c) = 
+  sync?_?_!c?_ -> ChanSpec(c) 
+  [] altSync?_?_!c?_ -> ChanSpec(c) 
+  [] close?_!c -> ChanSpecClosed(c)
+ChanSpecClosed(c) =
+  isClosed?_!c -> ChanSpecClosed(c) [] close?_!c -> ChanSpecClosed(c)
+alphaChanSpecs = {| sync, altSync, close, isClosed |} 
+
+-- Lineariser for the Alt thread.
+AltLin(me) = 
+  let inPorts = { c | InPortBranch.c <- set(branches) }
+      outPorts = { c | OutPortBranch.c <- set(branches) } 
+  within
+  IdealisedAlt::beginAlt.me -> (
+    altSync.me?other:ChanThreads?c:inPorts?x -> 
+      IdealisedAlt::endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me)
+    []
+    altSync?other:ChanThreads!me?c:outPorts?x ->
+      IdealisedAlt::endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
+  )
+  |~| STOP
+
+alphaAltLin(me) = union(
+  {| IdealisedAlt::beginAlt.me, IdealisedAlt::endAlt.me, altSync.me |},
+  {| altSync.t.me | t <- ChanThreads |}
+)
+
+-- Lineariser for a channel thread.
+ChanThreadLin(me) = 
+  let Others = others(me) within
+  IC0::beginSend.me?x -> LinSending(me, x, Chan0, IC0::endSend)
+  |~|
+  IC1::beginSend.me?x -> LinSending(me, x, Chan1, IC1::endSend)
+  |~|
+  IC0::beginReceive.me -> LinReceiving(me, Chan0, IC0::endReceive) 
+  |~|
+  IC1::beginReceive.me -> LinReceiving(me, Chan1, IC1::endReceive)
+  |~| 
+  IC0::beginClose.me -> close.me.Chan0 -> IC0::endClose.me -> ChanThreadLin(me)
+  |~|
+  IC1::beginClose.me -> close.me.Chan1 -> IC1::endClose.me -> ChanThreadLin(me)
+  |~|
+  STOP
+
+-- Thread me sending x on c; endSend.me will signal the end of the sending. 
+LinSending(me, x, c, endSend) = 
+  sync.me?other:others(me)!c!x -> endSend.me.SendSuccess -> ChanThreadLin(me)
+  [] 
+  altSync?altThread!me!c!x -> endSend.me.SendSuccess -> ChanThreadLin(me)
+  [] 
+  isClosed.me.c -> endSend.me.SendClosed -> ChanThreadLin(me)
+
+-- Thread me receiving on c; endReceive.me will signal the end of the receive. 
+LinReceiving(me, c, endReceive) = 
+  sync?other:others(me)!me!c?x -> endReceive.me.ReceiveSuccess.x ->
+    ChanThreadLin(me)
+  [] 
+  altSync.me?altThread!c?x -> endReceive.me.ReceiveSuccess.x -> ChanThreadLin(me)
+  [] 
+  isClosed.me.c -> endReceive.me.ReceiveClosed -> ChanThreadLin(me)
+
+-- Alphabet of ChanThreadLin(me)
+alphaChanThreadLin(me) = {| 
+  IC0::beginSend.me, IC0::endSend.me, IC1::beginSend.me, IC1::endSend.me,
+  IC0::beginReceive.me, IC0::endReceive.me, 
+  IC1::beginReceive.me, IC1::endReceive.me,  
+  IC0::beginSendWithin.me, IC0::endSendWithin.me,
+  IC1::beginSendWithin.me, IC1::endSendWithin.me,
+  IC0::beginReceiveWithin.me, IC0::endReceiveWithin.me,
+  IC1::beginReceiveWithin.me, IC1::endReceiveWithin.me,
+  IC0::beginClose.me, IC0::endClose.me, IC1::beginClose.me, IC1::endClose.me,
+  
+  altSync.AltThread.me, altSync.me.AltThread, sync.me, sync.t.me, 
+  close.me, isClosed.me |
+    t <- diff(ThreadID,{me}) |}
+
+Lin(me) = if me == AltThread then AltLin(me) else ChanThreadLin(me)
+
+alphaLin(me) = 
+  if me == AltThread then alphaAltLin(me) else alphaChanThreadLin(me)
+  
+-- Combine the linearisers to create the specification
+Spec = (
+  (|| t <- ThreadID @ [alphaLin(t)] Lin(t)) 
+  [| alphaChanSpecs |]
+  (||| c <- ChanID @ ChanSpec(c))
+) \ {| altSync, sync, close, isClosed |}
+
+assert Spec [T= System
+
+assert Spec [F= System 
