@@ -75,14 +75,23 @@ module IdealisedAlt
   -- modellingError in the spec will cause the refinement checks to fail.  This
   -- will also reduce the size of the specification process.
   expect(test, P) = if test then P else modellingError -> STOP 
+
+  -- Assuming S is a singleton set, apply P to its member.
+  extractSingle(S, P) = 
+    if card(S) == 1 then let {x} = S within P(x) else modellingError -> STOP
+
+  -- The indexes of branches matching port
+  branchesFor(port) = { i | i <- Index, nth(branches,i) == port }
   
   -- Signal from AltSpec that registration is starting
   channel beginRegister
 
   -- Linearisation points of registration
-  channel registerIn, registerOut : ChanID . Index
+  --channel registerOut : ChanID . Index
   -- Linearisation point of a register detecting the channel is closed
-  channel registerInClosed, registerOutClosed : ChanID . Index
+  --channel  registerOutClosed : ChanID . Index
+
+  -- registerIn, registerInClosed,
   
   -- Channels for AltSpec to get a port to deregister, or to find that there is
   -- no more such.  This is necessary to capture the case where the AltThread
@@ -141,27 +150,55 @@ module IdealisedAlt
     let inRegs = getInRegs(reg)
         outRegs = getOutRegs(reg)
     within
-    registerIn?c?index -> expect( 
-      nth(branches,index) == (InPortBranch.c) and mapLookup(reg, index) == NoReg,
-      RegTracker1(mapUpdate(reg, index, InPortReg.c))
-    )
+    endRegisterIn.AltThread?c!RegisterInWaiting -> extractSingle(
+      branchesFor(InPortBranch.c), 
+      \ index @ expect( 
+        mapLookup(reg, index) == NoReg,
+        RegTracker1(mapUpdate(reg, index, InPortReg.c))
+      )
+    ) 
     []
-    registerOut?c?index -> expect( 
-      nth(branches,index) == (OutPortBranch.c) and 
+    endRegisterOut.AltThread?c!RegisterOutWaiting -> extractSingle(
+      branchesFor(OutPortBranch.c), 
+      \ index @ expect( 
         mapLookup(reg, index) == NoReg,
-      RegTracker1(mapUpdate(reg, index, OutPortReg.c))
+        RegTracker1(mapUpdate(reg, index, OutPortReg.c))
+      )
+    ) 
+    -- registerOut?c?index -> expect( 
+    --   nth(branches,index) == (OutPortBranch.c) and 
+    --     mapLookup(reg, index) == NoReg,
+    --   RegTracker1(mapUpdate(reg, index, OutPortReg.c))
+    -- )
+    [] 
+    endRegisterIn.AltThread?c!RegisterInClosed -> extractSingle(
+      branchesFor(InPortBranch.c),
+      \ index @ expect( 
+        mapLookup(reg, index) == NoReg,
+        RegTracker1(mapUpdate(reg, index, Closed))
+      )  
     )
     [] 
-    registerInClosed?c?index -> expect( 
-      nth(branches,index) == (InPortBranch.c) and mapLookup(reg, index) == NoReg,
-      RegTracker1(mapUpdate(reg, index, Closed))
-    )
-    [] 
-    registerOutClosed?c?index -> expect( 
-      nth(branches,index) == (OutPortBranch.c) and 
+    endRegisterOut.AltThread?c!RegisterOutClosed -> extractSingle(
+      branchesFor(OutPortBranch.c),
+      \ index @ expect( 
         mapLookup(reg, index) == NoReg,
-      RegTracker1(mapUpdate(reg, index, Closed))
+        RegTracker1(mapUpdate(reg, index, Closed))
+      )  
     )
+    -- registerOutClosed?c?index -> expect( 
+    --   nth(branches,index) == (OutPortBranch.c) and 
+    --     mapLookup(reg, index) == NoReg,
+    --   RegTracker1(mapUpdate(reg, index, Closed))
+    -- )
+    []
+    endRegisterIn.AltThread?c!RegisterInSuccess?x -> 
+    -- endRegister?_ -> 
+    RegTracker2(reg)
+    []
+    endRegisterOut.AltThread?c!RegisterOutSuccess?x ->
+    -- endRegister?_ ->
+    RegTracker2(reg)
     []
     -- AltSpec indicates end of registration
     let ac = allClosed(reg) within
@@ -259,14 +296,15 @@ module IdealisedAlt
     portClosedError?t?index:diff(Index,allRegs) -> STOP
   
   alphaRegTracker = {| 
-    beginRegister,
-    registerIn, registerOut, registerInClosed, registerOutClosed, endRegister, 
+    -- Externals
+    endRegisterIn, endRegisterOut, endDeregisterIn, endDeregisterOut,
+    -- Internals
+    beginRegister, endRegister, 
     getToDeregisterIn, getToDeregisterOut, deregisterDone, 
-    endDeregisterIn, endDeregisterOut,
     maybeReceive, maybeReceiveError, maybeSend, maybeSendError, 
     portClosed, portClosedError,
     endWait, modellingError 
-  |}
+  |} -- registerIn, registerInClosed,registerOut,  registerOutClosed,
     
   -------------- The main thread of the alt
   
@@ -283,25 +321,31 @@ module IdealisedAlt
   Register1(i, InPortBranch.c) = 
     beginRegisterIn.AltThread.c.i -> (
       endRegisterIn.AltThread.c.RegisterInSuccess?x -> 
-      endRegister.true?_ -> Deregister(AltReceive.i.x)
+      -- endRegister.true?_ -> 
+      Deregister(AltReceive.i.x)
       []
       endRegisterIn.AltThread.c.RegisterInWaiting -> 
-      registerIn.c.i -> Register(i+1)
+      -- registerIn.c.i -> 
+      Register(i+1)
       []
       endRegisterIn.AltThread.c.RegisterInClosed -> 
-      registerInClosed.c.i -> Register(i+1)
+      -- registerInClosed.c.i -> 
+      Register(i+1)
     )
 
   Register1(i, OutPortBranch.c) =
     beginRegisterOut.AltThread.c.i -> (
       endRegisterOut.AltThread.c.RegisterOutSuccess?x ->
-      endRegister.true?_ -> Deregister(AltSend.i.x)
+      -- endRegister.true?_ -> 
+      Deregister(AltSend.i.x)
       []
       endRegisterOut.AltThread.c.RegisterOutWaiting -> 
-      registerOut.c.i -> Register(i+1)
+      -- registerOut.c.i -> 
+      Register(i+1)
       []
       endRegisterOut.AltThread.c.RegisterOutClosed -> 
-      registerOutClosed.c.i -> Register(i+1)
+      -- registerOutClosed.c.i -> 
+      Register(i+1)
     )
   
   -- Deregister all registered ports, then return result
@@ -326,12 +370,11 @@ module IdealisedAlt
    
   alphaAltSpec = {|
     beginAlt, endAlt, beginRegister,
-    beginRegisterIn, endRegisterIn, registerIn, registerInClosed,
-    beginRegisterOut, endRegisterOut, registerOut, registerOutClosed,
+    beginRegisterIn, endRegisterIn, beginRegisterOut, endRegisterOut, 
     beginDeregisterIn, endDeregisterIn, beginDeregisterOut, endDeregisterOut, 
     endRegister, getToDeregisterIn, getToDeregisterOut, deregisterDone, 
     endWait, spuriousWakeup.AltThread 
-  |}
+  |}-- registerIn, --registerInClosed,registerOut, registerOutClosed,
   
   -------- Combined spec
   
@@ -340,10 +383,10 @@ module IdealisedAlt
   -- Combine AltSpec and RegTracker
   Spec00 = 
     let internals = {| 
-      beginRegister,
-      registerIn, registerOut, registerInClosed, registerOutClosed, endRegister, 
+      beginRegister, endRegister, 
       getToDeregisterIn, getToDeregisterOut, deregisterDone, endWait 
-    |} 
+    |}  
+-- registerIn,registerInClosed, registerOut, registerOutClosed,
     within (AltSpec [ alphaAltSpec || alphaRegTracker ] RegTracker) \ internals
   
   -- Add Lins
