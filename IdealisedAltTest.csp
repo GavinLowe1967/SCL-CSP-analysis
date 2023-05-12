@@ -14,11 +14,6 @@ include "Types.csp"
 -- Identities of Alts
 datatype AltID = Alt1
 
--- Strict = true
-
--- -- Execute P if Strict is set.  Used for optional assertions. 
--- IfStrict(P) = if Strict then P else SKIP
-
 include "Alt.csp"
 
 -- The list of branches in the alt
@@ -30,34 +25,18 @@ Index = {0..length(branches)-1}
 -- Create the alt.
 instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
 
--- -- The alt thread
--- TheAltThread = RUN(A1::altInterface(AltThread))
---   -- A1::beginAlt.AltThread -> A1::endAlt.AltThread?_ -> TheAltThread
---   -- |~|
---   -- STOP
-
--- -- A channel thread
--- ChanThread(me) = RUN(A1::callBacks(me))
-
--- Threads = (||| t <- ChanThreads @ ChanThread(t)) ||| TheAltThread
-
--- Events corresponding to operation calls
+-- Events corresponding to operation calls.  We allow all such events. 
 ThreadEvents = union(
   A1::altInterface(AltThread), 
   Union({ A1::callBacks(t) | t <- ChanThreads })
 )
 
 -- Events that we don't try to constrain
-FreeEvents = {|  
-  A1::beginRegisterIn, A1::endRegisterIn,  
-  A1::beginRegisterOut, A1::endRegisterOut,
-  A1::beginDeregisterIn, A1::endDeregisterIn, 
-  A1::beginDeregisterOut, A1::endDeregisterOut
-|}
+FreeEvents = union(ThreadEvents, A1::RegistrationEvents)
 
--- Build the system
-System0 = A1::runWithAndHide(RUN(union(ThreadEvents, FreeEvents))) 
--- Threads ||| RUN(FreeEvents))
+-- Build the system.  We block events by threads not following their role
+-- (channel thread or alt thread).
+System0 = A1::runWithAndHide(RUN(FreeEvents)) 
 
 System = System0[[
   A1::beginAlt <- IdealisedAlt::beginAlt,

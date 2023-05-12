@@ -32,13 +32,18 @@
 
   altInterface(t) = {| beginAlt.t, endAlt.t |}
 
-  -- The interface between the alt and channels (in both directions). 
-  ChannelInterface = 
-    {| beginRegisterIn, endRegisterIn, beginRegisterOut, endRegisterOut,
-       beginDeregisterIn, endDeregisterIn, beginDeregisterOut, endDeregisterOut,
-       beginMaybeSend, endMaybeSend, beginMaybeReceive, endMaybeReceive,
-       beginPortClosed, endPortClosed
-    |}
+  -- The interface between the alt and channels (in both directions).
+  RegistrationEvents = {| 
+    beginRegisterIn, endRegisterIn, beginRegisterOut, endRegisterOut,
+    beginDeregisterIn, endDeregisterIn, beginDeregisterOut, endDeregisterOut
+  |}
+
+  CallBackEvents = {|  
+    beginMaybeSend, endMaybeSend, beginMaybeReceive, endMaybeReceive,
+    beginPortClosed, endPortClosed
+  |} 
+
+  ChannelInterface = union(RegistrationEvents, CallBackEvents)
 
   -- Callback events for thread t
   callBacks(t) = {| 

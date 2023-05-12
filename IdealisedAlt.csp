@@ -29,14 +29,6 @@ module IdealisedAlt
   
   -- Lineariser for thread me
   Lin(me) = 
-    -- (|~| x : Data @ 
-    --    beginMaybeReceive.me?index.x -> LinMaybeReceive(me, index, x))
-    -- |~|
-    -- beginMaybeSend.me?index -> LinMaybeSend(me, index)
-    -- |~|
-    -- beginPortClosed.me?index -> LinPortClosed(me, index)
-    -- |~|
-    -- STOP
     beginMaybeReceive.me?index?x -> LinMaybeReceive(me, index, x)
     []
     beginMaybeSend.me?index -> LinMaybeSend(me, index)
@@ -61,14 +53,11 @@ module IdealisedAlt
     [] portClosedError.me.index -> STOP
     [] (spuriousWakeup.me -> LinPortClosed(me, index) |~| STOP)
   
-  alphaLin(me) =  {| 
-    beginMaybeReceive.me, endMaybeReceive.me, 
-    beginMaybeSend.me, endMaybeSend.me, 
-    maybeReceive.me, maybeReceiveError, maybeSend.me, maybeSendError.me,
-    beginPortClosed.me, endPortClosed.me, 
-    portClosed.me, portClosedError.me,
-    spuriousWakeup.me 
-  |}
+  alphaLin(me) = union(
+    callBacks(me), -- external interface
+    {| maybeReceive.me, maybeReceiveError, maybeSend.me, maybeSendError.me,
+       portClosed.me, portClosedError.me, spuriousWakeup.me |}
+  )
   
   Lins = ||| t <- ChanThreads @ Lin(t)
   
@@ -76,6 +65,9 @@ module IdealisedAlt
   
   --------- Process that keeps track of registrations, and detects
   --------- out-of-protocol call backs.
+
+  -- Note: this separation from the AltSpec process makes it easier to handle
+  -- callbacks part way through a registration or deregistration.
   
   channel modellingError
   
@@ -137,7 +129,7 @@ module IdealisedAlt
   RegTracker = 
     beginRegister -> RegTracker1(initRegMap) 
     []
-    -- Callbacks  would be outside of the protocol.
+    -- Callbacks would be outside of the protocol.
     maybeReceiveError?t?index -> STOP
     []
     maybeSendError?t?index -> STOP
@@ -200,7 +192,7 @@ module IdealisedAlt
   -- indicate deregistering done
     allRegs == {} & deregisterDone -> RegTracker -- reset
     []
-  -- Deregister at index.
+  -- Deregister at some port.
     endDeregisterIn.AltThread?c -> (
       let matches = matchesFor(reg, InPortReg.c) within
       if matches == {} then RegTracker2(reg)
@@ -278,9 +270,7 @@ module IdealisedAlt
     
   -------------- The main thread of the alt
   
-  AltSpec = 
-    beginAlt.AltThread -> beginRegister -> Register(0)
---    |~| STOP
+  AltSpec = beginAlt.AltThread -> beginRegister -> Register(0)
   
   -- Register with branches [i..).  registered records those already registered.
   Register(i) = 

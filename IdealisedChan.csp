@@ -19,32 +19,21 @@ module IdealisedChan(size)
   
   --------- Lineariser for registration and deregistration
   
-  -- Linearisation points of registerIn corresponding to a synchronisation,
+  -- Linearisation points of register(In|Out) corresponding to a synchronisation,
   -- waiting, or an out-of-protocol call.
-  channel registerInSync : ChanThreads . Data
-  channel registerInWait : Index 
+  channel registerInSync, registerOutSync : ChanThreads . Data
+  channel registerInWait, registerOutWait : Index 
   channel registerError 
-  -- Linearisation points of deregistration at inport, corresponding to legal or
+  -- Linearisation points of deregistration, corresponding to legal or
   -- out-of-protocol cases.
-  channel deregisterIn, deregisterInError : Index
-  -- Linearisation points of registerOut
-  channel registerOutSync : ChanThreads . Data
-  channel registerOutWait : Index
-  -- Linearisation points of deregistration at outport, corresponding to legal or
-  -- out-of-protocol cases.
-  channel deregisterOut, deregisterOutError : Index
+  channel deregisterIn, deregisterInError, deregisterOut, deregisterOutError : 
+    Index
+  
+  -- Thread finding the channel is closed.
+  channel isClosed : ThreadID
   
   -- Lineariser for registration and deregistration events.
   RegLin = 
-    -- beginRegisterIn.AltThread.Alt1?index -> RegLinRegIn(index)
-    -- |~|
-    -- beginDeregisterIn.AltThread.Alt1?index -> RegLinDeregIn(index)
-    -- |~|
-    -- beginRegisterOut.AltThread.Alt1?index -> RegLinRegOut(index)
-    -- |~|
-    -- beginDeregisterOut.AltThread.Alt1?index -> RegLinDeregOut(index)
-    -- |~|
-    -- STOP
     beginRegisterIn.AltThread.Alt1?index -> RegLinRegIn(index)
     []
     beginDeregisterIn.AltThread.Alt1?index -> RegLinDeregIn(index)
@@ -89,13 +78,17 @@ module IdealisedChan(size)
   RegLinDeregOut(index) = 
     deregisterOut.index -> endDeregisterOut.AltThread.Alt1 -> RegLin
     [] deregisterOutError.index -> STOP
-  
-  alphaRegLin = union(
-    AltRegistrationEvents, 
-    {| registerInSync, registerInWait, registerOutSync, registerOutWait,
-       registerError, isClosed.AltThread,
-       deregisterIn, deregisterInError, deregisterOut, deregisterOutError |}
-  )
+
+  -- Linearisation points of registration and deregistration.
+  RegLPs = {| 
+    registerInSync, registerInWait, registerOutSync, registerOutWait,
+    registerError,
+    deregisterIn, deregisterInError, deregisterOut, deregisterOutError 
+  |}
+
+  alphaRegLin = Union({
+    AltRegistrationEvents, RegLPs, {| isClosed.AltThread |}
+  })
   
   ------------ Linearisers for channel thread ops
   
@@ -116,19 +109,15 @@ module IdealisedChan(size)
   -- channel closing linearization point
   channel close : ChanThreads
   
-  channel isClosed : ThreadID
-  
   -- A lineariser for thread me
   Lin(me) = 
     beginSend.me?x -> SendingLin(me, x)
-    |~|
+    []
     beginReceive.me -> ReceivingLin(me)
-    |~|
+    []
     beginClose.me -> close.me -> isClosed.me -> endClose.me -> Lin(me)
     -- Note: the isClosed event means the endClose happens only after the
     -- registered port (if any) has been informed.
-    |~|
-    STOP
   
   -- Lineariser for thread me inside send(x).
   SendingLin(me, x) = 
@@ -160,14 +149,14 @@ module IdealisedChan(size)
   EndReceivingLin(me, x) =  endReceive.me.ReceiveSuccess.x -> Lin(me)
   
   -- Alphabet for Lin(me)
-  alphaLin(me) = union(
-    {| beginSend.me, endSend.me, beginReceive.me, endReceive.me,
-       callMaybeReceive.me, beginMaybeReceive.me, endMaybeReceive.me,
+  alphaLin(me) = Union({
+    clientInterface(me), 
+    {| callMaybeReceive.me, beginMaybeReceive.me, endMaybeReceive.me,
        callMaybeSend.me, beginMaybeSend.me, endMaybeSend.me,
        sync.me, commit.me, registerInSync.me, registerOutSync.me, 
-       beginClose.me, endClose.me, close.me, isClosed.me  |},
+       close.me, isClosed.me  |},
     {| sync.other.me | other <- others(me) |}
-  )
+  })
   
   -- All the linearisers for channel threads. 
   Lins = || t <- ChanThreads @ [alphaLin(t)] Lin(t)
@@ -193,7 +182,7 @@ module IdealisedChan(size)
   regOutIndices(OutReg.index) = {index}
   regOutIndices(_) = {}
   
-  channel modellingError
+  -- channel modellingError
   
   -- regStatus records whether and how an alt is registered.
   ChanState :: (RegStatus) -> Proc
@@ -217,18 +206,17 @@ module IdealisedChan(size)
     deregisterIn?index:regIns ->  ChanState(NoReg)
     []
     regStatus == NoReg & deregisterIn?index ->  ChanState(NoReg)
-    -- deregisterIn?index:diff(Index, regOuts) -> ChanState(NoReg)
     []
   -- Illegal deregistration from inport
     regStatus != NoReg & deregisterInError?index:diff(Index, regIns) -> STOP
-    -- deregisterInError?index:regOuts -> STOP
--- FIXME: update below as above
     []
-  -- Deregistration from outport
+  -- Deregistration from outport, including if there is no registered port.
     deregisterOut?index:regOuts -> ChanState(NoReg)
     []
+    regStatus == NoReg & deregisterOut?index ->  ChanState(NoReg)
+    []
   -- Illegal deregistration from outport
-    deregisterOutError?index:diff(Index, regOuts) -> STOP
+    regStatus != NoReg & deregisterOutError?index:diff(Index, regOuts) -> STOP
     []
   -- Synchronisation between standard send and receive
     sync?t1?t2:others(t1)?x -> ChanState(regStatus)
@@ -237,11 +225,11 @@ module IdealisedChan(size)
   -- thread, commits to returning
     commit?_ -> ChanState(regStatus)
     []
-  -- Calls to maybeReceive
+  -- Calls to maybeReceive; block other events until the call returns
     callMaybeReceive?t?index:regIns?x -> beginMaybeReceive.t.Alt1.index.x -> 
       endMaybeReceive.t!Alt1?res -> ChanState(NoReg)
     []
-  -- Calls to maybeSend
+  -- Calls to maybeSend; block other events until the call returns
     callMaybeSend?t?index:regOuts -> beginMaybeSend.t.Alt1.index -> 
       endMaybeSend.t.Alt1?res -> ChanState(NoReg)
     -- The initial event of each process in the last two branches is hidden, so
@@ -257,18 +245,17 @@ module IdealisedChan(size)
   ChanStateClosed = 
     isClosed?_ -> ChanStateClosed
     [] close?_ -> ChanStateClosed
+    [] commit?_ -> ChanStateClosed
     [] deregisterIn?_ -> ChanStateClosed
     [] deregisterOut?_ -> ChanStateClosed
   
-  alphaChanState = union(
-    AltCallBacks, 
-    {| registerInSync, registerInWait, registerError, 
-       deregisterIn, deregisterInError,
-       registerOutSync, registerOutWait, deregisterOut, deregisterOutError,
-       callMaybeReceive, callMaybeSend, sync, commit, modellingError, 
-       close, isClosed
-    |}
-  )
+  alphaChanState = Union({
+    AltCallBacks, -- External
+    RegLPs, -- Synchronisations with RegIn; registerInSync.t,
+	    -- registerOutSync.t also sync with Lin(t)
+    {| callMaybeReceive, callMaybeSend, sync, commit, close, isClosed |}
+       -- Events synchonising with Lin(t)s
+  })
   
   -- Put the specification together
   ChannelSpec0 = 

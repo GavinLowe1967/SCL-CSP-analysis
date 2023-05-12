@@ -36,6 +36,12 @@
     beginClose, endClose
   |}
 
+  clientInterface(t) = {|
+    beginSend.t, endSend.t, beginReceive.t, endReceive.t, 
+    beginSendWithin.t, endSendWithin.t, beginReceiveWithin.t, endReceiveWithin.t,
+    beginClose.t, endClose.t
+  |}
+
   -- Events for callbacks to an alt.
   AltCallBacks = {|
     beginMaybeReceive, endMaybeReceive, beginMaybeSend, endMaybeSend,

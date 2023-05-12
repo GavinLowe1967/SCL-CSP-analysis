@@ -2,7 +2,7 @@
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
-datatype ThreadID = AltThread | T1 | T2 -- | T3 -- | T4
+datatype ThreadID = AltThread | T1 | T2 | T3 -- | T4
 
 --others(t) = diff(ChanThreads, {t})
 
@@ -25,29 +25,22 @@ include "NewSyncChan.csp"
 -- Create channel
 instance C1 = SyncChan(ThreadID, AltID, Data, size)
 
--- A channel thread, which alternates between begins and ends.
-Thread(me) = 
-  C1::beginSend.me?x -> C1::endSend.me?res -> Thread(me) 
-  |~|
-  C1::beginReceive.me -> C1::endReceive.me?res -> Thread(me)
-  |~|
-false & (
-  C1::beginSendWithin.me?x -> C1::endSendWithin.me?b -> Thread(me)
-  |~|
-  C1::beginReceiveWithin.me -> C1::endReceiveWithin.me?ox -> Thread(me)
-)
-  |~|
-  C1::beginClose.me -> C1::endClose.me -> Thread(me)
-  |~| 
-  STOP
+ChanThreadEvents = {|
+  C1::beginSend.t, C1::endSend.t, C1::beginReceive.t, C1::endReceive.t,
+-- TODO: include below
+--  C1::beginSendWithin.t, C1::endSendWithin.t, 
+-- C1::beginReceiveWithin.t, C1::endReceiveWithin.t
+  C1::beginClose.t, C1::endClose.t 
+    | t <- ChanThreads
+|}
 
--- The alt thread, which registers and deregisters.
-TheAltThread(me, alt) = RUN(C1::altRegistrationEvents(me, alt))
-  
-Threads = (||| t <- ChanThreads @ Thread(t))  ||| TheAltThread(AltThread, Alt1)
+-- Events that are not blocked. 
+AllowedEvents = Union({ 
+  ChanThreadEvents, C1::altRegistrationEvents(AltThread, Alt1), C1::AltCallBacks
+})
 
 -- The system to test
-System0 = C1::runWithAndHide(Threads ||| RUN(C1::AltCallBacks))
+System0 = C1::runWithAndHide(RUN(AllowedEvents)) 
 
 include "IdealisedChan.csp"
 

@@ -3,7 +3,7 @@
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
-datatype ThreadID = AltThread | T1 | T2 --| T3 -- | T4
+datatype ThreadID = AltThread | T1 | T2  | T3 -- | T4
 
 others(t) = diff(ChanThreads, {t})
 
@@ -20,8 +20,8 @@ datatype AltID = Alt1
 include "NewSyncChan.csp" 
 
 -- The list of branches in the alt
--- branches =  <InPortBranch.Chan0, OutPortBranch.Chan1>
-branches =  <InPortBranch.Chan0, InPortBranch.Chan1>
+branches =  <InPortBranch.Chan0, OutPortBranch.Chan1>
+-- branches =  <InPortBranch.Chan0, InPortBranch.Chan1>
 
 size = length(branches)
 
@@ -32,19 +32,17 @@ index(c) =
   let index1(c,cs) = if c == head(cs) then 0 else 1 + index1(c, tail(cs))
   within index1(c, branches)
 
-include "IdealisedChan.csp"
+-- Create idealised channels
 
--- Create channel
--- instance C1 = SyncChan(ThreadID, AltID, Data, size)
+include "IdealisedChan.csp"
 
 instance IC0 = IdealisedChan(size)
 
 instance IC1 = IdealisedChan(size)
 
-include "Alt.csp"
+-- Create the idealised alt.
 
--- Create the alt.
--- instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
+include "Alt.csp"
 
 include "IdealisedAlt.csp"
 
@@ -101,42 +99,42 @@ System00 =
 
 System0 = System00 \ IdealisedAlt::ChannelInterface
 
--- Alphabet of System0
-Alpha = Union({ 
-  IdealisedAlt::AltInterface, IC0::ClientInterface, IC1::ClientInterface,
-  {| IdealisedAlt::spuriousWakeup |} 
-})
 
 ------ Threads that interact with the system
 
--- The alt thread
-TheAltThread = 
-  IdealisedAlt::beginAlt.AltThread -> IdealisedAlt::endAlt.AltThread?_ -> 
-  TheAltThread
-  |~|
-  STOP
+-- The alt thread; can allow arbitrary events from the interface.
+TheAltThread = RUN(IdealisedAlt::altInterface(AltThread))
+-- {| IdealisedAlt::beginAlt.AltThread, IdealisedAlt::endAlt.AltThread |})
 
+-- We assume that channel threads alernate between the different operations.
 ChanThread(me) = 
-  IC0::beginSend.me$x -> IC0::endSend.me?res -> ChanThread(me)
-  |~|
-  IC1::beginSend.me$x -> IC1::endSend.me?res -> ChanThread(me)
-  |~|
+  IC0::beginSend.me?x -> IC0::endSend.me?res -> ChanThread(me)
+  []
+  IC1::beginSend.me?x -> IC1::endSend.me?res -> ChanThread(me)
+  []
   IC0::beginReceive.me -> IC0::endReceive.me?res -> ChanThread(me)
-  |~|
+  []
   IC1::beginReceive.me -> IC1::endReceive.me?res -> ChanThread(me)
+  []
+  IC0::beginClose.me -> IC0::endClose.me -> ChanThread(me)
+  []
+  IC1::beginClose.me -> IC1::endClose.me -> ChanThread(me)
 -- FIXME: and other operations
-  |~|
-  STOP
 
 AllThreads = TheAltThread ||| (||| t <- ChanThreads @ ChanThread(t))
 
-System = System0 [| Alpha |] AllThreads
+ThreadInterface = Union({ 
+  IdealisedAlt::AltInterface, IC0::ClientInterface, IC1::ClientInterface
+})
+
+System = System0 [| ThreadInterface |]  AllThreads
 
 -- Check no Error events happen.
 
-assert CHAOS(Alpha) [T= System
+-- Alphabet of System
+Alpha = Union({ ThreadInterface, {| IdealisedAlt::spuriousWakeup |} })
 
-assert CHAOS(Alpha) [F= System
+assert CHAOS(Alpha) [T= System
 
 ------- Synchronisation linearisation (copied from CombinedTest.csp)
 
@@ -149,7 +147,13 @@ channel sync : ThreadID . ThreadID . ChanID . Data
 -- channel closing linearization point
 channel close: ThreadID . ChanID
 
+-- Synchronisation between ChanSpec and a ChanThreadLin where the thread finds
+-- the channel is closed.
 channel isClosed: ThreadID . ChanID
+
+-- Synchronisation between AltLin and all ChanSpecs where the former finds all
+-- channels are closed.
+channel allClosed
 
 -- Specification object for a channel: keeps track of whether the channel is
 -- closed, allowing appropriate events before and after.
@@ -158,8 +162,13 @@ ChanSpec(c) =
   [] altSync?_?_!c?_ -> ChanSpec(c) 
   [] close?_!c -> ChanSpecClosed(c)
 ChanSpecClosed(c) =
-  isClosed?_!c -> ChanSpecClosed(c) [] close?_!c -> ChanSpecClosed(c)
-alphaChanSpecs = {| sync, altSync, close, isClosed |} 
+  isClosed?_!c -> ChanSpecClosed(c) 
+  [] close?_!c -> ChanSpecClosed(c)
+  [] allClosed -> ChanSpecClosed(c)
+
+AllChanSpecs = [| {allClosed} |] c <- ChanID @ ChanSpec(c)
+
+alphaChanSpecs = {| sync, altSync, close, isClosed, allClosed |} 
 
 -- Lineariser for the Alt thread.
 AltLin(me) = 
@@ -172,11 +181,13 @@ AltLin(me) =
     []
     altSync?other:ChanThreads!me?c:outPorts?x ->
       IdealisedAlt::endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
+    []
+    allClosed -> IdealisedAlt::endAlt.me.AltAbort -> AltLin(me)
   )
-  |~| STOP
 
 alphaAltLin(me) = union(
-  {| IdealisedAlt::beginAlt.me, IdealisedAlt::endAlt.me, altSync.me |},
+  {| IdealisedAlt::beginAlt.me, IdealisedAlt::endAlt.me, 
+     altSync.me, allClosed |},
   {| altSync.t.me | t <- ChanThreads |}
 )
 
@@ -184,18 +195,17 @@ alphaAltLin(me) = union(
 ChanThreadLin(me) = 
   let Others = others(me) within
   IC0::beginSend.me?x -> LinSending(me, x, Chan0, IC0::endSend)
-  |~|
+  []
   IC1::beginSend.me?x -> LinSending(me, x, Chan1, IC1::endSend)
-  |~|
+  []
   IC0::beginReceive.me -> LinReceiving(me, Chan0, IC0::endReceive) 
-  |~|
+  []
   IC1::beginReceive.me -> LinReceiving(me, Chan1, IC1::endReceive)
-  |~| 
+  []
   IC0::beginClose.me -> close.me.Chan0 -> IC0::endClose.me -> ChanThreadLin(me)
-  |~|
+  []
   IC1::beginClose.me -> close.me.Chan1 -> IC1::endClose.me -> ChanThreadLin(me)
-  |~|
-  STOP
+
 
 -- Thread me sending x on c; endSend.me will signal the end of the sending. 
 LinSending(me, x, c, endSend) = 
@@ -238,9 +248,18 @@ alphaLin(me) =
 Spec = (
   (|| t <- ThreadID @ [alphaLin(t)] Lin(t)) 
   [| alphaChanSpecs |]
-  (||| c <- ChanID @ ChanSpec(c))
-) \ {| altSync, sync, close, isClosed |}
+  AllChanSpecs
+) \ {| altSync, sync, close, isClosed, allClosed |}
+||| CHAOS( {| IdealisedAlt::spuriousWakeup |} )
 
 assert Spec [T= System
 
 assert Spec [F= System 
+
+assert Spec [FD= System 
+
+-- Tests below are for timing purposes
+
+-- assert Spec [FD= STOP -- ~9.0s
+
+-- assert STOP [FD= System -- ~10.4s
