@@ -28,7 +28,7 @@ instance C1 = SyncChan(ThreadID, AltID, Data, size)
 ChanThreadEvents = {|
   C1::beginSend.t, C1::endSend.t, C1::beginReceive.t, C1::endReceive.t,
 -- TODO: include below
---  C1::beginSendWithin.t, C1::endSendWithin.t, 
+  C1::beginSendWithin.t, C1::endSendWithin.t, 
 -- C1::beginReceiveWithin.t, C1::endReceiveWithin.t
   C1::beginClose.t, C1::endClose.t 
     | t <- ChanThreads
@@ -49,6 +49,8 @@ instance IC = IdealisedChan(size)
 System = System0[[
   C1::beginSend <- IC::beginSend, C1::endSend <- IC::endSend,
   C1::beginReceive <- IC::beginReceive, C1::endReceive <- IC::endReceive,
+  C1::beginSendWithin <- IC::beginSendWithin, 
+  C1::endSendWithin <- IC::endSendWithin,
   C1::beginClose <- IC::beginClose, C1::endClose <- IC::endClose,
   C1::beginRegisterOut <- IC::beginRegisterOut, 
   C1::endRegisterOut <- IC::endRegisterOut,

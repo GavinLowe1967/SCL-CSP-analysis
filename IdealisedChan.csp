@@ -105,6 +105,9 @@ module IdealisedChan(size)
   -- thread.
   channel callMaybeReceive : ChanThreads . Index . Data
   channel callMaybeSend : ChanThreads . Index
+
+  -- A channel timesout within a sendWithin or receiveWithin
+  channel timeout : ChanThreads
   
   -- channel closing linearization point
   channel close : ChanThreads
@@ -114,6 +117,8 @@ module IdealisedChan(size)
     beginSend.me?x -> SendingLin(me, x)
     []
     beginReceive.me -> ReceivingLin(me)
+    []
+    beginSendWithin.me?x -> SendingWithinLin(me, x)
     []
     beginClose.me -> close.me -> isClosed.me -> endClose.me -> Lin(me)
     -- Note: the isClosed event means the endClose happens only after the
@@ -147,6 +152,24 @@ module IdealisedChan(size)
     isClosed.me -> endReceive.me.ReceiveClosed -> Lin(me)
   
   EndReceivingLin(me, x) =  endReceive.me.ReceiveSuccess.x -> Lin(me)
+
+  SendingWithinLin(me, x) = 
+    ( sync.me?other:others(me)!x -> commit.me -> EndSendingWithinLin(me)
+      []
+      registerInSync.me.x -> commit.me -> EndSendingWithinLin(me)
+      []
+      callMaybeReceive.me?index!x -> beginMaybeReceive.me.Alt1.index.x -> 
+      endMaybeReceive.me.Alt1?res -> 
+      (if res then EndSendingWithinLin(me) else SendingWithinLin(me, x))
+      []
+      isClosed.me -> endSendWithin.me.SendWithinClosed -> Lin(me)
+    )
+    [>
+    timeout.me -> endSendWithin.me.SendWithinTimeout -> Lin(me)
+
+
+  EndSendingWithinLin(me) =  endSendWithin.me.SendWithinSuccess -> Lin(me)
+    
   
   -- Alphabet for Lin(me)
   alphaLin(me) = Union({
@@ -154,7 +177,7 @@ module IdealisedChan(size)
     {| callMaybeReceive.me, beginMaybeReceive.me, endMaybeReceive.me,
        callMaybeSend.me, beginMaybeSend.me, endMaybeSend.me,
        sync.me, commit.me, registerInSync.me, registerOutSync.me, 
-       close.me, isClosed.me  |},
+       timeout.me, close.me, isClosed.me  |},
     {| sync.other.me | other <- others(me) |}
   })
   
@@ -235,6 +258,9 @@ module IdealisedChan(size)
     -- The initial event of each process in the last two branches is hidden, so
     -- this process may nondeterministically choose to go down that route.
     []
+-- IMPROVE: following only if sync impossible? 
+    timeout?_ -> ChanState(regStatus)
+    []
     close?t -> (
       if regStatus == NoReg then ChanStateClosed
       else     -- inform the registered port
@@ -253,7 +279,7 @@ module IdealisedChan(size)
     AltCallBacks, -- External
     RegLPs, -- Synchronisations with RegIn; registerInSync.t,
 	    -- registerOutSync.t also sync with Lin(t)
-    {| callMaybeReceive, callMaybeSend, sync, commit, close, isClosed |}
+    {| callMaybeReceive, callMaybeSend, sync, commit, timeout, close, isClosed |}
        -- Events synchonising with Lin(t)s
   })
   
@@ -277,7 +303,7 @@ exports
     let internals = 
           {| registerInSync, registerInWait, registerOutSync, registerOutWait, 
              deregisterIn, deregisterOut, close, isClosed,
-             sync, commit, callMaybeReceive, callMaybeSend |}
+             sync, commit, timeout, callMaybeReceive, callMaybeSend |}
     within ChannelSpec0 \ internals
 
   -- If an error event happens, allow arbitrary behaviour.  The definitions

@@ -53,17 +53,17 @@ instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
 
 -- The thread that runs the Alt repeatedly. 
 
--- Allow all ops
-FLAG = true
+-- Allow alt
+ALTFLAG = true -- false
 
 CLOSEFLAG = true --  not FLAG
 
 TheAltThread(me) = 
-FLAG & -- FIXME
+ALTFLAG & -- FIXME
   A1::beginAlt.me -> (
-    A1::endAlt.me.A1::AltReceive?i.x -> TheAltThread(me) 
+    A1::endAlt.me.AltReceive?i.x -> TheAltThread(me) 
     [] 
-    A1::endAlt.me.A1::AltSend?i.x -> TheAltThread(me)
+    A1::endAlt.me.AltSend?i.x -> TheAltThread(me)
   )
   |~| STOP
 
@@ -147,7 +147,7 @@ assert System0 :[divergence free]
 assert not System0 :[deadlock free] 
 -- deadlocks because all ChanThreads could choose to STOP
 
-System = System0 \ {|A1::spuriousWakeUp|} 
+System = System0 \ {|A1::spuriousWakeup|} 
 
 assert not System :[divergence free] -- diverges because of spurious wake ups
 
@@ -168,15 +168,16 @@ channel isClosed: ThreadID . ChanID
 
 -- Lineariser for the Alt thread.
 AltLin(me) = 
+ALTFLAG & 
   let inPorts = { c | InPortBranch.c <- set(branches) }
       outPorts = { c | OutPortBranch.c <- set(branches) } 
   within
   A1::beginAlt.me -> (
     altSync.me?other:ChanThreads?c:inPorts?x -> 
-      A1::endAlt.me.A1::AltReceive.index(InPortBranch.c).x -> AltLin(me)
+      A1::endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me)
     []
     altSync?other:ChanThreads!me?c:outPorts?x ->
-      A1::endAlt.me.A1::AltSend.index(OutPortBranch.c).x -> AltLin(me)
+      A1::endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
   )
   |~| STOP
 

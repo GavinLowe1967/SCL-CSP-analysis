@@ -174,13 +174,27 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     else
       -- assert(status == Filled && value == x)
       Assert1(s == Filled); getValue.me?v -> Assert1(v == x);
-      -- checkOpen
-      IfClosed(me, cont(SendWithinClosed), SendWithin5(me, cont, success))
+-- New version
+    IfClosed(me, SendWithin4a(me, cont), SendWithin5(me, cont, success))
 
-  -- assert(!success); status = Empty; signalSlotEmptied(); false
-  SendWithin5(me, cont, success) = 
-    Assert1(not success); setStatus.me.Empty -> 
-    SignalSlotEmptied(me); cont(SendWithinTimeout) 
+-- if(receiversWaiting == 0) throw new Closed else true 
+SendWithin4a(me, cont) = 
+  getReceiversWaiting.me?rw -> 
+  if rw == 0 then cont(SendWithinClosed) else cont(SendWithinSuccess) 
+   
+-- assert(!success); status = Empty; signalSlotEmptied(); false
+SendWithin5(me, cont, success) = 
+  Assert1(not success);  setStatus.me.Empty -> 
+  SignalSlotEmptied(me); cont(SendWithinTimeout) 
+
+-- setStatus.me.Empty -> 
+--       -- checkOpen
+--       IfClosed(me, cont(SendWithinClosed), SendWithin5(me, cont, success))
+
+--   -- assert(!success); status = Empty; signalSlotEmptied(); false
+--   SendWithin5(me, cont, success) = 
+--     Assert1(not success); -- setStatus.me.Empty -> 
+--     SignalSlotEmptied(me); cont(SendWithinTimeout) 
 
   -------- Receiving
 
