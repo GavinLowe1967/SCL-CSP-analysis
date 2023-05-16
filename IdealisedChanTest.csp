@@ -2,9 +2,7 @@
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
-datatype ThreadID = AltThread | T1 | T2 | T3 -- | T4
-
---others(t) = diff(ChanThreads, {t})
+datatype ThreadID = AltThread | T1 | T2  | T3 -- | T4
 
 ChanThreads =  diff(ThreadID, {AltThread})
 
@@ -27,9 +25,8 @@ instance C1 = SyncChan(ThreadID, AltID, Data, size)
 
 ChanThreadEvents = {|
   C1::beginSend.t, C1::endSend.t, C1::beginReceive.t, C1::endReceive.t,
--- TODO: include below
   C1::beginSendWithin.t, C1::endSendWithin.t, 
--- C1::beginReceiveWithin.t, C1::endReceiveWithin.t
+  C1::beginReceiveWithin.t, C1::endReceiveWithin.t,
   C1::beginClose.t, C1::endClose.t 
     | t <- ChanThreads
 |}
@@ -51,6 +48,8 @@ System = System0[[
   C1::beginReceive <- IC::beginReceive, C1::endReceive <- IC::endReceive,
   C1::beginSendWithin <- IC::beginSendWithin, 
   C1::endSendWithin <- IC::endSendWithin,
+  C1::beginReceiveWithin <- IC::beginReceiveWithin, 
+  C1::endReceiveWithin <- IC::endReceiveWithin,
   C1::beginClose <- IC::beginClose, C1::endClose <- IC::endClose,
   C1::beginRegisterOut <- IC::beginRegisterOut, 
   C1::endRegisterOut <- IC::endRegisterOut,

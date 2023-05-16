@@ -16,9 +16,9 @@
 
   -- Channels for operations the alt calls on ports.
   channel beginRegisterIn : ThreadID . ChanID . Index
-  channel endRegisterIn : ThreadID . ChanID . RegisterInResult
+  channel endRegisterIn : ThreadID . ChanID . RegisterResult
   channel beginRegisterOut : ThreadID . ChanID . Index 
-  channel endRegisterOut : ThreadID . ChanID . RegisterOutResult
+  channel endRegisterOut : ThreadID . ChanID . RegisterResult
 
   channel beginDeregisterIn : ThreadID . ChanID . Index
   channel endDeregisterIn : ThreadID . ChanID

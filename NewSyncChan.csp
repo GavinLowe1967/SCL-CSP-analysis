@@ -1,7 +1,5 @@
--- A module representing a synchronous channel.  This version does not include
--- closing of channels.  
--- 
--- This file assumes that RegisterInResult is in scope.
+-- A module representing a synchronous channel. 
+
 module SyncChan(ThreadID, AltID, Data, MaxIndex)
   include "Variable.csp"
   include "Macros.csp"
@@ -84,7 +82,8 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -------- Sending
 
   -- Thread me sends x
-  Send :: (ThreadID, Data, (SendResult) -> Proc) -> Proc
+  Send :: (ThreadID, Data, (Result) -> Proc) -> Proc
+  -- Send :: (ThreadID, Data, (SendResult) -> Proc) -> Proc
   Send(me, x, cont) = MonitorCondition::MutexC(me, Send1(me, x), cont)
 
   -- slotEmptied.await(status == Empty || isClosed)
@@ -95,7 +94,7 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     within MonitorCondition::AwaitTest(me, SlotEmptied, Test); Send2(me, x, cont)
 
   -- checkOpen
-  Send2(me, x, cont) = IfClosed(me, cont(SendClosed), Send3(me, x, cont))
+  Send2(me, x, cont) = IfClosed(me, cont(Closed), Send3(me, x, cont))
 
   -- if(tryAltReceive(x)) signalSlotEmptied() (and done) else ...
   Send3(me, x, cont) = 
@@ -106,7 +105,7 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -- value = x; status = Filled; completeSend
   Send4(me, x, cont) = 
     setValue.me.x -> setStatus.me.Filled -> 
-    If(CompleteSend(me), cont(SendSuccess), cont(SendClosed))
+    If(CompleteSend(me), cont(SendSuccess), cont(Closed))
 
   -- completeSend: cont is a continuation that expects a boolean, with true
   -- representing success and false that the channel is closed.
@@ -132,7 +131,8 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -- Timed sending
 
   -- Thread me does sendWithin(_)(x), and applies cont to it.
-  SendWithin :: (ThreadID, Data, (SendWithinResult) -> Proc) -> Proc
+  -- SendWithin :: (ThreadID, Data, (SendWithinResult) -> Proc) -> Proc
+  SendWithin :: (ThreadID, Data, (Result) -> Proc) -> Proc
   SendWithin(me, x, cont) = 
     MonitorCondition::MutexC(me, SendWithin1(me, x), cont)
 
@@ -146,12 +146,12 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
 
   -- code after initial wait; checkOpen
   SendWithin2(me, x, cont, timeout) = 
-    IfClosed(me, cont(SendWithinClosed), SendWithin2a(me, x, cont, timeout))
+    IfClosed(me, cont(Closed), SendWithin2a(me, x, cont, timeout))
 
   SendWithin2a(me, x, cont, timeout) = 
-    if timeout then cont(SendWithinTimeout) 
+    if timeout then cont(Timeout) 
     else If(TryAltReceive(me, x), 
-            SignalSlotEmptied(me); cont(SendWithinSuccess),
+            SignalSlotEmptied(me); cont(SendSuccess),
             SendWithin3(me, x, cont))
 
   -- Final top-level branch; store value
@@ -170,42 +170,33 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     if s == Read then
       -- assert(success); status = Empty; signalSlotEmptied(); true
       Assert1(success); setStatus.me.Empty ->
-      SignalSlotEmptied(me); cont(SendWithinSuccess)
+      SignalSlotEmptied(me); cont(SendSuccess)
     else
       -- assert(status == Filled && value == x)
       Assert1(s == Filled); getValue.me?v -> Assert1(v == x);
--- New version
     IfClosed(me, SendWithin4a(me, cont), SendWithin5(me, cont, success))
 
--- if(receiversWaiting == 0) throw new Closed else true 
+-- Channel is closed.  if(receiversWaiting == 0) throw new Closed else true 
 SendWithin4a(me, cont) = 
   getReceiversWaiting.me?rw -> 
-  if rw == 0 then cont(SendWithinClosed) else cont(SendWithinSuccess) 
+  if rw == 0 then cont(Closed) else cont(SendSuccess) 
    
 -- assert(!success); status = Empty; signalSlotEmptied(); false
 SendWithin5(me, cont, success) = 
   Assert1(not success);  setStatus.me.Empty -> 
-  SignalSlotEmptied(me); cont(SendWithinTimeout) 
-
--- setStatus.me.Empty -> 
---       -- checkOpen
---       IfClosed(me, cont(SendWithinClosed), SendWithin5(me, cont, success))
-
---   -- assert(!success); status = Empty; signalSlotEmptied(); false
---   SendWithin5(me, cont, success) = 
---     Assert1(not success); -- setStatus.me.Empty -> 
---     SignalSlotEmptied(me); cont(SendWithinTimeout) 
+  SignalSlotEmptied(me); cont(Timeout) 
 
   -------- Receiving
 
   -- Thread me receives value, and applies cont to it.
-  Receive :: (ThreadID, (ReceiveResult) -> Proc) -> Proc
+--  Receive :: (ThreadID, (ReceiveResult) -> Proc) -> Proc
+  Receive :: (ThreadID, (Result) -> Proc) -> Proc
   Receive(me, cont) = 
     MonitorCondition::MutexC(me, Receive1(me), cont)
 
   -- checkOpen; var result = tryAltSend
   Receive1(me)(cont) = 
-    IfClosed(me, cont(ReceiveClosed), 
+    IfClosed(me, cont(Closed), 
       TryAltSend(me, \ res @ ReceiveLoop(me, cont, res)) )
 
   -- while(result.isEmpty && status != Filled){ ... }
@@ -227,7 +218,7 @@ SendWithin5(me, cont, success) =
   -- if(result == None) checkOpen else go round the loop
   ReceiveLoop2(me, cont, result) = 
     if result == None then
-      IfClosed(me, cont(ReceiveClosed), ReceiveLoop(me, cont, result))
+      IfClosed(me, cont(Closed), ReceiveLoop(me, cont, result))
     else ReceiveLoop(me, cont, result)
 
   -- After loop.  result match{ ... }.
@@ -247,13 +238,14 @@ SendWithin5(me, cont, success) =
   ---- receiveWithin
 
   -- Thread me does receiveWithin(_) with continuation cont. 
-  ReceiveWithin :: (ThreadID, (ReceiveWithinResult) -> Proc) -> Proc
+  -- ReceiveWithin :: (ThreadID, (ReceiveWithinResult) -> Proc) -> Proc
+  ReceiveWithin :: (ThreadID, (Result) -> Proc) -> Proc
   ReceiveWithin(me, cont) = 
     MonitorCondition::MutexC(me, ReceiveWithin1(me), cont)
 
   -- checkOpen; var result = tryAltSend
   ReceiveWithin1(me)(cont) = 
-    IfClosed(me, cont(ReceiveWithinClosed),
+    IfClosed(me, cont(Closed),
       TryAltSend(me, \ result @ ReceiveWithin2(me, cont, result)))
 
   -- if(result.isEmpty && status != Filled){ ... }
@@ -284,7 +276,7 @@ SendWithin5(me, cont, success) =
   -- if(result == None && isClosed){ receiversWaiting -= 1; throw new Closed}
   ReceiveWithinLoopBody3(me, cont, result, timeout) =
     if result == None then
-      IfClosed(me, DecReceiversWaiting(me); cont(ReceiveWithinClosed),
+      IfClosed(me, DecReceiversWaiting(me); cont(Closed),
         ReceiveWithinLoopEnd(me, cont, result, timeout) )
     else ReceiveWithinLoopEnd(me, cont, result, timeout)
 
@@ -302,15 +294,15 @@ SendWithin5(me, cont, success) =
 
   -- Code after if(...){ ... }
   ReceiveWithinPostIf(me, cont, Some.x, timeout) =
-    Assert1(not timeout); cont(ReceiveWithinSuccess.x)
+    Assert1(not timeout); cont(ReceiveSuccess.x)
 
   ReceiveWithinPostIf(me, cont, None, timeout) = 
     -- if(status == Filled) Some(completeReceive)
     getStatus.me?s -> 
-    if s == Filled then CompleteReceive(me, \ v @ cont(ReceiveWithinSuccess.v))
+    if s == Filled then CompleteReceive(me, \ v @ cont(ReceiveSuccess.v))
     else   -- assert(timeout); checkOpen; None
       Assert1(timeout);
-      IfClosed(me, cont(ReceiveWithinClosed), cont(ReceiveWithinTimeout))
+      IfClosed(me, cont(Closed), cont(Timeout))
 
   ------------------ Closing of channel
 
@@ -381,7 +373,7 @@ SendWithin5(me, cont, success) =
 -- IMPROVE, include iter.
 
   -- Thread me, in an alt, does registerIn with continuation cont
-  RegisterIn :: (ThreadID, AltID, Int, (RegisterInResult) -> Proc) -> Proc
+  RegisterIn :: (ThreadID, AltID, Int, (RegisterResult) -> Proc) -> Proc
   RegisterIn(me, alt, index, cont) = 
     MonitorCondition::MutexC(me, RegisterIn1(me, alt, index), cont)
 
@@ -396,42 +388,42 @@ SendWithin5(me, cont, success) =
 
   -- If(canReceive) ...; canReceive in SyncChan just reads full
   RegisterIn2(me, alt, index, cont) = 
-    -- if(isClosed) RegisterInClosed
-    IfClosed(me, cont(RegisterInClosed),
+    -- if(isClosed) RegisterClosed
+    IfClosed(me, cont(RegisterClosed),
       -- if(canReceive) ... (defined in SyncChan as Status == Filled)
       getStatus.me?s -> 
       if s == Filled then
-        -- val result = completeReceive; RegisterInSuccess(result)
-        CompleteReceive(me, \ v @ cont(RegisterInSuccess.v))
-      else -- receivingAlt = (alt,index); RegisterInWaiting
-        setReceivingAlt.me.(SomeAlt.alt.index) -> cont(RegisterInWaiting) )
+        -- val result = completeReceive; RegisterSuccess(result)
+        CompleteReceive(me, \ v @ cont(RegisterSuccess.v))
+      else -- receivingAlt = (alt,index); RegisterWaiting
+        setReceivingAlt.me.(SomeAlt.alt.index) -> cont(RegisterWaiting) )
 
   -- Thread me, in an alt, does registerOut with continuation cont
-  RegisterOut:: (ThreadID, AltID, Int, (RegisterOutResult) -> Proc) -> Proc
+  RegisterOut:: (ThreadID, AltID, Int, (RegisterResult) -> Proc) -> Proc
   RegisterOut(me, alt, index, cont) = 
     MonitorCondition::MutexC(me, RegisterOut1(me, alt, index), cont)
 
-  -- checkCanRegisterOut; if(isClosedOut) RegisterOutClosed
+  -- checkCanRegisterOut; if(isClosedOut) RegisterClosed
   RegisterOut1(me, alt, index)(cont) = 
     CheckNoAlts(me); 
-    IfClosed(me, cont(RegisterOutClosed), RegisterOut2(me, alt, index, cont))
+    IfClosed(me, cont(RegisterClosed), RegisterOut2(me, alt, index, cont))
 
   -- if(trySend(value)) ...
   RegisterOut2(me, alt, index, cont) =
     TrySend(me, RegisterOut3(me, alt, index, cont))
 
   -- Process the result of trySend
-  RegisterOut3(me, alt, index, cont)(RegisterOutSuccess.x) = 
-    cont(RegisterOutSuccess.x)
-  RegisterOut3(me, alt, index, cont)(RegisterOutWaiting) = 
-    setSendingAlt.me.(SomeAlt.alt.index) -> cont(RegisterOutWaiting)
-  RegisterOut3(me, alt, index, cont)(RegisterOutClosed) = 
-    cont(RegisterOutClosed)
+  RegisterOut3(me, alt, index, cont)(RegisterSuccess.x) = 
+    cont(RegisterSuccess.x)
+  RegisterOut3(me, alt, index, cont)(RegisterWaiting) = 
+    setSendingAlt.me.(SomeAlt.alt.index) -> cont(RegisterWaiting)
+  RegisterOut3(me, alt, index, cont)(RegisterClosed) = 
+    cont(RegisterClosed)
 
   -- trySend(x).  Called by an alt within registerOut.  We replace the results
   -- true, false, ClosedException of the concrete code with
-  -- RegisterOutSuccess, RegisterOutWaiting, RegisterOutClosed.
-  TrySend :: (ThreadID, (RegisterOutResult) -> Proc) -> Proc
+  -- RegisterSuccess, RegisterWaiting, RegisterClosed.
+  TrySend :: (ThreadID, (RegisterResult) -> Proc) -> Proc
   TrySend(me, cont) =
     -- Maybe wait for the slot to be emptied
     let Test(k) = 
@@ -449,25 +441,25 @@ SendWithin5(me, cont, success) =
       -- altWaiting = false; ...
       setAltWaiting.me.false -> TrySend1(me, cont)
   
-  TrySend1 :: (ThreadID, (RegisterOutResult) -> Proc) -> Proc
+  TrySend1 :: (ThreadID, (RegisterResult) -> Proc) -> Proc
   TrySend1(me, cont) =  
     -- if(receiversWaiting == 0) ...
     getReceiversWaiting.me?rw -> 
     if rw == 0 then 
       -- checkOpen
-      IfClosed(me, cont(RegisterOutClosed),
+      IfClosed(me, cont(RegisterClosed),
         getStatus.me?s ->
         --  if(status == Empty) slotEmptied.signal()
         (if s == Empty then MonitorCondition::Signal(me, SlotEmptied) else SKIP);
-        cont(RegisterOutWaiting) ) -- cont(false)
+        cont(RegisterWaiting) ) -- cont(false)
     else -- if(status == Empty) ... 
       getStatus.me?s -> 
       if s == Empty then 
         -- store value
         setValue.me$x -> setStatus.me.Filled -> 
 	-- call completeSend, and assert that this succeeds
-	CompleteSend(me)(\ res @ Assert1(res); cont(RegisterOutSuccess.x))
-      else cont(RegisterOutClosed)
+	CompleteSend(me)(\ res @ Assert1(res); cont(RegisterSuccess.x))
+      else cont(RegisterClosed)
 
   ----- deregisterIn/Out
 

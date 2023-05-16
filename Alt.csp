@@ -78,26 +78,26 @@ module Alt(this, branches, ThreadID, ChanID)
   -- Register with an InPort
   Register(me, cont, i, InPortBranch.c) = 
     beginRegisterIn.me.c.i -> (
-      endRegisterIn.me.c.RegisterInSuccess?x -> 
+      endRegisterIn.me.c.RegisterSuccess?x -> 
         setValueReceived.me.x -> setToRun.me.i -> 
         setDone.me.true -> AfterLoop(me, cont)
       [] 
-      endRegisterIn.me.c.RegisterInWaiting -> 
+      endRegisterIn.me.c.RegisterWaiting -> 
         setEnabled.me.i.true -> IncNumEnabled(me); RegisterLoop(me, cont, i+1)
       []
-      endRegisterIn.me.c.RegisterInClosed -> RegisterLoop(me, cont, i+1)
+      endRegisterIn.me.c.RegisterClosed -> RegisterLoop(me, cont, i+1)
     )
 
   -- Register with an OutPort
   Register(me, cont, i, OutPortBranch.c) = 
     beginRegisterOut.me.c.i -> (
-      endRegisterOut.me.c.RegisterOutSuccess?x -> setToRun.me.i -> 
+      endRegisterOut.me.c.RegisterSuccess?x -> setToRun.me.i -> 
         setDone.me.true -> setValueSent.me.Some.x -> AfterLoop(me, cont)
       []
-      endRegisterOut.me.c.RegisterOutWaiting -> 
+      endRegisterOut.me.c.RegisterWaiting -> 
         setEnabled.me.i.true -> IncNumEnabled(me); RegisterLoop(me, cont, i+1)
       []
-      endRegisterOut.me.c.RegisterOutClosed ->
+      endRegisterOut.me.c.RegisterClosed ->
         setEnabled.me.i.false -> RegisterLoop(me, cont, i+1)
     )
 

@@ -7,34 +7,32 @@ datatype Data = A | B
 
 -- The eqivalent ofthe Scala type Option[Data]
 datatype Option = None | Some.Data
-
--- The type of information about how an alt ended.
-datatype AltResult = AltReceive.Index.Data | AltSend.Index.Data | AltAbort
-
 ------ Results of send/receive operations
 
--- Results returned by receive operations.
-datatype ReceiveResult = ReceiveSuccess.Data | ReceiveClosed
-
-datatype ReceiveWithinResult = 
-  ReceiveWithinSuccess.Data | ReceiveWithinTimeout | ReceiveWithinClosed
+-- Supertype of results returned by channel operations.
+datatype Result = SendSuccess | ReceiveSuccess.Data | Closed | Timeout
 
 -- Results returned by send operations.
-datatype SendResult = SendSuccess | SendClosed
+subtype SendResult = SendSuccess | Closed
 
--- result returned by sendWithin operations. 
-datatype SendWithinResult = 
-  SendWithinSuccess | SendWithinTimeout | SendWithinClosed
+-- Results returned by receive operations.
+subtype ReceiveResult = ReceiveSuccess.Data | Closed
 
-------- Results of reginsterIn/Out
+-- Results returned by sendWithin operations. 
+subtype SendWithinResult = SendSuccess | Timeout | Closed
 
--- The result of a RegisterIn
-datatype RegisterInResult = 
-  RegisterInSuccess.Data | RegisterInWaiting | RegisterInClosed
+-- Results returned by receiveWithin operations.
+subtype ReceiveWithinResult = ReceiveSuccess.Data | Closed | Timeout
 
--- The result of a RegisterOut
-datatype RegisterOutResult = 
-  RegisterOutSuccess.Data | RegisterOutWaiting | RegisterOutClosed
+------- Results of registerIn/Out
+
+-- The result of a RegisterIn or RegisterOut
+datatype RegisterResult = RegisterSuccess.Data | RegisterWaiting | RegisterClosed
+
+---------- Alts
 
 -- The types of branches of Alts
 datatype AltBranch = InPortBranch.ChanID | OutPortBranch.ChanID
+
+-- The type of information about how an alt ended.
+datatype AltResult = AltReceive.Index.Data | AltSend.Index.Data | AltAbort

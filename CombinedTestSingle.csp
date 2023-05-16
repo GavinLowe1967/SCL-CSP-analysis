@@ -3,7 +3,7 @@
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
-datatype ThreadID = AltThread | T1 | T2  | T3 -- | T4
+datatype ThreadID = AltThread | T1 | T2 --  | T3 -- | T4
 
 others(t) = diff(ChanThreads, {t})
 
@@ -205,7 +205,7 @@ LinSending(me, x, c, endSend) =
   [] 
   altSync?altThread!me!c!x -> endSend.me.SendSuccess -> ChanThreadLin(me)
   [] 
-  isClosed.me.c -> endSend.me.SendClosed -> ChanThreadLin(me)
+  isClosed.me.c -> endSend.me.Closed -> ChanThreadLin(me)
 
 -- Thread me receiving on c; endReceive.me will signal the end of the receive. 
 LinReceiving(me, c, endReceive) = 
@@ -214,32 +214,30 @@ LinReceiving(me, c, endReceive) =
   [] 
   altSync.me?altThread!c?x -> endReceive.me.ReceiveSuccess.x -> ChanThreadLin(me)
   [] 
-  isClosed.me.c -> endReceive.me.ReceiveClosed -> ChanThreadLin(me)
+  isClosed.me.c -> endReceive.me.Closed -> ChanThreadLin(me)
 
 -- Thread me within sendWithin(x) on c; endSendWithin.me will signal the end
 -- of the sending.
 LinSendingWithin(me, x, c, endSendWithin) = 
-  ( sync.me?other:others(me)!c!x ->
-      endSendWithin.me.SendWithinSuccess -> ChanThreadLin(me)
-    [] 
-    altSync?altThread!me!c!x -> endSendWithin.me.SendWithinSuccess -> 
+  ( sync.me?other:others(me)!c!x -> endSendWithin.me.SendSuccess -> 
       ChanThreadLin(me)
+    [] 
+    altSync?altThread!me!c!x -> endSendWithin.me.SendSuccess -> ChanThreadLin(me)
     []
-    isClosed.me.c -> endSendWithin.me.SendWithinClosed -> ChanThreadLin(me)
+    isClosed.me.c -> endSendWithin.me.Closed -> ChanThreadLin(me)
   )
-  [> endSendWithin.me.SendWithinTimeout -> ChanThreadLin(me)
+  [> endSendWithin.me.Timeout -> ChanThreadLin(me)
 
 LinReceivingWithin(me, c, endReceiveWithin) = 
   ( sync?other:others(me)!me!c?x -> 
-      endReceiveWithin.me.ReceiveWithinSuccess.x -> ChanThreadLin(me) 
+      endReceiveWithin.me.ReceiveSuccess.x -> ChanThreadLin(me) 
     []
-    altSync.me?altThread!c?x -> endReceiveWithin.me.ReceiveWithinSuccess.x -> 
+    altSync.me?altThread!c?x -> endReceiveWithin.me.ReceiveSuccess.x -> 
       ChanThreadLin(me) 
     [] 
-    isClosed.me.c -> endReceiveWithin.me.ReceiveWithinClosed ->
-      ChanThreadLin(me)
-    )
-    [> endReceiveWithin.me.ReceiveWithinTimeout -> ChanThreadLin(me) 
+    isClosed.me.c -> endReceiveWithin.me.Closed -> ChanThreadLin(me)
+  )
+  [> endReceiveWithin.me.Timeout -> ChanThreadLin(me) 
 
 -- Alphabet of ChanThreadLin(me)
 alphaChanThreadLin(me) = {| 

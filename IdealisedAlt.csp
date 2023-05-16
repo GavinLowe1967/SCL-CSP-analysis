@@ -143,21 +143,21 @@ module IdealisedAlt
     let inRegs = getInRegs(reg)
         outRegs = getOutRegs(reg)
     within
-    endRegisterIn.AltThread?c!RegisterInWaiting -> 
+    endRegisterIn.AltThread?c!RegisterWaiting -> 
       RecordReg(reg, InPortBranch.c, InPortReg.c)
     []
-    endRegisterOut.AltThread?c!RegisterOutWaiting -> 
+    endRegisterOut.AltThread?c!RegisterWaiting -> 
       RecordReg(reg, OutPortBranch.c, OutPortReg.c)
     [] 
-    endRegisterIn.AltThread?c!RegisterInClosed -> 
+    endRegisterIn.AltThread?c!RegisterClosed -> 
       RecordClosed(reg, InPortBranch.c)
     [] 
-    endRegisterOut.AltThread?c!RegisterOutClosed -> 
+    endRegisterOut.AltThread?c!RegisterClosed -> 
       RecordClosed(reg, OutPortBranch.c)
     []
-    endRegisterIn.AltThread?c!RegisterInSuccess?x -> RegTracker2(reg)
+    endRegisterIn.AltThread?c!RegisterSuccess?x -> RegTracker2(reg)
     []
-    endRegisterOut.AltThread?c!RegisterOutSuccess?x -> RegTracker2(reg)
+    endRegisterOut.AltThread?c!RegisterSuccess?x -> RegTracker2(reg)
     []
     -- AltSpec indicates end of registration
     let ac = allClosed(reg) within
@@ -284,20 +284,20 @@ module IdealisedAlt
   -- Register with the i'th branch, and continue
   Register1(i, InPortBranch.c) = 
     beginRegisterIn.AltThread.c.i -> (
-      endRegisterIn.AltThread.c.RegisterInSuccess?x -> Deregister(AltReceive.i.x)
+      endRegisterIn.AltThread.c.RegisterSuccess?x -> Deregister(AltReceive.i.x)
       []
-      endRegisterIn.AltThread.c.RegisterInWaiting -> Register(i+1)
+      endRegisterIn.AltThread.c.RegisterWaiting -> Register(i+1)
       []
-      endRegisterIn.AltThread.c.RegisterInClosed -> Register(i+1)
+      endRegisterIn.AltThread.c.RegisterClosed -> Register(i+1)
     )
 
   Register1(i, OutPortBranch.c) =
     beginRegisterOut.AltThread.c.i -> (
-      endRegisterOut.AltThread.c.RegisterOutSuccess?x -> Deregister(AltSend.i.x)
+      endRegisterOut.AltThread.c.RegisterSuccess?x -> Deregister(AltSend.i.x)
       []
-      endRegisterOut.AltThread.c.RegisterOutWaiting -> Register(i+1)
+      endRegisterOut.AltThread.c.RegisterWaiting -> Register(i+1)
       []
-      endRegisterOut.AltThread.c.RegisterOutClosed -> Register(i+1)
+      endRegisterOut.AltThread.c.RegisterClosed -> Register(i+1)
     )
   
   -- Deregister all registered ports, then return result

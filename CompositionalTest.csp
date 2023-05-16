@@ -17,7 +17,7 @@ include "Types.csp"
 -- Identities of Alts
 datatype AltID = Alt1
 
-include "NewSyncChan.csp" 
+-- include "NewSyncChan.csp" 
 
 -- The list of branches in the alt
 branches =  <InPortBranch.Chan0, OutPortBranch.Chan1>
@@ -42,7 +42,7 @@ instance IC1 = IdealisedChan(size)
 
 -- Create the idealised alt.
 
-include "Alt.csp"
+--include "Alt.csp"
 
 include "IdealisedAlt.csp"
 
@@ -116,10 +116,17 @@ ChanThread(me) =
   []
   IC1::beginReceive.me -> IC1::endReceive.me?res -> ChanThread(me)
   []
+  IC0::beginSendWithin.me?x -> IC0::endSendWithin.me?res -> ChanThread(me)
+  []
+  IC1::beginSendWithin.me?x -> IC1::endSendWithin.me?res -> ChanThread(me)
+  []
+  IC0::beginReceiveWithin.me -> IC0::endReceiveWithin.me?res -> ChanThread(me)
+  []
+  IC1::beginReceiveWithin.me -> IC1::endReceiveWithin.me?res -> ChanThread(me)
+  []
   IC0::beginClose.me -> IC0::endClose.me -> ChanThread(me)
   []
   IC1::beginClose.me -> IC1::endClose.me -> ChanThread(me)
--- FIXME: and other operations
 
 AllThreads = TheAltThread ||| (||| t <- ChanThreads @ ChanThread(t))
 
@@ -202,6 +209,16 @@ ChanThreadLin(me) =
   []
   IC1::beginReceive.me -> LinReceiving(me, Chan1, IC1::endReceive)
   []
+  IC0::beginSendWithin.me?x -> LinSendingWithin(me, x, Chan0, IC0::endSendWithin)
+  []
+  IC1::beginSendWithin.me?x -> LinSendingWithin(me, x, Chan1, IC1::endSendWithin)
+  []
+  IC0::beginReceiveWithin.me -> 
+    LinReceivingWithin(me, Chan0, IC0::endReceiveWithin)
+  []
+  IC1::beginReceiveWithin.me ->
+    LinReceivingWithin(me, Chan1, IC1::endReceiveWithin)
+  []
   IC0::beginClose.me -> close.me.Chan0 -> IC0::endClose.me -> ChanThreadLin(me)
   []
   IC1::beginClose.me -> close.me.Chan1 -> IC1::endClose.me -> ChanThreadLin(me)
@@ -213,7 +230,7 @@ LinSending(me, x, c, endSend) =
   [] 
   altSync?altThread!me!c!x -> endSend.me.SendSuccess -> ChanThreadLin(me)
   [] 
-  isClosed.me.c -> endSend.me.SendClosed -> ChanThreadLin(me)
+  isClosed.me.c -> endSend.me.Closed -> ChanThreadLin(me)
 
 -- Thread me receiving on c; endReceive.me will signal the end of the receive. 
 LinReceiving(me, c, endReceive) = 
@@ -222,7 +239,27 @@ LinReceiving(me, c, endReceive) =
   [] 
   altSync.me?altThread!c?x -> endReceive.me.ReceiveSuccess.x -> ChanThreadLin(me)
   [] 
-  isClosed.me.c -> endReceive.me.ReceiveClosed -> ChanThreadLin(me)
+  isClosed.me.c -> endReceive.me.Closed -> ChanThreadLin(me)
+
+LinSendingWithin(me, x, c, endSend) = 
+  ( sync.me?other:others(me)!c!x -> endSend.me.SendSuccess -> ChanThreadLin(me)
+    [] 
+    altSync?altThread!me!c!x -> endSend.me.SendSuccess -> ChanThreadLin(me)
+    [] 
+    isClosed.me.c -> endSend.me.Closed -> ChanThreadLin(me)
+  )
+  [> endSend.me.Timeout -> ChanThreadLin(me)
+
+LinReceivingWithin(me, c, endReceive) = 
+  ( sync?other:others(me)!me!c?x -> endReceive.me.ReceiveSuccess.x ->
+      ChanThreadLin(me)
+    [] 
+    altSync.me?altThread!c?x -> endReceive.me.ReceiveSuccess.x ->
+      ChanThreadLin(me)
+    [] 
+    isClosed.me.c -> endReceive.me.Closed -> ChanThreadLin(me)
+  )
+  [> endReceive.me.Timeout -> ChanThreadLin(me)
 
 -- Alphabet of ChanThreadLin(me)
 alphaChanThreadLin(me) = {| 
