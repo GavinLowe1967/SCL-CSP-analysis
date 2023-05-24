@@ -279,7 +279,7 @@ module IdealisedChan(size)
     -- The initial event of each process in the last two branches is hidden, so
     -- this process may nondeterministically choose to go down that route.
     []
--- IMPROVE: following only if sync impossible? 
+  -- A thread in sendWithin or receiveWithin timesout.
     timeout?_ -> ChanState(regStatus)
     []
     close?t -> (

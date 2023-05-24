@@ -1,36 +1,53 @@
--- Test upon SyncChan
+-- Test upon SyncChan (without alts).  This file is really a stepping stone 
+-- towards more sophisticated tests.
 
-datatype ThreadID = T1 | T2 | T3 -- | T4
-datatype Data = A | B
+datatype ThreadID = T1 | T2 -- | T3  | T4
 
-include "SyncChanV1.csp"
+-- The following are needed in Types.csp, but aren't otherwise used here. 
+datatype ChanID = Chan1
+MaxIndex = 1
+Index = {0}
+
+include "Types.csp"
+
+-- Identities of Alts
+datatype AltID = Alt1
+
+include "NewSyncChan.csp"
 
 -- We'll test a single channel
-instance c = SyncChan(ThreadID, Data)
+instance C = SyncChan(ThreadID, AltID, Data, MaxIndex)
 
--- Signals before and after invocations.
-channel beginSend, endReceive, beginSendWithin : ThreadID . Data
-channel beginReceive, beginReceiveWithin, endSend : ThreadID
-channel endReceiveWithin : ThreadID . (c::Option)
-channel endSendWithin: ThreadID . Bool
+-- Flags to control whether we include the timed operations and closing of
+-- channels.
+TIMED_FLAG = true -- true
+CLOSE_FLAG = true -- true
 
 -- Thread with identity me, which repeatedly sends or receives, or neither.
-Thread(me) = 
-  beginSend.me?x -> c::Send(me, x); endSend.me -> Thread(me)
-  |~|
-  beginReceive.me -> c::Receive(me, \ x @ endReceive.me.x -> SKIP ); Thread(me)
-  |~|
-  beginSendWithin.me?x -> c::SendWithin(me, x, \ b @ endSendWithin.me.b -> SKIP);
-    Thread(me)
-  |~|
-  beginReceiveWithin.me -> 
-    c::ReceiveWithin(me, \ ox @ endReceiveWithin.me.ox -> SKIP); Thread(me)
-  |~| 
-  STOP
+-- Thread(me) = 
+--   C::beginSend.me?x -> C::endSend.me?res -> Thread(me)
+--   []
+--   C::beginReceive.me -> C::endReceive.me?res -> Thread(me)
+--   []
+--   TIMED_FLAG & (
+--     C::beginSendWithin.me?x -> C::endSendWithin.me?res -> Thread(me)
+--     []
+--     C::beginReceiveWithin.me -> C::endReceiveWithin.me?res -> Thread(me)
+--   )
+-- Threads = ||| t <- ThreadID @ Thread(t)
 
-Threads = ||| t <- ThreadID @ Thread(t)
+-- Client interface events that we allow to be performed.  The flags can be
+-- used to restrict to particular operations.
+AllowedEvents = Union({
+  {| C::beginSend, C::endSend, C::beginReceive, C::endReceive |},
+  {| C::beginSendWithin, C::endSendWithin, 
+     C::beginReceiveWithin, C::endReceiveWithin | TIMED_FLAG |},
+  {| C::beginClose, C::endClose | CLOSE_FLAG |}
+})
 
-System = c::runWithAndHide(Threads)
+Threads = RUN(AllowedEvents)
+
+System = C::runWithAndHide(Threads)
 
 assert System  :[divergence free]
 
@@ -40,31 +57,69 @@ assert System  :[divergence free]
 -- sending of x.
 channel sync : ThreadID . ThreadID . Data
 
+-- channel closing linearization point.
+channel close: ThreadID 
+
+-- Test of whether the channel is closed. 
+channel isClosed: ThreadID 
+
+channel timeout: ThreadID
+
 -- A linearizer for thread t
 Linearizer(me) = 
-  beginSend.me?x -> sync.me?other!x -> endSend.me -> Linearizer(me)
-  |~|
-  beginReceive.me -> sync?other!me?x -> endReceive.me.x -> Linearizer(me)
-  |~|
-  beginSendWithin.me?x -> 
-    (sync.me?other!x -> endSendWithin.me.true -> Linearizer(me)
-     [> endSendWithin.me.false -> Linearizer(me))
-  |~|
-  beginReceiveWithin.me ->
-    (sync?other!me?x -> endReceiveWithin.me.(c::Some.x) -> Linearizer(me)
-     [> endReceiveWithin.me.(c::None) -> Linearizer(me))
-  |~| 
-  STOP
+  C::beginSend.me?x -> SendingLin(me, x, C::endSend.me)
+  []
+  C::beginReceive.me -> ReceivingLin(me, C::endReceive.me)
+  []
+  TIMED_FLAG & (
+    C::beginSendWithin.me?x -> SendingWithinLin(me, x, C::endSendWithin.me)
+    []
+    C::beginReceiveWithin.me -> ReceivingWithinLin(me, C::endReceiveWithin.me)
+  )
+  []
+  CLOSE_FLAG & C::beginClose.me -> close.me -> C::endClose.me -> Linearizer(me)
+
+-- States of the linearizer when the thread is within various operations.
+SendingLin(me, x, endChan) = 
+  sync.me?other!x -> endChan.SendSuccess -> Linearizer(me)
+  [] isClosed.me -> endChan.Closed -> Linearizer(me)
+
+ReceivingLin(me, endChan) =  
+  sync?other!me?x -> endChan.ReceiveSuccess.x -> Linearizer(me)
+  [] isClosed.me -> endChan.Closed -> Linearizer(me)
+
+SendingWithinLin(me, x, endChan) = 
+  SendingLin(me, x, endChan)
+  [] timeout.me -> endChan.Timeout -> Linearizer(me)
+ -- [> endChan.Timeout -> Linearizer(me)
+
+ReceivingWithinLin(me, endChan) = 
+  ReceivingLin(me, endChan) 
+  [] timeout.me -> endChan.Timeout -> Linearizer(me)
+-- [> endChan.Timeout -> Linearizer(me)
 
 -- Alphabet of Linearizer(t)
-alphaLin(t) = 
-    {| beginSend.t, endSend.t, beginReceive.t, endReceive.t, 
-       beginSendWithin.t, endSendWithin.t,
-       beginReceiveWithin.t, endReceiveWithin.t, sync.t.other, sync.other.t | 
-         other <- diff(ThreadID,{t}) |} 
+alphaLin(t) = Union({
+  C::clientInterface(t),
+  {| sync.t.other, sync.other.t | other <- diff(ThreadID,{t}) |},
+  {| close.t, isClosed.t, timeout.t |}
+})
+
+-- Specification object for a channel: keeps track of whether the channel is
+-- closed, allowing appropriate events before and after.
+ChanSpec = 
+  sync?_?_?_ -> ChanSpec [] timeout?_ -> ChanSpec [] close?_ -> ChanSpecClosed
+
+ChanSpecClosed = isClosed?_ -> ChanSpecClosed [] close?_ -> ChanSpecClosed
+
+alphaChanSpec = {| sync, close, isClosed, timeout |} 
 
 -- Specification of synchronisation linearisation.
-Spec = (|| t <- ThreadID @ [alphaLin(t)] Linearizer(t)) \ {| sync|}
+Spec = (
+  (|| t <- ThreadID @ [alphaLin(t)] Linearizer(t)) 
+  [| alphaChanSpec |] ChanSpec
+) \ alphaChanSpec
 
 assert Spec [T= System
 assert Spec [F= System
+assert Spec [FD= System

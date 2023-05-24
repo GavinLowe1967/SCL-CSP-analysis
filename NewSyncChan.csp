@@ -20,6 +20,10 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -- macro for if(isClosed) P else Q
   IfClosed(me, P, Q) = getIsClosed.me?cl -> if cl then P else Q
 
+  -- macro for checkOpen; P.  If the channel is closed, cont is applied to
+  -- Closed.
+  CheckOpen(me, cont, P) = IfClosed(me, cont(Closed), P)
+
   -- Number of threads
   N = card(ThreadID)
 
@@ -81,9 +85,8 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
 
   -------- Sending
 
-  -- Thread me sends x
+  -- Thread me sends x.  The continuation expects a SendResult.
   Send :: (ThreadID, Data, (Result) -> Proc) -> Proc
-  -- Send :: (ThreadID, Data, (SendResult) -> Proc) -> Proc
   Send(me, x, cont) = MonitorCondition::MutexC(me, Send1(me, x), cont)
 
   -- slotEmptied.await(status == Empty || isClosed)
@@ -94,7 +97,7 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     within MonitorCondition::AwaitTest(me, SlotEmptied, Test); Send2(me, x, cont)
 
   -- checkOpen
-  Send2(me, x, cont) = IfClosed(me, cont(Closed), Send3(me, x, cont))
+  Send2(me, x, cont) = CheckOpen(me, cont, Send3(me, x, cont)) 
 
   -- if(tryAltReceive(x)) signalSlotEmptied() (and done) else ...
   Send3(me, x, cont) = 
@@ -113,6 +116,7 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   CompleteSend(me)(cont) = 
     -- maybeSignalToReceiver; continue.await() 
     MaybeSignalToReceiver(me); MonitorCondition::Await(me, Continue);
+    -- if (status == Read) ...
     getStatus.me?s -> 
     if s == Read then      -- status = Empty; signalSlotEmptied()
       setStatus.me.Empty -> SignalSlotEmptied(me); cont(true) -- success
@@ -145,27 +149,28 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     within MonitorCondition::TimedAwaitTest(me, SlotEmptied, Test, Cont)
 
   -- code after initial wait; checkOpen
-  SendWithin2(me, x, cont, timeout) = 
-    IfClosed(me, cont(Closed), SendWithin2a(me, x, cont, timeout))
+  SendWithin2(me, x, cont, timedout) = 
+    CheckOpen(me, cont, SendWithin3(me, x, cont, timedout))
 
-  SendWithin2a(me, x, cont, timeout) = 
-    if timeout then cont(Timeout) 
+  -- if(tryAltReceive(x)){ signalSlotEmptied(); true }
+  SendWithin3(me, x, cont, timedout) = 
+    if timedout then cont(Timeout) 
     else If(TryAltReceive(me, x), 
             SignalSlotEmptied(me); cont(SendSuccess),
-            SendWithin3(me, x, cont))
+            SendWithin4(me, x, cont))
 
   -- Final top-level branch; store value
-  SendWithin3(me, x, cont) = 
+  SendWithin4(me, x, cont) = 
     -- assert(status == Empty); value = x; status = Filled
     IfStrict(getStatus.me?s -> Assert1(s == Empty)); 
     setValue.me.x -> setStatus.me.Filled ->
     -- maybeSignalToReceiver 
     MaybeSignalToReceiver(me); 
     -- val success = continue.awaitNanos(deadline-nanoTime)
-    MonitorCondition::TimedAwait(me, Continue, SendWithin4(me, x, cont))
+    MonitorCondition::TimedAwait(me, Continue, SendWithin5(me, x, cont))
 
   -- if(status == Read) ...
-  SendWithin4(me, x, cont)(success) = 
+  SendWithin5(me, x, cont)(success) = 
     getStatus.me?s ->
     if s == Read then
       -- assert(success); status = Empty; signalSlotEmptied(); true
@@ -174,51 +179,51 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     else
       -- assert(status == Filled && value == x)
       Assert1(s == Filled); getValue.me?v -> Assert1(v == x);
-    IfClosed(me, SendWithin4a(me, cont), SendWithin5(me, cont, success))
-
--- Channel is closed.  if(receiversWaiting == 0) throw new Closed else true 
-SendWithin4a(me, cont) = 
-  getReceiversWaiting.me?rw -> 
-  if rw == 0 then cont(Closed) else cont(SendSuccess) 
-   
--- assert(!success); status = Empty; signalSlotEmptied(); false
-SendWithin5(me, cont, success) = 
-  Assert1(not success);  setStatus.me.Empty -> 
-  SignalSlotEmptied(me); cont(Timeout) 
+      -- if(isClosed) ...
+      IfClosed(me, 
+        -- if(receiversWaiting == 0) throw new Closed else true 
+        getReceiversWaiting.me?rw -> 
+          if rw == 0 then cont(Closed) else cont(SendSuccess) ,
+        -- else{ assert(!success); status = Empty; signalSlotEmptied(); false }
+        Assert1(not success); setStatus.me.Empty -> SignalSlotEmptied(me); 
+          cont(Timeout) 
+      )
 
   -------- Receiving
 
-  -- Thread me receives value, and applies cont to it.
---  Receive :: (ThreadID, (ReceiveResult) -> Proc) -> Proc
+  -- Thread me receives value.  The continuation expects to be given a
+  -- ReceiveResult.
   Receive :: (ThreadID, (Result) -> Proc) -> Proc
   Receive(me, cont) = 
     MonitorCondition::MutexC(me, Receive1(me), cont)
 
   -- checkOpen; var result = tryAltSend
   Receive1(me)(cont) = 
-    IfClosed(me, cont(Closed), 
-      TryAltSend(me, \ res @ ReceiveLoop(me, cont, res)) )
+    CheckOpen(me, cont, TryAltSend(me, \ res @ ReceiveLoop(me, cont, res)) )
 
   -- while(result.isEmpty && status != Filled){ ... }
   ReceiveLoop(me, cont, result) = 
-    if result != None then Receive2(me, cont, result)
-    else 
-      getStatus.me?s -> 
-      if s == Filled then Receive2(me, cont, result)
-      else 
-        -- receiversWaiting += 1; slotFull.await(); receiversWaiting -= 1
-        IncReceiversWaiting(me); MonitorCondition::Await(me, SlotFull);
-        DecReceiversWaiting(me);
-        -- if(status != Filled) ...
-        getStatus.me?s -> 
-        if s != Filled then
-          TryAltSend(me, \ res @ ReceiveLoop2(me, cont, res))
-        else ReceiveLoop(me, cont, result)
+    -- test guard of loop: result.isEmpty && status != Filled
+    let Test(k) = 
+      if result == None then getStatus.me?s -> k(s != Filled) else k(false)
+    within 
+    If(Test, ReceiveLoopBody(me, cont, result), Receive2(me, cont, result))
+
+  -- Body of loop in receive.
+  ReceiveLoopBody(me, cont, result) = 
+    -- receiversWaiting += 1; slotFull.await(); receiversWaiting -= 1
+    IncReceiversWaiting(me); MonitorCondition::Await(me, SlotFull);
+    DecReceiversWaiting(me);
+    -- if(status != Filled) ...
+    getStatus.me?s -> 
+    if s != Filled then TryAltSend(me, \ res @ ReceiveLoopBody2(me, cont, res))
+    else ReceiveLoop(me, cont, result)
 
   -- if(result == None) checkOpen else go round the loop
-  ReceiveLoop2(me, cont, result) = 
+  ReceiveLoopBody2(me, cont, result) = 
     if result == None then
-      IfClosed(me, cont(Closed), ReceiveLoop(me, cont, result))
+      CheckOpen(me, cont, ReceiveLoop(me, cont, result))
+      -- IfClosed(me, cont(Closed), ReceiveLoop(me, cont, result))
     else ReceiveLoop(me, cont, result)
 
   -- After loop.  result match{ ... }.
@@ -230,79 +235,82 @@ SendWithin5(me, cont, success) =
   CompleteReceive :: (ThreadID, (Data) -> Proc) -> Proc 
   CompleteReceive(me, cont) = 
     -- require(status == Filled)
-    IfStrict(getStatus.me?s -> Assert1(s == Filled)); 
+    -- IfStrict(getStatus.me?s -> Assert1(s == Filled)); 
     -- status = Read; continue.signal(); value
     setStatus.me!Read -> MonitorCondition::Signal(me, Continue); 
     getValue.me?v -> cont(v) 
 
   ---- receiveWithin
 
-  -- Thread me does receiveWithin(_) with continuation cont. 
-  -- ReceiveWithin :: (ThreadID, (ReceiveWithinResult) -> Proc) -> Proc
+  -- Thread me does receiveWithin(_).  The continuation expects to be given a
+  -- ReceiveWithinResult.
   ReceiveWithin :: (ThreadID, (Result) -> Proc) -> Proc
   ReceiveWithin(me, cont) = 
     MonitorCondition::MutexC(me, ReceiveWithin1(me), cont)
 
   -- checkOpen; var result = tryAltSend
   ReceiveWithin1(me)(cont) = 
-    IfClosed(me, cont(Closed),
+    CheckOpen(me, cont, 
       TryAltSend(me, \ result @ ReceiveWithin2(me, cont, result)))
 
   -- if(result.isEmpty && status != Filled){ ... }
   ReceiveWithin2(me, cont, result) = 
-    if result == None then 
-      getStatus.me?s -> 
-      if s != Filled then 
-        -- receiversWaiting += 1; do{...}
-	IncReceiversWaiting(me); ReceiveWithinLoopBody(me, cont, result)
-      else ReceiveWithinPostIf(me, cont, result, false)
-    else ReceiveWithinPostIf(me, cont, result, false)
+    let Test(k) = 
+      if result == None then getStatus.me?s -> k(s != Filled) else k(false)
+    within If(Test, 
+      -- receiversWaiting += 1; do{...}
+      IncReceiversWaiting(me); ReceiveWithinLoopBody(me, cont, result),
+      ReceiveWithinPostIf(me, cont, result, false) 
+    )
 
-  -- timeout = !slotFull.awaitNanos(deadline-nanoTime)
+  -- Body of do{...} loop: timeout = !slotFull.awaitNanos(deadline-nanoTime)
   ReceiveWithinLoopBody(me, cont, result) = 
     -- Below b represents the result of the awaitNanos. 
     MonitorCondition::TimedAwait(me, SlotFull, \b @ 
       ReceiveWithinLoopBody2(me, cont, result, not b))
 
   -- if(!timeout && status != Filled) ...
-  ReceiveWithinLoopBody2(me, cont, result, timeout) = 
-    if not timeout then
-      getStatus.me?s -> 
-      if s != Filled then -- result = tryAltSend
-        TryAltSend(me, \ res @ ReceiveWithinLoopBody3(me, cont, res, timeout))
-      else ReceiveWithinLoopEnd(me, cont, result, timeout)
-    else ReceiveWithinLoopEnd(me, cont, result, timeout)
+  ReceiveWithinLoopBody2(me, cont, result, timedout) = 
+    let Test(k) = -- Test !timeout && status != Filled
+      if not timedout then getStatus.me?s -> k(s != Filled) else k(false)
+    within If(Test, 
+      -- result = tryAltSend ...
+      TryAltSend(me, \ res @ ReceiveWithinLoopBody3(me, cont, res, timedout)),
+      ReceiveWithinLoopEnd(me, cont, result, timedout)
+    )
 
   -- if(result == None && isClosed){ receiversWaiting -= 1; throw new Closed}
-  ReceiveWithinLoopBody3(me, cont, result, timeout) =
-    if result == None then
-      IfClosed(me, DecReceiversWaiting(me); cont(Closed),
-        ReceiveWithinLoopEnd(me, cont, result, timeout) )
-    else ReceiveWithinLoopEnd(me, cont, result, timeout)
+  ReceiveWithinLoopBody3(me, cont, result, timedout) =
+    let Test(k) = 
+      if result == None then getIsClosed.me?cl -> k(cl) else k(false)
+    within If(Test, 
+      DecReceiversWaiting(me); cont(Closed), 
+      ReceiveWithinLoopEnd(me, cont, result, timedout) 
+  )
 
   -- test at end of do loop
-  ReceiveWithinLoopEnd(me, cont, result, timeout) = 
-    let CaseFalse = -- if test false, receiversWaiting -= 1 
-      DecReceiversWaiting(me); ReceiveWithinPostIf(me, cont, result, timeout)
-    within
-    if(result == None) then 
-      getStatus.me?s -> 
-      if s != Filled and not timeout then 
-        ReceiveWithinLoopBody(me, cont, result) 
-      else CaseFalse
-    else CaseFalse
+  ReceiveWithinLoopEnd(me, cont, result, timedout) = 
+    let Test(k) = 
+      if(result == None) then getStatus.me?s -> k(s != Filled and not timedout)
+      else k(false)
+    within If(Test, 
+      ReceiveWithinLoopBody(me, cont, result),  -- go round the loop again
+      -- receiversWaiting -= 1 ...
+      DecReceiversWaiting(me); ReceiveWithinPostIf(me, cont, result, timedout)
+    )
 
   -- Code after if(...){ ... }
-  ReceiveWithinPostIf(me, cont, Some.x, timeout) =
-    Assert1(not timeout); cont(ReceiveSuccess.x)
+  -- if(result.nonEmpty){ assert(!timeout); result }
+  ReceiveWithinPostIf(me, cont, Some.x, timedout) =
+    Assert1(not timedout); cont(ReceiveSuccess.x)
 
-  ReceiveWithinPostIf(me, cont, None, timeout) = 
+  -- else ... (result == None)
+  ReceiveWithinPostIf(me, cont, None, timedout) = 
     -- if(status == Filled) Some(completeReceive)
     getStatus.me?s -> 
     if s == Filled then CompleteReceive(me, \ v @ cont(ReceiveSuccess.v))
-    else   -- assert(timeout); checkOpen; None
-      Assert1(timeout);
-      IfClosed(me, cont(Closed), cont(Timeout))
+    else   -- assert(timedout); checkOpen; None
+      Assert1(timedout); CheckOpen(me, cont, cont(Timeout))
 
   ------------------ Closing of channel
 

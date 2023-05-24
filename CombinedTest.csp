@@ -65,36 +65,36 @@ ALTFLAG & -- FIXME
     [] 
     A1::endAlt.me.AltSend?i.x -> TheAltThread(me)
   )
-  |~| STOP
 
 
--- A thread that tries to send on a channel
 
--- Thread with identity me, which repeatedly sends or receives, or neither.
+-- Thread with identity me, which repeatedly calls operations.  In particular,
+-- this prevents the thread from apparently having concurrent invocations on
+-- both channels.
 Thread(me) = 
   C1::beginSend.me?x -> C1::endSend.me?res -> Thread(me) 
-  |~|
+  []
   C2::beginSend.me?x -> C2::endSend.me?res -> Thread(me)
-  |~|
+  []
   C1::beginReceive.me -> C1::endReceive.me?res -> Thread(me)
-  |~|
+  []
   C2::beginReceive.me -> C2::endReceive.me?res -> Thread(me)
-  |~|
+  []
   C1::beginSendWithin.me?x -> C1::endSendWithin.me?b -> Thread(me)
-  |~|
+  []
   C2::beginSendWithin.me?x -> C2::endSendWithin.me?b -> Thread(me)
-  |~|
+  []
   C1::beginReceiveWithin.me -> C1::endReceiveWithin.me?ox -> Thread(me)
-  |~|
+  []
   C2::beginReceiveWithin.me -> C2::endReceiveWithin.me?ox -> Thread(me)
-  |~|
+  []
 CLOSEFLAG & (
   C1::beginClose.me -> C1::endClose.me -> Thread(me)
-  |~|
+  []
   C2::beginClose.me -> C2::endClose.me -> Thread(me)
 )
-  |~| 
-  STOP
+  -- |~| 
+  -- STOP
 
 Threads = (||| t <- ChanThreads @ Thread(t)) ||| TheAltThread(AltThread)
 
@@ -179,7 +179,7 @@ ALTFLAG &
     altSync?other:ChanThreads!me?c:outPorts?x ->
       A1::endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
   )
-  |~| STOP
+  -- |~| STOP
 
 alphaAltLin(me) = union(
   {| A1::beginAlt.me, A1::endAlt.me, altSync.me |},
@@ -198,28 +198,27 @@ alphaChanSpecs = {| sync, altSync, close, isClosed |}
 
 -- Lineariser for a channel thread.
 ChanThreadLin(me) = 
-  let Others = others(me) within
   C1::beginSend.me?x -> LinSending(me, x, c1, C1::endSend)
-  |~|
+  []
   C2::beginSend.me?x -> LinSending(me, x, c2, C2::endSend)
-  |~|
+  []
   C1::beginReceive.me -> LinReceiving(me, c1, C1::endReceive) 
-  |~|
+  []
   C2::beginReceive.me -> LinReceiving(me, c2, C2::endReceive)
-  |~| 
+  [] 
   C1::beginSendWithin.me?x -> LinSendingWithin(me, x, c1, C1::endSendWithin)
-  |~|
+  []
   C2::beginSendWithin.me?x -> LinSendingWithin(me, x, c2, C2::endSendWithin)
-  |~|
+  []
   C1::beginReceiveWithin.me -> LinReceivingWithin(me, c1, C1::endReceiveWithin)
-  |~|
+  []
   C2::beginReceiveWithin.me -> LinReceivingWithin(me, c2, C2::endReceiveWithin)
-  |~|
+  []
   C1::beginClose.me -> close.me.c1 -> C1::endClose.me -> ChanThreadLin(me)
-  |~|
+  []
   C2::beginClose.me -> close.me.c2 -> C2::endClose.me -> ChanThreadLin(me)
-  |~|
-  STOP
+  -- |~|
+  -- STOP
 
 -- Thread me sending x on c; endSend.me will signal the end of the sending. 
 LinSending(me, x, c, endSend) = 
@@ -241,41 +240,47 @@ LinReceiving(me, c, endReceive) =
 -- Thread me within sendWithin(x) on c; endSendWithin.me will signal the end
 -- of the sending.
 LinSendingWithin(me, x, c, endSendWithin) = 
-  ( sync.me?other:others(me)!c!x -> endSendWithin.me.SendSuccess -> 
-      ChanThreadLin(me)
-    [] 
-    altSync?altThread!me!c!x -> endSendWithin.me.SendSuccess -> 
-      ChanThreadLin(me)
-    []
-    isClosed.me.c -> endSendWithin.me.Closed -> ChanThreadLin(me)
-  )
+  LinSending(me, x, c, endSendWithin)
+  -- ( sync.me?other:others(me)!c!x -> endSendWithin.me.SendSuccess -> 
+  --     ChanThreadLin(me)
+  --   [] 
+  --   altSync?altThread!me!c!x -> endSendWithin.me.SendSuccess -> 
+  --     ChanThreadLin(me)
+  --   []
+  --   isClosed.me.c -> endSendWithin.me.Closed -> ChanThreadLin(me)
+  -- )
   [> endSendWithin.me.Timeout -> ChanThreadLin(me)
 
 LinReceivingWithin(me, c, endReceiveWithin) = 
-  ( sync?other:others(me)!me!c?x -> 
-      endReceiveWithin.me.ReceiveSuccess.x -> ChanThreadLin(me) 
-    []
-    altSync.me?altThread!c?x -> endReceiveWithin.me.ReceiveSuccess.x -> 
-      ChanThreadLin(me) 
-    [] 
-    isClosed.me.c -> endReceiveWithin.me.Closed -> ChanThreadLin(me)
-    )
+  LinReceiving(me, c, endReceiveWithin)
+  -- ( sync?other:others(me)!me!c?x -> 
+  --     endReceiveWithin.me.ReceiveSuccess.x -> ChanThreadLin(me) 
+  --   []
+  --   altSync.me?altThread!c?x -> endReceiveWithin.me.ReceiveSuccess.x -> 
+  --     ChanThreadLin(me) 
+  --   [] 
+  --   isClosed.me.c -> endReceiveWithin.me.Closed -> ChanThreadLin(me)
+  --   )
     [> endReceiveWithin.me.Timeout -> ChanThreadLin(me) 
 
 -- Alphabet of ChanThreadLin(me)
-alphaChanThreadLin(me) = {| 
-  C1::beginSend.me, C1::endSend.me, C2::beginSend.me, C2::endSend.me,
-  C1::beginReceive.me, C1::endReceive.me, 
-  C2::beginReceive.me, C2::endReceive.me,  
-  C1::beginSendWithin.me, C1::endSendWithin.me,
-  C2::beginSendWithin.me, C2::endSendWithin.me,
-  C1::beginReceiveWithin.me, C1::endReceiveWithin.me,
-  C2::beginReceiveWithin.me, C2::endReceiveWithin.me,
-  C1::beginClose.me, C1::endClose.me, C2::beginClose.me, C2::endClose.me,
+alphaChanThreadLin(me) = Union({
+  C1::clientInterface(me),
+  C2::clientInterface(me),
+  {| 
+  -- C1::beginSend.me, C1::endSend.me, C2::beginSend.me, C2::endSend.me,
+  -- C1::beginReceive.me, C1::endReceive.me, 
+  -- C2::beginReceive.me, C2::endReceive.me,  
+  -- C1::beginSendWithin.me, C1::endSendWithin.me,
+  -- C2::beginSendWithin.me, C2::endSendWithin.me,
+  -- C1::beginReceiveWithin.me, C1::endReceiveWithin.me,
+  -- C2::beginReceiveWithin.me, C2::endReceiveWithin.me,
+  -- C1::beginClose.me, C1::endClose.me, C2::beginClose.me, C2::endClose.me,
   
   altSync.AltThread.me, altSync.me.AltThread, sync.me, sync.t.me, 
   close.me, isClosed.me |
     t <- diff(ThreadID,{me}) |}
+})
 
 Lin(me) = if me == AltThread then AltLin(me) else ChanThreadLin(me)
 

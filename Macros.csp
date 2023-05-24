@@ -5,7 +5,8 @@
 Assert(b, P) = if b then P else DIV
 Assert1(b) = Assert(b, SKIP)
 
--- Macro corresponding to if(test) P else Q.  
+-- Macro corresponding to if(test) P else Q; here test is represented by a 
+-- process that applies its continuation parameter to a boolean.
 If :: (((Bool) -> Proc) -> Proc, Proc, Proc) -> Proc
 If(test, P, Q) = test(\ res @ if res then P else Q)
 
