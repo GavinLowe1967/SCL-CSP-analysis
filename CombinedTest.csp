@@ -10,7 +10,7 @@ others(t) = diff(ChanThreads, {t})
 ChanThreads =  diff(ThreadID, {AltThread})
 
 -- Identities of channels
-datatype ChanID = c1 | c2
+datatype ChanID = Chan1 | Chan2 -- c1 | c2
 
 include "Types.csp"
 
@@ -48,25 +48,20 @@ include "Alt.csp"
 -- Create the alt.
 instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
 
-
 ------ Threads
 
 -- The thread that runs the Alt repeatedly. 
 
--- Allow alt
-ALTFLAG = true -- false
 
 CLOSEFLAG = true --  not FLAG
 
-TheAltThread(me) = 
-ALTFLAG & -- FIXME
-  A1::beginAlt.me -> (
-    A1::endAlt.me.AltReceive?i.x -> TheAltThread(me) 
-    [] 
-    A1::endAlt.me.AltSend?i.x -> TheAltThread(me)
-  )
-
-
+TheAltThread(me) = RUN(A1::altInterface(AltThread))
+--   A1::beginAlt.me -> (
+--     A1::endAlt.me.AltReceive?i.x -> TheAltThread(me) 
+--     [] 
+--     A1::endAlt.me.AltSend?i.x -> TheAltThread(me)
+-- -- FIXME: or AltAbort
+--   )
 
 -- Thread with identity me, which repeatedly calls operations.  In particular,
 -- this prevents the thread from apparently having concurrent invocations on
@@ -93,8 +88,6 @@ CLOSEFLAG & (
   []
   C2::beginClose.me -> C2::endClose.me -> Thread(me)
 )
-  -- |~| 
-  -- STOP
 
 Threads = (||| t <- ChanThreads @ Thread(t)) ||| TheAltThread(AltThread)
 
@@ -106,14 +99,14 @@ System00 = C1::runWithClientsAndHide(C2::runWithClientsAndHide(Threads))
 
 System01 = 
   System00 [[
-    C1::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.c1,
-    C1::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.c1,
-    C1::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.c1,
-    C1::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.c1,
-    C1::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.c1,
-    C1::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.c1,
-    C1::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.c1,
-    C1::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.c1,
+    C1::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.Chan1,
+    C1::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.Chan1,
+    C1::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.Chan1,
+    C1::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.Chan1,
+    C1::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.Chan1,
+    C1::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.Chan1,
+    C1::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.Chan1,
+    C1::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.Chan1,
 
     C1::beginMaybeReceive.t.Alt1 <- A1::beginMaybeReceive.t,
     C1::endMaybeReceive.t.Alt1 <- A1::endMaybeReceive.t,
@@ -122,14 +115,14 @@ System01 =
     C1::beginPortClosed.t.Alt1 <- A1::beginPortClosed.t,
     C1::endPortClosed.t.Alt1 <- A1::endPortClosed.t,
 
-    C2::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.c2,
-    C2::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.c2,
-    C2::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.c2,
-    C2::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.c2,
-    C2::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.c2,
-    C2::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.c2,
-    C2::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.c2,
-    C2::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.c2,
+    C2::beginRegisterIn.t.Alt1 <- A1::beginRegisterIn.t.Chan2,
+    C2::endRegisterIn.t.Alt1 <- A1::endRegisterIn.t.Chan2,
+    C2::beginDeregisterIn.t.Alt1 <- A1::beginDeregisterIn.t.Chan2,
+    C2::endDeregisterIn.t.Alt1 <- A1::endDeregisterIn.t.Chan2,
+    C2::beginRegisterOut.t.Alt1 <- A1::beginRegisterOut.t.Chan2,
+    C2::endRegisterOut.t.Alt1 <- A1::endRegisterOut.t.Chan2,
+    C2::beginDeregisterOut.t.Alt1 <- A1::beginDeregisterOut.t.Chan2,
+    C2::endDeregisterOut.t.Alt1 <- A1::endDeregisterOut.t.Chan2,
 
     C2::beginMaybeReceive.t.Alt1 <- A1::beginMaybeReceive.t,
     C2::endMaybeReceive.t.Alt1 <- A1::endMaybeReceive.t,
@@ -143,157 +136,185 @@ System01 =
 System0 = A1::runWithAndHide(System01) \ A1::ChannelInterface
 
 assert System0 :[divergence free]
+-- Check requires ~250GB. 
 
 assert not System0 :[deadlock free] 
--- deadlocks because all ChanThreads could choose to STOP
+-- deadlocks because all ChanThreads could choose to use the same port as the
+-- alt.
 
 System = System0 \ {|A1::spuriousWakeup|} 
 
-assert not System :[divergence free] -- diverges because of spurious wake ups
+assert not System :[divergence free] 
+-- diverges because of spurious wake ups
 
 ------ Specification for synchronisation linearisation.
 
--- In sync and altSync events, the sender comes first
+include "CombinedSpec.csp"
 
--- Synchronisation between threads in Alt and channel, passing data value.
-channel altSync : ThreadID . ThreadID . ChanID . Data
+-- -- In sync and altSync events, the sender comes first
 
--- synchronsation between a sender and receiver
-channel sync : ThreadID . ThreadID . ChanID . Data
+-- -- Synchronisation between threads in Alt and channel, passing data value.
+-- channel altSync : ThreadID . ThreadID . ChanID . Data
 
--- channel closing linearization point
-channel close: ThreadID . ChanID
+-- -- synchronsation between a sender and receiver
+-- channel sync : ThreadID . ThreadID . ChanID . Data
 
-channel isClosed: ThreadID . ChanID
+-- -- channel closing linearization point
+-- channel close: ThreadID . ChanID
 
--- Lineariser for the Alt thread.
-AltLin(me) = 
-ALTFLAG & 
-  let inPorts = { c | InPortBranch.c <- set(branches) }
-      outPorts = { c | OutPortBranch.c <- set(branches) } 
-  within
-  A1::beginAlt.me -> (
-    altSync.me?other:ChanThreads?c:inPorts?x -> 
-      A1::endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me)
-    []
-    altSync?other:ChanThreads!me?c:outPorts?x ->
-      A1::endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
-  )
-  -- |~| STOP
+-- -- Test of whether the channel is closed. 
+-- channel isClosed: ThreadID . ChanID
 
-alphaAltLin(me) = union(
-  {| A1::beginAlt.me, A1::endAlt.me, altSync.me |},
-  {| altSync.t.me | t <- ChanThreads |}
-)
+-- channel allClosed
+
+-- -- A thread timing out in a sendWithin or receiveWithin.
+-- channel timeout: ThreadID . ChanID
 
 -- Specification object for a channel: keeps track of whether the channel is
 -- closed, allowing appropriate events before and after.
-ChanSpec(c) = 
-  sync?_?_!c?_ -> ChanSpec(c) 
-  [] altSync?_?_!c?_ -> ChanSpec(c) 
-  [] close?_!c -> ChanSpecClosed(c)
-ChanSpecClosed(c) =
-  isClosed?_!c -> ChanSpecClosed(c) [] close?_!c -> ChanSpecClosed(c)
-alphaChanSpecs = {| sync, altSync, close, isClosed |} 
+-- ChanSpec(c) = 
+--   sync?_?_!c?_ -> ChanSpec(c) 
+--   [] altSync?_?_!c?_ -> ChanSpec(c) 
+--   [] timeout?_!c -> ChanSpec(c)
+--   [] close?_!c -> ChanSpecClosed(c)
+-- ChanSpecClosed(c) =
+--   isClosed?_!c -> ChanSpecClosed(c) 
+--   [] allClosed -> ChanSpecClosed(c)
+--   [] close?_!c -> ChanSpecClosed(c)
+
+-- ChanSpecs = [| {allClosed} |] c <- ChanID @ ChanSpec(c)
+-- alphaChanSpecs = {| sync, altSync, timeout, close, isClosed, allClosed |} 
+
+-- -- Lineariser for the Alt thread.
+-- AltLin(me) = 
+--   let inPorts = { c | InPortBranch.c <- set(branches) }
+--       outPorts = { c | OutPortBranch.c <- set(branches) } 
+--   within
+--   A1::beginAlt.me -> (
+--     altSync.me?other:ChanThreads?c:inPorts?x -> 
+--       A1::endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me)
+--     []
+--     altSync?other:ChanThreads!me?c:outPorts?x ->
+--       A1::endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
+--     []
+--     allClosed -> A1::endAlt.me.AltAbort -> AltLin(me)
+--   )
+
+-- alphaAltLin(me) = union(
+--   {| A1::beginAlt.me, A1::endAlt.me, altSync.me, allClosed |},
+--   {| altSync.t.me | t <- ChanThreads |}
+-- )
 
 -- Lineariser for a channel thread.
-ChanThreadLin(me) = 
-  C1::beginSend.me?x -> LinSending(me, x, c1, C1::endSend)
-  []
-  C2::beginSend.me?x -> LinSending(me, x, c2, C2::endSend)
-  []
-  C1::beginReceive.me -> LinReceiving(me, c1, C1::endReceive) 
-  []
-  C2::beginReceive.me -> LinReceiving(me, c2, C2::endReceive)
-  [] 
-  C1::beginSendWithin.me?x -> LinSendingWithin(me, x, c1, C1::endSendWithin)
-  []
-  C2::beginSendWithin.me?x -> LinSendingWithin(me, x, c2, C2::endSendWithin)
-  []
-  C1::beginReceiveWithin.me -> LinReceivingWithin(me, c1, C1::endReceiveWithin)
-  []
-  C2::beginReceiveWithin.me -> LinReceivingWithin(me, c2, C2::endReceiveWithin)
-  []
-  C1::beginClose.me -> close.me.c1 -> C1::endClose.me -> ChanThreadLin(me)
-  []
-  C2::beginClose.me -> close.me.c2 -> C2::endClose.me -> ChanThreadLin(me)
-  -- |~|
-  -- STOP
+-- ChanThreadLin(me) = 
+--   C1::beginSend.me?x -> LinSending(me, x, c1, C1::endSend.me)
+--   []
+--   C2::beginSend.me?x -> LinSending(me, x, c2, C2::endSend.me)
+--   []
+--   C1::beginReceive.me -> LinReceiving(me, c1, C1::endReceive.me) 
+--   []
+--   C2::beginReceive.me -> LinReceiving(me, c2, C2::endReceive.me)
+--   [] 
+--   C1::beginSendWithin.me?x -> LinSendingWithin(me, x, c1, C1::endSendWithin.me)
+--   []
+--   C2::beginSendWithin.me?x -> LinSendingWithin(me, x, c2, C2::endSendWithin.me)
+--   []
+--   C1::beginReceiveWithin.me -> 
+--     LinReceivingWithin(me, c1, C1::endReceiveWithin.me)
+--   []
+--   C2::beginReceiveWithin.me -> 
+--     LinReceivingWithin(me, c2, C2::endReceiveWithin.me)
+--   []
+--   C1::beginClose.me -> close.me.c1 -> C1::endClose.me -> ChanThreadLin(me)
+--   []
+--   C2::beginClose.me -> close.me.c2 -> C2::endClose.me -> ChanThreadLin(me)
 
--- Thread me sending x on c; endSend.me will signal the end of the sending. 
-LinSending(me, x, c, endSend) = 
-  sync.me?other:others(me)!c!x -> endSend.me.SendSuccess -> ChanThreadLin(me)
-  [] 
-  altSync?altThread!me!c!x -> endSend.me.SendSuccess -> ChanThreadLin(me)
-  [] 
-  isClosed.me.c -> endSend.me.Closed -> ChanThreadLin(me)
+-- -- Thread me sending x on c; endChan will signal the end of the sending. 
+-- LinSending(me, x, c, endChan) = 
+--   sync.me?other:others(me)!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
+--   [] 
+--   altSync?altThread!me!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
+--   [] 
+--   isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
 
--- Thread me receiving on c; endReceive.me will signal the end of the receive. 
-LinReceiving(me, c, endReceive) = 
-  sync?other:others(me)!me!c?x -> endReceive.me.ReceiveSuccess.x ->
-    ChanThreadLin(me)
-  [] 
-  altSync.me?altThread!c?x -> endReceive.me.ReceiveSuccess.x -> ChanThreadLin(me)
-  [] 
-  isClosed.me.c -> endReceive.me.Closed -> ChanThreadLin(me)
+-- -- Thread me receiving on c; endChan will signal the end of the receive. 
+-- LinReceiving(me, c, endChan) = 
+--   sync?other:others(me)!me!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
+--   [] 
+--   altSync.me?altThread!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
+--   [] 
+--   isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
 
--- Thread me within sendWithin(x) on c; endSendWithin.me will signal the end
--- of the sending.
-LinSendingWithin(me, x, c, endSendWithin) = 
-  LinSending(me, x, c, endSendWithin)
-  -- ( sync.me?other:others(me)!c!x -> endSendWithin.me.SendSuccess -> 
-  --     ChanThreadLin(me)
-  --   [] 
-  --   altSync?altThread!me!c!x -> endSendWithin.me.SendSuccess -> 
-  --     ChanThreadLin(me)
-  --   []
-  --   isClosed.me.c -> endSendWithin.me.Closed -> ChanThreadLin(me)
-  -- )
-  [> endSendWithin.me.Timeout -> ChanThreadLin(me)
+-- -- Thread me within sendWithin(x) on c; endChan will signal the end of the
+-- -- sending.
+-- LinSendingWithin(me, x, c, endChan) = 
+--   LinSending(me, x, c, endChan)
+--   -- [> endChan.me.Timeout -> ChanThreadLin(me)
+--   [] timeout.me.c -> endChan.Timeout -> ChanThreadLin(me)
 
-LinReceivingWithin(me, c, endReceiveWithin) = 
-  LinReceiving(me, c, endReceiveWithin)
-  -- ( sync?other:others(me)!me!c?x -> 
-  --     endReceiveWithin.me.ReceiveSuccess.x -> ChanThreadLin(me) 
-  --   []
-  --   altSync.me?altThread!c?x -> endReceiveWithin.me.ReceiveSuccess.x -> 
-  --     ChanThreadLin(me) 
-  --   [] 
-  --   isClosed.me.c -> endReceiveWithin.me.Closed -> ChanThreadLin(me)
-  --   )
-    [> endReceiveWithin.me.Timeout -> ChanThreadLin(me) 
+-- -- Thread me within receiveWithin(x) on c; endChan will signal the end of the
+-- -- receiving.
+-- LinReceivingWithin(me, c, endChan) = 
+--   LinReceiving(me, c, endChan)
+--   --  [> endChan.me.Timeout -> ChanThreadLin(me) 
+--   [] timeout.me.c -> endChan.Timeout -> ChanThreadLin(me) 
 
--- Alphabet of ChanThreadLin(me)
-alphaChanThreadLin(me) = Union({
-  C1::clientInterface(me),
-  C2::clientInterface(me),
-  {| 
-  -- C1::beginSend.me, C1::endSend.me, C2::beginSend.me, C2::endSend.me,
-  -- C1::beginReceive.me, C1::endReceive.me, 
-  -- C2::beginReceive.me, C2::endReceive.me,  
-  -- C1::beginSendWithin.me, C1::endSendWithin.me,
-  -- C2::beginSendWithin.me, C2::endSendWithin.me,
-  -- C1::beginReceiveWithin.me, C1::endReceiveWithin.me,
-  -- C2::beginReceiveWithin.me, C2::endReceiveWithin.me,
-  -- C1::beginClose.me, C1::endClose.me, C2::beginClose.me, C2::endClose.me,
+
+beginAlt = A1::beginAlt
+endAlt = A1::endAlt
+
+-- Definitions of the ChanIDs and (CSP) channels used for beginning and ending
+-- operations.
+sendChans = {
+  (Chan1, C1::beginSend, C1::endSend), (Chan2, C2::beginSend, C2::endSend)
+}
+receiveChans = {
+  (Chan1, C1::beginReceive, C1::endReceive), 
+  (Chan2, C2::beginReceive, C2::endReceive)
+}
+sendWithinChans =  {
+  (Chan1, C1::beginSendWithin, C1::endSendWithin), 
+  (Chan2, C2::beginSendWithin, C2::endSendWithin)
+} 
+receiveWithinChans = {
+  (Chan1, C1::beginReceiveWithin, C1::endReceiveWithin), 
+  (Chan2, C2::beginReceiveWithin, C2::endReceiveWithin)
+}
+closeChans = {
+  (Chan1, C1::beginClose, C1::endClose), (Chan2, C2::beginClose, C2::endClose)
+}
+clientInterface(me) = union(C1::clientInterface(me), C2::clientInterface(me))
+
+-- -- Alphabet of ChanThreadLin(me)
+-- alphaChanThreadLin(me) = Union({
+--   C1::clientInterface(me),
+--   C2::clientInterface(me),
+--   {| sync.me.t, sync.t.me | t <- diff(ThreadID,{me}) |},
+--   {| altSync.AltThread.me, altSync.me.AltThread, 
+--      timeout.me, close.me, isClosed.me |}
+-- })
+
+-- Lin(me) = if me == AltThread then AltLin(me) else ChanThreadLin(me)
+
+-- alphaLin(me) = 
+--   if me == AltThread then alphaAltLin(me) else alphaChanThreadLin(me)
   
-  altSync.AltThread.me, altSync.me.AltThread, sync.me, sync.t.me, 
-  close.me, isClosed.me |
-    t <- diff(ThreadID,{me}) |}
-})
-
-Lin(me) = if me == AltThread then AltLin(me) else ChanThreadLin(me)
-
-alphaLin(me) = 
-  if me == AltThread then alphaAltLin(me) else alphaChanThreadLin(me)
-  
--- Combine the linearisers to create the specification
-Spec = (
-  (|| t <- ThreadID @ [alphaLin(t)] Lin(t)) 
-  [| alphaChanSpecs |]
-  (||| c <- ChanID @ ChanSpec(c))
-) \ {| altSync, sync, close, isClosed |}
+-- -- Combine the linearisers to create the specification
+-- Spec = (
+--   (|| t <- ThreadID @ [alphaLin(t)] Lin(t)) 
+--   [| alphaChanSpecs |]
+--   ChanSpecs
+-- ) \ alphaChanSpecs 
 
 assert Spec [T= System
 
 assert Spec [F= System 
+
+-- The following test keeps the spurious wakeups visible.
+
+Spec1 = Spec ||| CHAOS({|A1::spuriousWakeup|})
+
+assert Spec1 [F= System0 
+
+assert Spec1 [FD= System0 
+-- Warning: above requires ~500GB of memory! 

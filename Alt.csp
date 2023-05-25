@@ -64,7 +64,8 @@ module Alt(this, branches, ThreadID, ChanID)
   Run :: (ThreadID, (AltResult) -> Proc) -> Proc
   Run(me, cont) = 
     -- synchronized{ registering = true }
-    JVMMonitor::Synchronized(me, setRegistering.me.true -> SKIP);
+    -- JVMMonitor::Synchronized(me, setRegistering.me.true -> SKIP);
+    JVMMonitor::Lock(me); setRegistering.me.true ->
     RegisterLoop(me, cont, 0)
 
   -- Register with branches from index i.
@@ -103,9 +104,8 @@ module Alt(this, branches, ThreadID, ChanID)
 
   -- Code after the registration loop.  
   AfterLoop(me, cont) = 
-    JVMMonitor::Lock(me); AfterLoop1(me, cont)
-    --JVMMonitor::Synchronized(me, AfterLoop1(me, cont))-- ;
-    -- PostWait(me, cont)
+    -- JVMMonitor::Lock(me); 
+    AfterLoop1(me, cont)
 
   -- Note: we can't use the Synchronized contruct here, because we need to
   -- release the lock in the AltAbort case.
@@ -191,7 +191,9 @@ module Alt(this, branches, ThreadID, ChanID)
 
   -- Body of maybeReceive
   MaybeReceive1(me, value, index)(cont) = 
-    WaitWhileRegistering(me);
+--    WaitWhileRegistering(me);
+-- Experiment; assert(!registering)
+getRegistering.me?registering -> Assert1(not registering);
     -- assert(enabled(index))
     getEnabled.me.index?enab -> Assert1(enab);
     -- if(done) ...
@@ -216,7 +218,9 @@ module Alt(this, branches, ThreadID, ChanID)
     JVMMonitor::SynchronizedC(me, MaybeSend1(me, index), cont)
 
   MaybeSend1(me, index)(cont) =  
-    WaitWhileRegistering(me);
+   -- WaitWhileRegistering(me);
+-- Experiment; assert(!registering)
+getRegistering.me?registering -> Assert1(not registering);
     -- assert(numEnabled > 0 && enabled(index))
     -- getNumEnabled.me?ne -> Assert1(ne > 0); 
     getEnabled.me.index?enab -> Assert1(enab);
@@ -237,7 +241,9 @@ module Alt(this, branches, ThreadID, ChanID)
 
   PortClosed1(me, i) = 
     -- while(registering) wait() 
-    WaitWhileRegistering(me);
+    --WaitWhileRegistering(me);
+-- Experiment; assert(!registering)
+getRegistering.me?registering -> Assert1(not registering);
     -- assert(enabled(i))
     getEnabled.me.i?en -> Assert1(en);
     -- if(!done) ...

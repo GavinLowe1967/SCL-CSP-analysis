@@ -1,0 +1,129 @@
+-- This file encapsulates most of the specification used in CombinedTest.csp 
+-- and CompositionalTest.csp. 
+
+-- It assumes that the following are in scope: (1) the contents of Types.csp;
+-- (2) a definition of ThreadID, including a value AltThread and subset
+-- ChanThreads; (3) channels beginAlt and endAlt; (4) sets sendChans,
+-- receiveChans, sendWithinChans, receiveWithinChans, closeChans .........
+
+-- ..............................
+
+
+-- Synchronisation between threads in Alt and channel, passing data value.
+channel altSync : ThreadID . ThreadID . ChanID . Data
+
+-- synchronsation between a sender and receiver
+channel sync : ThreadID . ThreadID . ChanID . Data
+
+-- channel closing linearization point
+channel close: ThreadID . ChanID
+
+-- Synchronisation between ChanSpec and a ChanThreadLin where the thread finds
+-- the channel is closed.
+channel isClosed: ThreadID . ChanID
+
+-- A thread timing out in a sendWithin or receiveWithin.
+channel timeout: ThreadID . ChanID
+
+-- Synchronisation between AltLin and all ChanSpecs where the former finds all
+-- channels are closed.
+channel allClosed
+
+
+-- Specification object for a channel: keeps track of whether the channel is
+-- closed, allowing appropriate events before and after.
+ChanSpec(c) = 
+  sync?_?_!c?_ -> ChanSpec(c) 
+  [] altSync?_?_!c?_ -> ChanSpec(c) 
+  [] timeout?_!c -> ChanSpec(c)
+  [] close?_!c -> ChanSpecClosed(c)
+ChanSpecClosed(c) =
+  isClosed?_!c -> ChanSpecClosed(c) 
+  [] allClosed -> ChanSpecClosed(c)
+  [] close?_!c -> ChanSpecClosed(c)
+
+ChanSpecs = [| {allClosed} |] c <- ChanID @ ChanSpec(c)
+
+alphaChanSpecs = {| sync, altSync, timeout, close, isClosed, allClosed |} 
+
+-- Lineariser for the Alt thread.
+AltLin(me) = 
+  let inPorts = { c | InPortBranch.c <- set(branches) }
+      outPorts = { c | OutPortBranch.c <- set(branches) } 
+  within
+  beginAlt.me -> (
+    altSync.me?other:ChanThreads?c:inPorts?x -> 
+      endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me)
+    []
+    altSync?other:ChanThreads!me?c:outPorts?x ->
+      endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
+    []
+    allClosed -> endAlt.me.AltAbort -> AltLin(me)
+  )
+
+alphaAltLin(me) = union(
+  {| beginAlt.me, endAlt.me, altSync.me, allClosed |},
+  {| altSync.t.me | t <- ChanThreads |}
+)
+
+-- Lineariser for a channel thread.
+
+ChanThreadLin(me) =
+  ([] (c, beginSend, endSend) <- sendChans @  
+    beginSend.me?x -> LinSending(me, x, c, endSend.me))
+  []
+  ([] (c, beginReceive, endReceive) <- receiveChans @
+    beginReceive.me -> LinReceiving(me, c, endReceive.me))
+  []
+  ([] (c, beginSendWithin, endSendWithin) <- sendWithinChans @
+    beginSendWithin.me?x -> LinSendingWithin(me, x, c, endSendWithin.me))
+  []
+  ([] (c, beginReceiveWithin, endReceiveWithin) <- receiveWithinChans @
+    beginReceiveWithin.me -> LinReceivingWithin(me, c, endReceiveWithin.me))
+  []
+  ([] (c, beginClose, endClose) <- closeChans @
+    beginClose.me -> close.me.c -> endClose.me -> ChanThreadLin(me))
+
+-- Thread me sending x on c; endChan will signal the end of the sending. 
+LinSending :: (ThreadID, Data, ChanID, (Result) => Event) -> Proc
+LinSending(me, x, c, endChan) = 
+  sync.me?other:others(me)!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
+  [] 
+  altSync?altThread!me!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
+  [] 
+  isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
+
+-- Thread me receiving on c; endChan will signal the end of the receive. 
+LinReceiving(me, c, endChan) = 
+  sync?other:others(me)!me!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
+  [] 
+  altSync.me?altThread!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
+  [] 
+  isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
+
+LinSendingWithin(me, x, c, endChan) = 
+  LinSending(me, x, c, endChan)
+  [] timeout.me.c -> endChan.Timeout -> ChanThreadLin(me) 
+
+
+LinReceivingWithin(me, c, endChan) = 
+  LinReceiving(me, c, endChan)
+  [] timeout.me.c -> endChan.Timeout -> ChanThreadLin(me) 
+
+-- Alphabet of ChanThreadLin(me)
+alphaChanThreadLin(me) = Union({
+  clientInterface(me), 
+  {| sync.me, sync.t.me | t <- diff(ThreadID,{me}) |},
+  {| altSync.AltThread.me, altSync.me.AltThread, 
+     timeout.me, close.me, isClosed.me |}
+})
+
+-- Combine the linearisers to create the specification
+Lin(me) = if me == AltThread then AltLin(me) else ChanThreadLin(me)
+
+alphaLin(me) = 
+  if me == AltThread then alphaAltLin(me) else alphaChanThreadLin(me)
+
+AllLins = || t <- ThreadID @ [alphaLin(t)] Lin(t)
+
+Spec = (AllLins [| alphaChanSpecs |] ChanSpecs) \ alphaChanSpecs 

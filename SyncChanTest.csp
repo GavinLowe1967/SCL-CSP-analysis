@@ -23,19 +23,6 @@ instance C = SyncChan(ThreadID, AltID, Data, MaxIndex)
 TIMED_FLAG = true -- true
 CLOSE_FLAG = true -- true
 
--- Thread with identity me, which repeatedly sends or receives, or neither.
--- Thread(me) = 
---   C::beginSend.me?x -> C::endSend.me?res -> Thread(me)
---   []
---   C::beginReceive.me -> C::endReceive.me?res -> Thread(me)
---   []
---   TIMED_FLAG & (
---     C::beginSendWithin.me?x -> C::endSendWithin.me?res -> Thread(me)
---     []
---     C::beginReceiveWithin.me -> C::endReceiveWithin.me?res -> Thread(me)
---   )
--- Threads = ||| t <- ThreadID @ Thread(t)
-
 -- Client interface events that we allow to be performed.  The flags can be
 -- used to restrict to particular operations.
 AllowedEvents = Union({
@@ -63,6 +50,7 @@ channel close: ThreadID
 -- Test of whether the channel is closed. 
 channel isClosed: ThreadID 
 
+-- A thread timing out in a sendWithin or receiveWithin.
 channel timeout: ThreadID
 
 -- A linearizer for thread t
@@ -91,12 +79,10 @@ ReceivingLin(me, endChan) =
 SendingWithinLin(me, x, endChan) = 
   SendingLin(me, x, endChan)
   [] timeout.me -> endChan.Timeout -> Linearizer(me)
- -- [> endChan.Timeout -> Linearizer(me)
 
 ReceivingWithinLin(me, endChan) = 
   ReceivingLin(me, endChan) 
   [] timeout.me -> endChan.Timeout -> Linearizer(me)
--- [> endChan.Timeout -> Linearizer(me)
 
 -- Alphabet of Linearizer(t)
 alphaLin(t) = Union({

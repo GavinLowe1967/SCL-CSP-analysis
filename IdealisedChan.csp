@@ -294,7 +294,7 @@ module IdealisedChan(size)
     isClosed?_ -> ChanStateClosed
     [] close?_ -> ChanStateClosed
     [] commit?_ -> ChanStateClosed
-    [] timeout?_ -> ChanStateClosed
+--    [] timeout?_ -> ChanStateClosed
     [] deregisterIn?_ -> ChanStateClosed
     [] deregisterOut?_ -> ChanStateClosed
   
