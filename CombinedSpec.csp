@@ -3,19 +3,29 @@
 
 -- It assumes that the following are in scope: (1) the contents of Types.csp;
 -- (2) a definition of ThreadID, including a value AltThread and subset
--- ChanThreads; (3) channels beginAlt and endAlt; (4) sets sendChans,
--- receiveChans, sendWithinChans, receiveWithinChans, closeChans .........
+-- ChanThreads; (3) a definition of ChanID; (4) channels beginAlt and endAlt;
+-- (5) sets sendChans, receiveChans, sendWithinChans, receiveWithinChans and
+-- closeChans, each containing triples of the form (ChanID, begin-channel,
+-- end-channel), giving information about the channels used for framing
+-- operations; (6) a definition of branches, defining the branches of the alt;
+-- (7) a definition of clientInterface, giving the interface of channels to
+-- channel-threads.
 
--- ..............................
+-- Channel-threads other than t.
+others(t) = diff(ChanThreads, {t})
 
+-- Index of channel c in branches
+index(c) = 
+  let index1(c,cs) = if c == head(cs) then 0 else 1 + index1(c, tail(cs))
+  within index1(c, branches)
 
 -- Synchronisation between threads in Alt and channel, passing data value.
 channel altSync : ThreadID . ThreadID . ChanID . Data
 
--- synchronsation between a sender and receiver
+-- Synchronsation between a sender and receiver
 channel sync : ThreadID . ThreadID . ChanID . Data
 
--- channel closing linearization point
+-- Channel closing linearization point
 channel close: ThreadID . ChanID
 
 -- Synchronisation between ChanSpec and a ChanThreadLin where the thread finds
@@ -29,6 +39,7 @@ channel timeout: ThreadID . ChanID
 -- channels are closed.
 channel allClosed
 
+------------- Specification object.
 
 -- Specification object for a channel: keeps track of whether the channel is
 -- closed, allowing appropriate events before and after.
@@ -46,7 +57,8 @@ ChanSpecs = [| {allClosed} |] c <- ChanID @ ChanSpec(c)
 
 alphaChanSpecs = {| sync, altSync, timeout, close, isClosed, allClosed |} 
 
--- Lineariser for the Alt thread.
+------------- Lineariser for the Alt thread.
+
 AltLin(me) = 
   let inPorts = { c | InPortBranch.c <- set(branches) }
       outPorts = { c | OutPortBranch.c <- set(branches) } 
@@ -66,7 +78,7 @@ alphaAltLin(me) = union(
   {| altSync.t.me | t <- ChanThreads |}
 )
 
--- Lineariser for a channel thread.
+------------ Lineariser for a channel thread.
 
 ChanThreadLin(me) =
   ([] (c, beginSend, endSend) <- sendChans @  
@@ -105,7 +117,6 @@ LinSendingWithin(me, x, c, endChan) =
   LinSending(me, x, c, endChan)
   [] timeout.me.c -> endChan.Timeout -> ChanThreadLin(me) 
 
-
 LinReceivingWithin(me, c, endChan) = 
   LinReceiving(me, c, endChan)
   [] timeout.me.c -> endChan.Timeout -> ChanThreadLin(me) 
@@ -117,6 +128,8 @@ alphaChanThreadLin(me) = Union({
   {| altSync.AltThread.me, altSync.me.AltThread, 
      timeout.me, close.me, isClosed.me |}
 })
+
+--------- Combined spec
 
 -- Combine the linearisers to create the specification
 Lin(me) = if me == AltThread then AltLin(me) else ChanThreadLin(me)

@@ -35,25 +35,18 @@ module IdealisedChan(size)
   -- Lineariser for registration and deregistration events.
   RegLin = 
     beginRegisterIn.AltThread.Alt1?index -> RegLinRegIn(index)
-    []
-    beginDeregisterIn.AltThread.Alt1?index -> RegLinDeregIn(index)
-    []
-    beginRegisterOut.AltThread.Alt1?index -> RegLinRegOut(index)
-    []
-    beginDeregisterOut.AltThread.Alt1?index -> RegLinDeregOut(index)
+    [] beginDeregisterIn.AltThread.Alt1?index -> RegLinDeregIn(index)
+    [] beginRegisterOut.AltThread.Alt1?index -> RegLinRegOut(index)
+    [] beginDeregisterOut.AltThread.Alt1?index -> RegLinDeregOut(index)
   
   -- Alt registering at inport against index.
   RegLinRegIn(index) = 
-    registerInSync?t?x -> endRegisterIn.AltThread.Alt1.RegisterSuccess.x ->
-    RegLin
-    []
-    registerInWait.index -> endRegisterIn.AltThread.Alt1.RegisterWaiting ->
-    RegLin
-    []
-    isClosed.AltThread -> endRegisterIn.AltThread.Alt1.RegisterClosed ->
-    RegLin
-    []
-    registerError -> STOP
+    let endChan = endRegisterIn.AltThread.Alt1 
+    within
+    registerInSync?t?x -> endChan.RegisterSuccess.x -> RegLin
+    [] registerInWait.index -> endChan.RegisterWaiting -> RegLin
+    [] isClosed.AltThread -> endChan.RegisterClosed -> RegLin
+    [] registerError -> STOP
   
   -- Alt deregistering at inport against index.
   RegLinDeregIn(index) = 
@@ -62,17 +55,12 @@ module IdealisedChan(size)
   
   -- Alt deregistering at outport against index.
   RegLinRegOut(index) = 
-    ( |~| x : Data @ registerOutSync?t!x -> 
-       endRegisterOut.AltThread.Alt1.RegisterSuccess.x -> RegLin
-    )
-    []
-    registerOutWait.index -> 
-    endRegisterOut.AltThread.Alt1.RegisterWaiting -> RegLin
-    []
-    isClosed.AltThread -> endRegisterOut.AltThread.Alt1.RegisterClosed ->
-    RegLin
-    []
-    registerError -> STOP
+    let endChan = endRegisterOut.AltThread.Alt1
+    within
+    (|~| x : Data @ registerOutSync?t!x -> endChan.RegisterSuccess.x -> RegLin)
+    [] registerOutWait.index -> endChan.RegisterWaiting -> RegLin
+    [] isClosed.AltThread -> endChan.RegisterClosed -> RegLin
+    [] registerError -> STOP
   
   -- Alt deregistering at outport against index.
   RegLinDeregOut(index) = 
@@ -114,84 +102,48 @@ module IdealisedChan(size)
   
   -- A lineariser for thread me
   Lin(me) = 
-    beginSend.me?x -> SendingLin(me, x)
-    []
-    beginReceive.me -> ReceivingLin(me)
-    []
-    beginSendWithin.me?x -> SendingWithinLin(me, x)
-    []
-    beginReceiveWithin.me -> ReceivingWithinLin(me)
-    []
-    beginClose.me -> close.me -> isClosed.me -> endClose.me -> Lin(me)
+    beginSend.me?x -> SendingLin(me, x, endSend.me, false)
+    [] beginReceive.me -> ReceivingLin(me, endReceive.me, false)
+    [] beginSendWithin.me?x -> SendingLin(me, x, endSendWithin.me, true)
+    [] beginReceiveWithin.me -> ReceivingLin(me, endReceiveWithin.me, true) 
+    [] beginClose.me -> close.me -> isClosed.me -> endClose.me -> Lin(me)
     -- Note: the isClosed event means the endClose happens only after the
     -- registered port (if any) has been informed.
   
-  -- Lineariser for thread me inside send(x).
-  SendingLin(me, x) = 
-    sync.me?other:others(me)!x -> commit.me -> EndSendingLin(me)
+  -- Lineariser for thread me inside send(x) (if timed = false) or
+  -- sendWithin(x) (if timed = true).  endChan is used to signal the end.
+  SendingLin(me, x, endChan, timed) = 
+    let Success = endChan.SendSuccess -> Lin(me) 
+    within
+    sync.me?other:others(me)!x -> commit.me -> Success
     []
-    registerInSync.me.x -> commit.me -> EndSendingLin(me)
-    []
-    callMaybeReceive.me?index!x -> beginMaybeReceive.me.Alt1.index.x -> 
-    endMaybeReceive.me.Alt1?res -> 
-    (if res then EndSendingLin(me) else SendingLin(me, x))
-    []
-    isClosed.me -> endSend.me.Closed -> Lin(me)
-  
-  -- Successful end to send
-  EndSendingLin(me) = endSend.me.SendSuccess -> Lin(me)
-  
-  -- Lineariser for thread me inside receive.
-  ReceivingLin(me) =  
-    sync?other:others(me)!me?x -> EndReceivingLin(me, x)
-    []
-    registerOutSync.me?x -> EndReceivingLin(me, x)
-    []
-    callMaybeSend.me?index -> beginMaybeSend.me.Alt1.index -> (
-      endMaybeSend.me.Alt1.Some?x -> EndReceivingLin(me, x)
-      [] endMaybeSend.me.Alt1.None -> ReceivingLin(me)
-    )
-    [] 
-    isClosed.me -> endReceive.me.Closed -> Lin(me)
-  
-  -- Successful end to receive
-  EndReceivingLin(me, x) =  endReceive.me.ReceiveSuccess.x -> Lin(me)
-
-  SendingWithinLin(me, x) = 
-    sync.me?other:others(me)!x -> commit.me -> EndSendingWithinLin(me)
-    []
-    registerInSync.me.x -> commit.me -> EndSendingWithinLin(me)
+    registerInSync.me.x -> commit.me -> Success
     []
     callMaybeReceive.me?index!x -> beginMaybeReceive.me.Alt1.index.x -> 
       endMaybeReceive.me.Alt1?res -> 
-      (if res then EndSendingWithinLin(me) else SendingWithinLin(me, x))
+      (if res then Success else SendingLin(me, x, endChan, timed))
     []
-    isClosed.me -> endSendWithin.me.Closed -> Lin(me)
+    isClosed.me -> endChan.Closed -> Lin(me)
     []
-    timeout.me -> endSendWithin.me.Timeout -> Lin(me)
-
-  -- Successful end to sendWithin
-  EndSendingWithinLin(me) = endSendWithin.me.SendSuccess -> Lin(me)
-    
-  ReceivingWithinLin(me) = 
-    sync?other:others(me)!me?x -> EndReceivingWithinLin(me, x)
+    timed & timeout.me -> endChan.Timeout -> Lin(me)
+  
+  -- Lineariser for thread me inside receive or receiveWithin.
+  ReceivingLin(me, endChan, timed) =  
+    let Success(x) = endChan.ReceiveSuccess.x -> Lin(me) 
+    within
+    sync?other:others(me)!me?x -> Success(x) -- EndReceivingLin(me, x)
     []
-    registerOutSync.me?x -> EndReceivingWithinLin(me, x)
+    registerOutSync.me?x -> Success(x) -- EndReceivingLin(me, x)
     []
     callMaybeSend.me?index -> beginMaybeSend.me.Alt1.index -> (
-      endMaybeSend.me.Alt1.Some?x -> EndReceivingWithinLin(me, x)
-      [] endMaybeSend.me.Alt1.None -> ReceivingWithinLin(me)
+      endMaybeSend.me.Alt1.Some?x -> Success(x) -- EndReceivingLin(me, x)
+      [] endMaybeSend.me.Alt1.None -> ReceivingLin(me, endChan, timed)
     )
     [] 
-    isClosed.me -> endReceiveWithin.me.Closed -> Lin(me)
+    isClosed.me -> endChan.Closed -> Lin(me)
     []
-    timeout.me -> endReceiveWithin.me.Timeout -> Lin(me)
+    timed & timeout.me -> endChan.Timeout -> Lin(me)
 
-  -- Successful end to receiveWithin
-  EndReceivingWithinLin(me, x) = 
-    endReceiveWithin.me.ReceiveSuccess.x -> Lin(me)
-
-  
   -- Alphabet for Lin(me)
   alphaLin(me) = Union({
     clientInterface(me), 
@@ -294,7 +246,6 @@ module IdealisedChan(size)
     isClosed?_ -> ChanStateClosed
     [] close?_ -> ChanStateClosed
     [] commit?_ -> ChanStateClosed
---    [] timeout?_ -> ChanStateClosed
     [] deregisterIn?_ -> ChanStateClosed
     [] deregisterOut?_ -> ChanStateClosed
   
