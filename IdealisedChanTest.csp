@@ -2,7 +2,7 @@
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
-datatype ThreadID = AltThread | T1 | T2 -- | T3 -- | T4
+datatype ThreadID = AltThread | T1 | T2  | T3 -- | T4
 
 ChanThreads =  diff(ThreadID, {AltThread})
 
@@ -16,7 +16,7 @@ Index = {0..size-1}
 include "Types.csp"
 
 -- Identities of Alts
-datatype AltID = Alt1
+datatype AltID = Alt1 | Alt2
 
 include "NewSyncChan.csp" 
 
@@ -33,7 +33,10 @@ ChanThreadEvents = {|
 
 -- Events that are not blocked. 
 AllowedEvents = Union({ 
-  ChanThreadEvents, C1::altRegistrationEvents(AltThread, Alt1), C1::AltCallBacks
+  ChanThreadEvents, 
+  C1::altRegistrationEvents(AltThread, Alt1), 
+  C1::altRegistrationEvents(AltThread, Alt2), 
+  C1::AltCallBacks
 })
 
 -- The system to test

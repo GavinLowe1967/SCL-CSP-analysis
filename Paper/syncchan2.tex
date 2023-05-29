@@ -1,0 +1,217 @@
+\subsection{Closing channels}
+
+\inlineScala
+
+We now consider the closing of channels.  
+
+Implementing the |close| operation correctly proved harder than expected.  An
+earlier version of the implementation suffered from a bug involving three
+threads acting concurrently: thread~$A$ calls |send(x)|, thread~$B$ calls
+|receive|, and thread~$C$ calls |close|.  Under certain conditions, it was
+possible for thread~$B$ to return successfully, having received~$x$, but for
+thread~$A$ to see the channel closed, and so throw a |Closed| exception.  We
+consider this behaviour to be incorrect: either both~$A$ and~$B$ should think
+the communication has succeeded, or both should throw |Closed| exceptions.
+
+%%%%%%%%%% Implementation
+
+The implementation uses a boolean variable |isChanClosed| that records whether
+the channel is closed.  The |close| operation sets this variable, and signals
+to all the threads waiting on conditions.
+
+When a thread calls |send| or |receive|, if |isChanClosed| is set, it throws a
+|Closed| exception.  Likewise, if a sending thread waits on |slotEmptied|, it
+performs a similar check when it receives a signal.  
+
+If a receiving thread waits on |slotFull|, when it receives a signal, it first
+checks whether |status| holds |Filled|.  If so, it continues as above: thus we
+prioritise completing the communication over checking whether the channel has
+been closed (this seems necessary for correct interaction with alts).
+%% More precisely, an alt might have filled the slot, which implies it has
+%% performed the computation to calculate the value: at this point, it is
+%% committed to the communication. 
+Otherwise, it checks whether the channel has been closed, and if so throws an
+exception; otherwise, it waits again on |slotFull|.
+
+If a sending thread waits on |continue|, when it receives a signal, it 
+first checks whether |status| holds |Read|, and if so continue as described
+earlier.  Otherwise, it must be the case that |isChanClosed| has been set (the
+implementation asserts this, and the analysis below checks this).  However, if
+there is a receiver waiting (as recorded by |receiversWaiting|), then that
+receiver will eventually return the value being sent, so the sending thread
+should also return successfully.  If there is no waiting receiver, the sending
+the thread throws a |Closed| exception.  The precise order of checks is thus
+rather subtle: this is where the earlier implementation went wrong.
+
+%%%%%%%%%% Model
+
+\inlineCSP
+
+Adapting the CSP model to model closing of channels is straightforward.  The
+|endSend| and |endReceive| channels are extended to pass a value |Closed|
+corresponding to the \SCALA{Closed} exception.  The \SCALA{close} operation is
+modelled as for earlier operations, framed by events on channels |beginClose|
+and |endClosed|.
+
+%%%%%%%%%% Testing
+
+To analyse this extended model, we adapt the process |System| from earlier to
+also allow threads to close channels.  
+
+The previous model of the channel was (in the terminology
+of~\cite{LL:synchronisation}) \emph{stateless}: no state is carried forward
+from one synchronisation to another.  However, when we consider closing of the
+channel, it becomes \emph{stateful}, with two states, open or closed.  (Other
+synchronisation objects have more interesting states.)  
+
+Our specification will treat \SCALA{close} as a linearisable operation: it will
+appear to take place atomically, at some point, called the \emph{linearisation
+  point}, between the |beginClose| and |endClose| events (equivalently, the
+|close| operation can be thought of as a unary synchronisation, involving a
+single thread, in contrast to the earlier binary synchronisations).  We
+require that the history is consistent with this closing: synchronisations
+between sends and receives should take place before the linearisation point of
+the close; and sends and receives that return |Closed| should be linearised
+after the close.
+
+We use an event |close.t| to represent the linearisation point of a
+\SCALA{close} operation by thread~|t|.  Further, we use an event |closed.t| to
+represent the linearisation point of a send or receive operation by thread~|t|
+that returns |Closed|, because it finds the channel is closed.
+
+Within the specification, the state of the channel is recorded by the process
+|ChanSpec|.  When the channel is open, it allows threads to synchronise, or
+allows a thread to close the channel.  When the channel is closed, it allows
+linearisation points of sends or receives that return |Closed|, or allows the
+linearisation point of another |close| operation (a |close| operation on a
+channel that is already closed has no effect).
+%
+\begin{cspm}
+ChanSpec = sync?t1?t2?x -> ChanSpec [] close?t -> ChanSpecClosed
+ChanSpecClosed = isClosed?t -> ChanSpecClosed [] close?t -> ChanSpecClosed
+alphaChanSpec = {|sync, close, isClosed|} 
+\end{cspm}
+
+We adapt the lineariser processes to reflect the closing of channels.  A
+sending thread can either synchronise with another thread, as before, or find
+the channel is closed and so return the |Closed| value.  (The |SendingLin|
+process that describes this is parameterised by the corresponding |endSend|
+channel, to facilitate extension to the timed operations later.)  Receiving is
+treated similarly.  Further, the linearisation point for a \SCALA{close}
+operation can take place between |beginClose|and |endClose| events.
+%
+\begin{cspm}
+Lin(t) = 
+  C::beginSend.t?x -> SendingLin(t, x, C::endSend.t)
+  [] C::beginReceive.t -> ReceivingLin(t, C::endReceive.t)
+  [] C::beginClose.t -> close.t -> C::endClose.t -> Lin(t)
+
+SendingLin(t, x, endChan) = 
+  sync.t?other!x -> endChan.SendSuccess -> Lin(t)
+  [] isClosed.t -> endChan.Closed -> Lin(t)
+
+ReceivingLin(t, endChan) =  
+  sync?other!t?x -> endChan.ReceiveSuccess.x -> Lin(t)
+  [] isClosed.t -> endChan.Closed -> Lin(t)
+\end{cspm}
+
+We combine the linearisers as before (with suitably extended alphabets).  We
+then synchronise them with |ChanSpec| on the relevant events, and hide those
+events.
+%
+\begin{cspm}
+Spec£$_0$£ = **|| t <- ThreadID @ [alphaLin(t)] Lin(t)
+Spec = (Spec£$_0$£ [| alphaChanSpec |] ChanSpec) \ alphaChanSpec
+\end{cspm}
+%
+Thus |Spec| allows all traces, containing the |begin| and |end| events, that
+are synchronisation linearisable.  Thus testing \CSPM{Spec [T= System}
+%] bracket match hack
+verifies synchronisation linearisability for this system.  Performing the
+corresponding test in the stable failures model also verifies the
+corresponding progress property.  Finally, performing the test in the
+failures-divergences model also verifies that all assertions in the code pass,
+and that threads cannot perform an infinite amount of internal activity
+without a thread returning. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Timed operations}
+
+\inlineScala
+
+We now consider the timed send and receive operations.  
+
+The SCL conditions described earlier provide a timed wait operation: the
+thread waits until either it receives a signal, or the time is elapsed; the
+operation returns a boolean indicating whether a signal was received.  The
+timed send and receive operations are based around this. 
+
+The |sendWithin(x, duration)| operation initially waits on |slotEmptied| until
+either |status| holds |Empty| or the channel is closed (which it rechecks when
+it receives a signal), or the deadline is reached.  If the channel is closed,
+it throws a |Closed| exception.  If it timedout, it returns |false|.
+Otherwise, it continues as in the untimed operation, except it waits on
+|continue| until at most |duration| after the initial call.  If it finds that
+|status| is |Read|, then the send has been successful; it continues as in the
+untimed operation, and returns |true|.  Otherwise |status| must still hold
+|Filled| and |value| must stll hold~|x| (the implementation asserts this, and
+the analysis below checks this).  If the channel is closed, it continues as in
+the untimed operation.  Otherwise, it must have timedout, so it sets |status|
+to |Empty| to clear its value, signals to any thread waiting on |slotEmptied|,
+and returns |false|.
+
+The |receiveWithin(duration)| operation acts much as the untimed version,
+except it waits on |slotFull| until at most |duration| after the initial
+call.  If it finds that |status| holds |Filled|, it continues as in the
+untimed case, returning a suitable |Some| value.  If the channel is closed, it
+throws a |Closed| exception.  otherwise it must have timedout, so returns
+|None|.  
+
+%%%%% Modelling
+
+We now describe the CSP model of these operations.  Our analysis does not
+consider absolute time; thus we abstract away from the duration of a timed
+send or receive.  The difficult part of the implementation is getting the
+synchronisations right, rather than the length of the delay. 
+
+The CSP model of an SCL monitor also models timed waits.  It records which
+threads are doing timed waits on which conditions.  Such threads can receive a
+signal, as for untimed waits.  In addition, they can timeout and acquire the
+lock on the monitor, assuming no other thread holds the lock.  Thus we model
+that such threads can eventually timeout, but don't model the length of the
+delay. 
+
+The |sendWithin| and |receiveWithin| operations can then be modelled in CSP
+much as before, using these timed waits.
+
+
+%%%%% Analysis
+
+\inlineCSP
+
+We adapt the specification of synchronisation linearisability as follows.  We
+introduce events |timeout.t| to represent the linearisation point of a
+\SCALA{sendWithin} or \SCALA{receiveWithin} operation by thread~|t| that times
+out.  We then adapt the definition of the lineariser processes for these
+operations as follows, adding the possibility of such a timeout to the
+possibilities of the untimed operations.
+%
+\begin{cspm}
+Lin(me) = 
+  ... -- as before
+  [] C::beginSendWithin.me?x -> SendingWithinLin(me, x, C::endSendWithin.me)
+  [] C::beginReceiveWithin.me -> ReceivingWithinLin(me, C::endReceiveWithin.me)
+
+SendingWithinLin(me, x, endChan) = 
+  SendingLin(me, x, endChan)
+  [] timeout.me -> endChan.Timeout -> Lin(me)
+
+ReceivingWithinLin(me, endChan) = 
+  ReceivingLin(me, endChan) 
+  [] timeout.me -> endChan.Timeout -> Lin(me)
+\end{cspm}
+%
+Further, we adapt the |ChanSpec| process to allow |timeout| events only before
+the channel is closed.  The rest of the construction and checks are then as
+before. 

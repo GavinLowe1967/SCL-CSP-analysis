@@ -1,0 +1,73 @@
+\section{Compositional verification}
+
+\inlineCSP
+
+We now consider an alternative approach to analysing the combination of an alt
+and some channels.
+%
+\begin{enumerate}
+\item We show that a single channel (in isolation) refines a more abstract
+  model, which we call |IdealisedChannel|;
+
+\item We likewise show that an alt (in isolation) refines a more abstract
+  model, which we call |IdealisedAlt|;
+
+\item We show that the combination of an |IdealisedAlt| and several
+  |IdealisedChannel|s satisfies a property similar to that in the previous
+  section. 
+\end{enumerate}
+%
+This allows us to deduce that the combination of an alt and several channels
+satisfies the same property. 
+
+The analysis is complicated by the following issue.  A channel works correctly
+under the assumption that any alt that interacts with it follows the alt
+protocol.  However, if the alt does not follow the protocol, then the channel
+can act incorrectly.  For example, if an alt tries to register \emph{twice}
+with a channel, or tries to deregister without having previously registered,
+then the implementation throws an exception, and the CSP model diverges.
+Likewise, the alt works correctly under the assumption that channels follow
+the alt protocol, but may act incorrectly otherwise.
+
+When we analyse a channel in isolation, we cannot assume that its environment
+(an alt) follows the protocol; and when we analyse an alt in isolation, we
+cannot assume that its environment (channels) follows the environment: to make
+these assumptions would be circular reasoning. 
+
+Our approach is as follows.  Our idealised model of a channel will detect if
+its environment breaks the alt protocol, and if so allow arbitrary behaviour.
+Thus testing whether the model of a channel refines this specification is
+equivalent to testing whether it satisfies the specification when the
+environment does follow the protocol.  More precisely, we will produce a
+process |ChannelSpec| that describes allowed behaviour when the environment
+follows the protocol, but produces an \emph{error event} from a set
+|Errors|$_C$ if the environment breaks the protocol.  We then test whether the
+channel refines the process
+%
+\begin{cspm}
+(ChannelSpec [|Errors£$_C$£|> Any) \ Errors£$_C$£
+\end{cspm}
+%
+where |Any| allows arbitrary behaviour (the definition depends upon the
+semantic model we are using).  
+
+Likewise, we build an idealised model of an alt that allows arbitrary
+behaviour if its environment breaks the protocol.  The model will be of the
+form 
+%
+\begin{cspm}
+(AltSpec [|Errors£$_A$£|> Any) \ Errors£$_A$£
+\end{cspm}
+%
+where |AltSpec| describes allowed behaviour when the environment follows the
+protocol.  
+
+We can then consider the combination of |AltSpec| and several instances of
+|ChannelSpec|.  Part of the analysis will show that no events from
+$\CSPMM{Errors}_C \union \CSPMM{Errors}_A$ occur: each component follows the
+alt protocol, provided the other does.  But we can also show that this
+combination satisfies a property similar to that in the previous section,
+allowing us to deduce that the corresponding combination of an alt and
+channels satisfies that property. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

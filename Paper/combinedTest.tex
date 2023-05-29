@@ -1,0 +1,137 @@
+\subsection{Direct analysis of an alt and channels}
+
+\inlineCSP
+
+We now describe how we can perform a direct analysis of an alt together with
+channels.  
+
+We build a system that uses an alt with a fixed number of branches.  Below, we
+consider an alt with two branches.  The branches are defined using a
+definition such as
+%
+\begin{cspm}
+branches =  <InPortBranch.c1, OutPortBranch.c2>
+\end{cspm}
+%
+In different tests, we can vary whether the branches correspond to inports or
+outports, so test different combinations.  We also create two instances |C1|
+and |C2| of channels, with identities~|c1| and |c2|.  We combine these
+together in parallel, synchronising on the |begin| and |end| events that
+correspond to the alt calling operations on a channel, or vice versa.
+
+We combine these together with some threads.  One thread, which we denote
+|AltThread|, repeatedly runs the alt.  The other threads, from set
+|ChanThreads|, repeatedly call the main operations on the channels.
+
+As an initial test, we can check whether this system is divergence-free.
+However, recall that a thread waiting in the alt can perform a spurious
+wakeup, denoted by the event |A1::spuriousWakeup|.  If we hide this event, it
+turns out that the system can diverge, corresponding to a waiting thread
+repeatedly having a spurious wakeup, rechecking the relevant condition, and
+waiting again.  This is not a behaviour we should be concerned about: spurious
+wakeups do happen, but they are rather rare; in practice, such spurious
+wakeups will have a tiny effect on system performance.  If we keep the
+spurious wakeups visible, then FDR verifies that the system cannot diverge
+\framebox{check!}: no assertions fail, and the only possible source of
+infinite internal activity is the spurious wakeups.
+
+In the checks below, we hide the spurious wakeups.  The checks will be carried
+out in the stable-failures model, so we should consider whether the potential
+divergence is masking possible errors, by making critical states unstable.
+But recall that we included in the model of the monitor a regulator process
+that could block all spurious wakeups.  Thus for every state that is unstable
+because of the possibility of a spurious wakeup, there is another, stable
+state where the regulator blocks the spurious wakeup.  This way of abstracting
+the spurious wakeups corresponds to Roscoe's \emph{lazy
+  abstraction}~\cite{awr:UCS}. 
+
+% Note: alternatively we could keep the spurious wakeups visible, and
+% interleave with Chaos.  This makes no noticeable difference to the speed of
+% the check.
+
+We now consider the appropriate correctness condition.   This is an extension
+of the correctness condition for a single channel from
+Section~\ref{sec:syncchan}. 
+
+We extend the |sync| events to include the identity of the channel being used:
+|sync.t|$_1$|.t|$_2$|.c.x| represent a synchronisation between a sending
+thread~|t|$_1$ and a receiving thread~|t|$_2$, both of which are
+channel-threads, using channel~|c|, passing value~|x|.
+%
+We introduce similar events of the form |altSync.t|$_1$|.t|$_2$|.c.x| to
+represent a synchronisation where one of the threads is  the alt-thread.
+
+We build lineariser processes for the channel threads.  These are very similar
+to as in Section~\ref{sec:syncchan}, so we elide some parts.  They are
+extended for operations on either |C1| or |C2|.  Further, they allow
+synchronisations with the alt-thread. 
+%
+\begin{cspm}
+-- Lineariser for a channel thread.
+ChanThreadLin(me) = 
+  C1::beginSend.me?x -> LinSending(me, x, c1, C1::endSend.me)
+  [] C2::beginSend.me?x -> LinSending(me, x, c2, C2::endSend.me)
+  [] ... -- similar for other operations 
+
+LinSending(me, x, c, endChan) = 
+  sync.me?other:others(me)!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
+  [] altSync?altThread!me!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
+  [] isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
+
+LinReceiving(me, c, endChan) = 
+  sync?other:others(me)!me!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
+  [] altSync.me?altThread!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
+  [] isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
+
+LinSendingWithin(me, x, c, endChan) = 
+  LinSending(me, x, c, endChan)
+  [] timeout.me.c -> endChan.Timeout -> ChanThreadLin(me)
+
+LinReceivingWithin(me, c, endChan) = 
+  LinReceiving(me, c, endChan)
+  [] timeout.me.c -> endChan.Timeout -> ChanThreadLin(me) 
+\end{cspm}
+
+We similarly build a lineariser process for the alt-thread.  We introduce an
+event |allClosed| which will represent the linearisation point of an alt usage
+that finds all the channels are closed and so throws an |AltAbort|.  
+%
+Let |inports| and |outports| be the sets of inports and outports that the alt
+uses, and let the function |index| give the index of a particular branch.  The
+definition below captures that before a successful return, the alt-thread must
+perform a suitable synchronisation with a channel-thread, and that before
+returning an |AltAbort|, it must detect that all the channels are closed. 
+%
+\begin{cspm}
+AltLin(me) = 
+  A1::beginAlt.me -> (
+    altSync.me?other:ChanThreads?c:inPorts?x -> 
+      A1::endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me)
+    [] altSync?other:ChanThreads!me?c:outPorts?x ->
+        A1::endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
+    [] allClosed -> A1::endAlt.me.AltAbort -> AltLin(me)
+  )
+\end{cspm}
+
+We build a |ChanSpec| process for each channel.  Each extends the earlier
+definition to allow |altSync| events, but only before the channel is closed.
+Further, each can perform |allClosed| when the channel is closed; we
+synchronise the |ChanSpec| processes on this event, so it can happen only when
+all channels are closed, as required. 
+%
+\begin{cspm}
+ChanSpec(c) = 
+  sync?t1?t2!c?x -> ChanSpec(c) [] altSync?t1?t2!c?x -> ChanSpec(c) 
+  [] timeout?t!c -> ChanSpec(c)   [] close?t!c -> ChanSpecClosed(c)
+ChanSpecClosed(c) =
+  isClosed?t!c -> ChanSpecClosed(c) [] allClosed -> ChanSpecClosed(c)
+  [] close?t!c -> ChanSpecClosed(c)
+\end{cspm}
+
+We combine the different processes together, much as before.  We can then
+verify that the system refines this specification in both the traces and
+stable-failures models, showing that the system is synchronisation
+linearisable, and satisfies the corresponding progress property. 
+
+However, this approach suffers from a state-space explosion.
+\framebox{Details.} 

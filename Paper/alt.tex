@@ -1,0 +1,319 @@
+\section{Alts}
+
+\inlineScala
+
+We now describe the implementation and modelling of alts.  We start by
+describing the high-level interactions between an alt and channels, and then
+go on to describe how those interactions are implemented within alts and
+channels, and outline how they are modelled in CSP.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{High-level design}
+
+We describe the interactions between an alt and relevant channels via function
+calls.  We call this the \emph{alt protocol}. 
+
+When an alt runs, it starts by registering, in turn, with each of the relevant
+ports whose guard evaluates to |true|.  This asks the port whether it is ready
+to communicate.  The alt calls a function
+%
+\begin{scala}
+def registerIn(alt: AltT, index: Int, iter: Int): RegisterInResult[A]  
+\end{scala}
+%
+on each of its inports, where |alt| is a reference to the calling alt, |index|
+is the index of the branch within the alt, and |iter| is an iteration number
+(used only for assertions).  It receives a result of type
+|RegisterInResult[A]|, where |A| is the type of data passed by the port, of
+one of the following forms.
+%
+\begin{description}
+\item[{\scalastyle RegisterInSuccess(x)}:] the port was willing to
+  communicate, and the alt has received~|x| from it;
+
+\item[{\scalastyle RegisterInWaiting}:] the port is not currently willing to
+  communicate (but the registration has been recorded); 
+
+\item[{\scalastyle RegisterInClosed}:] the port has been closed.
+\end{description}
+%
+Similarly, the alt calls a function
+%
+\begin{scala}
+def registerOut(alt: AltT, index: Int, iter: Int, value: () => A): RegisterOutResult
+\end{scala}
+on each of its outports, where |alt|, |index| and |iter| are as for
+|registerIn|, and |value| is a computation that, when evaluated, produces the
+value to be sent.  It receives a result of one of the following forms.
+%
+\begin{description}
+\item[{\scalastyle RegisterOutSuccess}:] the port was willing to
+  communicate, and the alt has sent it a value;
+
+\item[{\scalastyle RegisterOutWaiting}:] the port is not currently willing to
+  communicate (but the registration has been recorded); 
+
+\item[{\scalastyle RegisterOutClosed}:] the port has been closed.
+\end{description}
+
+If one of the registrations is successful, the alt deregisters from the
+waiting branches, via functions |deregisterIn| and |deregisterOut|.  It then
+executes the continuation of the successful branch.  
+
+\def\IP{\emph{IP}}
+\def\OP{\emph{OP}}
+
+Figure~\ref{fig:alt-1}
+gives an example: an alt first registers unsuccessfully with an inport~\IP;
+then it registers successfully from an outport~\OP; and finally deregisters
+from~\IP. 
+
+%%%%%
+
+\begin{figure}
+\begin{center}
+%\unScalaMid
+\def\height{5.5} % height of sequence diagram
+\def\gap{3.5} % gap between columns
+\begin{tikzpicture}[yscale = 0.8, >= angle 60]
+\draw (0,0) node(alt){Alt};
+\draw (alt) -- ++ (0,-\height);
+\draw (alt)++(\gap,0) node(c1){\IP};
+\draw (c1) -- ++(0,-\height);
+\draw (c1)++(\gap,0) node(c2){\OP};
+\draw (c2) -- ++(0,-\height);
+% Register with IP
+\draw[->] (alt)++(0,-1) -- node[above]{\scalashape\small registerIn}
+  ++ (\gap,0);
+\draw[<-] (alt)++(0,-2) -- node[above]{\scalashape\small RegisterInWaiting} 
+  ++ (\gap,0);
+% Register with OP
+\draw[->] (alt)++(0,-3) -- node[above, near end]{\scalashape\small registerOut}
+  ++ (2*\gap,0);
+\draw[<-] (alt)++(0,-4) -- 
+  node[above, near end]{\scalashape\small RegisterOutSuccess}
+  ++ (2*\gap,0);
+% Deregister with IP
+\draw[->] (alt)++(0,-5) -- node[above]{\scalashape\small deregisterIn}
+  ++ (\gap,0);
+\end{tikzpicture}
+\end{center}
+\caption{Sequence diagram illustrating an alt that registers successfully with
+  a port. \label{fig:alt-1}}
+\end{figure}
+
+%%%%%
+
+If no registration is successful, and the alt finds that every port is closed
+or has a guard that is false, then it throws an |AltAbort| exception.
+Otherwise, it waits for a callback from one of the ports with which it is
+registered, of one of the following forms.
+%
+\begin{itemize}
+\item If the alt is registered at the inport of a channel, and another thread
+  tries to send on the channel, it calls
+\begin{scala}
+def maybeReceive(value: A, index: Int, iter: Int): Boolean
+\end{scala}
+%
+where |value| is the value it is trying to send to the alt, and |index| and
+|iter| match the values provided during registration.  This asks the alt
+whether it is still willing to receive from the inport.
+
+\item If the alt is registered at the outport of a channel, and another thread
+  tries to receive on the channel, it calls
+%
+\begin{scala}
+def maybeSend[A](index: Int, iter: Int): Option[A]
+\end{scala}
+%
+This asks the alt whether it is still willing to send a value to the inport.
+
+\item If another thread closes the channel, it calls 
+%
+\begin{scala}
+def portClosed(index: Int, iter: Int)
+\end{scala}
+\end{itemize}
+
+If the alt receives a call of |maybeReceive| or |maybeSend|, it responds
+positively to the first such call, returning |true| to a |maybeReceive|, or
+|Some(x)| to a |maybeSend|, where~|x| is the value it sends.  It then
+deregisters from the remaining branches.  
+%
+Finally, the alt
+executes the continuation of the successful branch.
+%
+Figure~\ref{fig:alt-2} gives an example of a successful callback of
+|maybeSend| from an outport with which the alt is registered.
+
+\begin{figure}
+\begin{center}
+%\unScalaMid
+\def\height{7.5} % height of sequence diagram
+\def\gap{3.5} % gap between columns
+\begin{tikzpicture}[yscale = 0.8, >= angle 60]
+\draw (0,0) node(alt){Alt};
+\draw (alt) -- ++ (0,-\height);
+\draw (alt)++(\gap,0) node(c1){\IP};
+\draw (c1) -- ++(0,-\height);
+\draw (c1)++(\gap,0) node(c2){\OP};
+\draw (c2) -- ++(0,-\height);
+% Register with IP
+\draw[->] (alt)++(0,-1) -- node[above]{\scalashape\small registerIn}
+  ++ (\gap,0);
+\draw[<-] (alt)++(0,-2) -- node[above]{\scalashape\small RegisterInWaiting} 
+  ++ (\gap,0);
+% Register with OP
+\draw[->] (alt)++(0,-3) -- node[above, near end]{\scalashape\small registerOut}
+  ++ (2*\gap,0);
+\draw[<-] (alt)++(0,-4) -- 
+  node[above, near end]{\scalashape\small RegisterOutWaiting}
+  ++ (2*\gap,0);
+% Call back
+\draw[<-] (alt)++(0,-5) -- node[above, near end]{\scalashape\small maybeSend}
+  ++ (2*\gap,0);
+\draw[->] (alt)++(0,-6) -- node[above, near end]{\scalashape\small Some(x)}
+  ++ (2*\gap,0);
+% Deregister with IP
+\draw[->] (alt)++(0,-7) -- node[above]{\scalashape\small deregisterIn}
+  ++ (\gap,0);
+\end{tikzpicture}
+\end{center}
+\caption{Sequence diagram illustrating a successful callback from a
+  port.  \label{fig:alt-2}}
+\end{figure}
+
+%%%%%
+
+If the alt receives multiple callbacks to |maybeReceive| or |maybeSend|
+(including during deregistration), it responds negatively, returning |false|
+or |None|, respectively.
+%
+If all the channels with which the alt is registered call |portClosed|, the
+alt throws an |AltAbort|. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Implementation details}
+
+We now describe some details of the implementation.  Below we will use the
+term ``alt-thread'' for the thread that is running the alt, and
+``channel-thread'' for a thread performing an operation in a channel that
+makes a callback to the alt. 
+
+Each call of a function on a channel (registering or deregistering) uses that
+channel's lock, to avoid races.  
+
+The implementation of the alt is based on a monitor, more specifically a
+monitor provided by the Java Virtual Machine (JVM).  (JVM monitors are more
+efficient than SCL monitors, because they are implemented directly in the JVM;
+however, they do not allow targeting of signals.)  
+
+The alt-thread holds the alt's lock throughout the registration phase.  Each
+callback function has to obtain this lock, so those functions are blocked
+until registration is complete. 
+
+However, it would be a mistake for the alt-thread to continue to hold the
+alt's lock during deregistration, for this could lead to deadlocks.  Suppose
+it did continue to hold the lock, and consider the case that the alt-thread is
+trying to deregister from channel~$c$, at the same time that a channel-thread
+is trying to perform a callback from~$c$: the channel-thread holds the lock
+on~$c$, so the deregistration would be blocked; but the alt-thread holds the
+lock on the alt, so the callback would be blocked.
+
+The implementation uses a variable |done| that gets set to |true| when a
+branch is found that is willing to communicate, either during registration or
+as the result of a callback.  If a callback of |maybeSend| or |maybeReceive|
+finds that |done| is |true|, it can return a negative result.  Otherwise, it
+stores relevant information (like the value it is sending in the case of
+|maybeReceive|, and the index of the relevant branch), evaluates the value to
+be received in the case of |maybeSend|, sets |done| to |true|, signals to the
+waiting alt-thread, and returns a positive result.
+
+If the alt-thread fails to communicate during registration, and not all
+ports are closed, it waits to receive a signal.  If |done| is true, it
+deregisters from other branches and runs the continuation of the relevant
+branch.  Otherwise, if all ports are closed, it throws an |AltAbort|. 
+
+%% Why not hold lock during registration??
+
+We now describe how the implementation of channels is extended to deal with
+alts.
+
+The |registerIn| function checks whether another alt is currently registered
+(which would be an error), and if so throws an exception.  If the channel is
+closed, it returns |RegisterInClosed|.  If there is a waiting sender
+(corresponding to the variable |status| holding |Filled|), it acts like a
+standard receive, setting status to |Read| and signalling to the sender, and
+then returns a |RegisterInSuccess| result.  Otherwise it records the
+registration, and returns |RegisterInWaiting|.  
+
+The |registerOut| function is somewhat similar.  If there are waiting
+receivers, it first waits for any current exchange to finish (i.e.~for
+|status| to hold |Empty|).  If there are still waiting receivers, it continues
+as for a standard send: it stores its value, sets |status| to |Filled| and
+signals to a receiver.  It then waits on the |continue| condition for a
+receiver to take the value, and resets |status| to |Empty|.  This latter wait
+is necessary to ensure correct synchronisation: without it, the value could be
+taken by a new receiver that calls |receive| only after the alt-thread has
+returned.  
+
+The deregister functions simply clear the registration information.
+
+If a call of |send| or |sendWithin| finds that there is an alt registered at
+the inport, it calls |maybeReceive| on that alt, and reacts accordingly.
+Calls to |receive| or |receiveWithin| act similarly, calling |maybeSend|.  
+
+Finally, if a channel is closed, it calls |portClosed| on any registered alt. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{CSO modelling for alts}
+
+\inlineCSP
+
+We now describe how to model an alt, and its interactions with channels, using
+CSP\@.  Much of the construction of the model follows a similar form to the
+model of a channel.  We highlight the main differences. 
+
+A JVM monitor is modelled by a CSP module, in a similar way to an SCL monitor.
+One difference, however, concerns a bug in the implementation of JVM monitors:
+a thread that is waiting for a signal may resume, even though it has received
+no signal!  This is known as a \emph{spurious wakeup}.  The implementation of
+an alt guards against spurious wakeups by performing suitable checks when
+resuming after a wait, and waiting again if appropriate.  
+
+Our model reflects the possibility of spurious wakeups, allowing a waiting
+thread~|t| to resume either as the result of a signal, or a spurious wakeup,
+modelled by the event |spuriousWakeup.t|.  We run this in parallel with a
+\emph{regulator process} that nondeterministically chooses whether or not to
+allow a spurious wakeup.  This last point is important: if we allowed
+unrestricted spurious wakeups, there is a danger that our analysis would seem
+to show that suitable progress properties are satisfied, when in reality the
+system can get stuck unless there are sufficient spurious wakeups.
+
+In the model of a channel, the registration and deregistration functions are
+wrapped in suitable |begin| and |end| events.  In the model of an alt, the
+alt-thread performs these |begin| and |end| events, and then reacts to the
+result in the |end| event.  Later, we combine the models of the alt and
+channels together, synchronising on these events, so as to achieve the desired
+effect.
+
+Similarly, in the model of an alt, the callback functions are wrapped in
+suitable |begin| and |end| events.  In the model of a channel, the
+channel-thread performs these events, and reacts to the result in the |end|
+event.  
+
+Each use of the alt is framed with events |beginAlt.me| and |endAlt.me.result|
+where |result| is of one of the following forms.
+%
+\begin{itemize}
+\item |AltSend.i.x|, representing the sending of value~|x| on the port
+  corresponding to the branch with index~|i|;
+
+\item |AltReceive.i.x|, similarly representing receiving of~|x|;
+
+\item |AltAbort|, representing an \SCALA{AltAbort} exception.
+\end{itemize}

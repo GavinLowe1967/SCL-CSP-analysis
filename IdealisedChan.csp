@@ -22,50 +22,52 @@ module IdealisedChan(size)
   -- Linearisation points of register(In|Out) corresponding to a synchronisation,
   -- waiting, or an out-of-protocol call.
   channel registerInSync, registerOutSync : ChanThreads . Data
-  channel registerInWait, registerOutWait : Index 
+  channel registerInWait, registerOutWait : AltID . Index 
   channel registerError 
   -- Linearisation points of deregistration, corresponding to legal or
   -- out-of-protocol cases.
   channel deregisterIn, deregisterInError, deregisterOut, deregisterOutError : 
-    Index
+    AltID . Index
   
   -- Thread finding the channel is closed.
   channel isClosed : ThreadID
   
   -- Lineariser for registration and deregistration events.
   RegLin = 
-    beginRegisterIn.AltThread.Alt1?index -> RegLinRegIn(index)
-    [] beginDeregisterIn.AltThread.Alt1?index -> RegLinDeregIn(index)
-    [] beginRegisterOut.AltThread.Alt1?index -> RegLinRegOut(index)
-    [] beginDeregisterOut.AltThread.Alt1?index -> RegLinDeregOut(index)
+    beginRegisterIn.AltThread?a?index -> RegLinRegIn(a, index)
+    [] beginDeregisterIn.AltThread?a?index -> RegLinDeregIn(a, index)
+    [] beginRegisterOut.AltThread?a?index -> RegLinRegOut(a, index)
+    [] beginDeregisterOut.AltThread?a?index -> RegLinDeregOut(a, index)
   
   -- Alt registering at inport against index.
-  RegLinRegIn(index) = 
-    let endChan = endRegisterIn.AltThread.Alt1 
+  RegLinRegIn :: (AltID, Int) -> Proc
+  RegLinRegIn(a, index) = 
+    let endChan = endRegisterIn.AltThread.a
     within
     registerInSync?t?x -> endChan.RegisterSuccess.x -> RegLin
-    [] registerInWait.index -> endChan.RegisterWaiting -> RegLin
+    [] registerInWait.a.index -> endChan.RegisterWaiting -> RegLin
     [] isClosed.AltThread -> endChan.RegisterClosed -> RegLin
     [] registerError -> STOP
   
   -- Alt deregistering at inport against index.
-  RegLinDeregIn(index) = 
-    deregisterIn.index -> endDeregisterIn.AltThread.Alt1 -> RegLin
-    [] deregisterInError.index -> STOP
+  RegLinDeregIn(a, index) = 
+    deregisterIn.a.index -> endDeregisterIn.AltThread.a -> RegLin
+    [] deregisterInError.a.index -> STOP
   
   -- Alt deregistering at outport against index.
-  RegLinRegOut(index) = 
-    let endChan = endRegisterOut.AltThread.Alt1
+  RegLinRegOut :: (AltID, Int) -> Proc
+  RegLinRegOut(a, index) = 
+    let endChan = endRegisterOut.AltThread.a
     within
     (|~| x : Data @ registerOutSync?t!x -> endChan.RegisterSuccess.x -> RegLin)
-    [] registerOutWait.index -> endChan.RegisterWaiting -> RegLin
+    [] registerOutWait.a.index -> endChan.RegisterWaiting -> RegLin
     [] isClosed.AltThread -> endChan.RegisterClosed -> RegLin
     [] registerError -> STOP
   
   -- Alt deregistering at outport against index.
-  RegLinDeregOut(index) = 
-    deregisterOut.index -> endDeregisterOut.AltThread.Alt1 -> RegLin
-    [] deregisterOutError.index -> STOP
+  RegLinDeregOut(a, index) = 
+    deregisterOut.a.index -> endDeregisterOut.AltThread.a -> RegLin
+    [] deregisterOutError.a.index -> STOP
 
   -- Linearisation points of registration and deregistration.
   RegLPs = {| 
@@ -91,8 +93,8 @@ module IdealisedChan(size)
   
   -- The channel chooses to call maybeReceive or maybeSend by a particular
   -- thread.
-  channel callMaybeReceive : ChanThreads . Index . Data
-  channel callMaybeSend : ChanThreads . Index
+  channel callMaybeReceive : ChanThreads . AltID . Index . Data
+  channel callMaybeSend : ChanThreads . AltID . Index
 
   -- A channel timesout within a sendWithin or receiveWithin
   channel timeout : ChanThreads
@@ -119,8 +121,8 @@ module IdealisedChan(size)
     []
     registerInSync.me.x -> commit.me -> Success
     []
-    callMaybeReceive.me?index!x -> beginMaybeReceive.me.Alt1.index.x -> 
-      endMaybeReceive.me.Alt1?res -> 
+    callMaybeReceive.me?a.index!x -> beginMaybeReceive.me.a.index.x -> 
+      endMaybeReceive.me.a?res -> 
       (if res then Success else SendingLin(me, x, endChan, timed))
     []
     isClosed.me -> endChan.Closed -> Lin(me)
@@ -135,9 +137,9 @@ module IdealisedChan(size)
     []
     registerOutSync.me?x -> Success(x) -- EndReceivingLin(me, x)
     []
-    callMaybeSend.me?index -> beginMaybeSend.me.Alt1.index -> (
-      endMaybeSend.me.Alt1.Some?x -> Success(x) -- EndReceivingLin(me, x)
-      [] endMaybeSend.me.Alt1.None -> ReceivingLin(me, endChan, timed)
+    callMaybeSend.me?a.index -> beginMaybeSend.me.a.index -> (
+      endMaybeSend.me.a.Some?x -> Success(x) -- EndReceivingLin(me, x)
+      [] endMaybeSend.me.a.None -> ReceivingLin(me, endChan, timed)
     )
     [] 
     isClosed.me -> endChan.Closed -> Lin(me)
@@ -162,7 +164,9 @@ module IdealisedChan(size)
   --------------------------- Main specification
   
   -- A representation of how the alt is registered with the channel.  
-  datatype RegStatus = NoReg | InReg.Index | OutReg.Index
+  datatype RegStatus = NoReg | InReg.AltID.Index | OutReg.AltID.Index
+
+  AltIndex = { a.i | a <- AltID, i <- Index }
   
   -- Is the alt currently registered at the inport or outport?
   isRegIn(InReg._) = true
@@ -172,47 +176,47 @@ module IdealisedChan(size)
   isRegOut(_) = false
   
   -- Indexes (at most one) against which the alt is registered.
-  regInIndices(InReg.index) = {index}
-  regInIndices(_) = {}
+  getRegIns(InReg.a.index) = {a.index}
+  getRegIns(_) = {}
   
-  regOutIndices(OutReg.index) = {index}
-  regOutIndices(_) = {}
+  getRegOuts(OutReg.a.index) = {a.index}
+  getRegOuts(_) = {}
   
   -- channel modellingError
   
   -- regStatus records whether and how an alt is registered.
   ChanState :: (RegStatus) -> Proc
   ChanState(regStatus) = 
-    let regIns = regInIndices(regStatus)
-        regOuts = regOutIndices(regStatus)
+    let regIns = getRegIns(regStatus)
+        regOuts = getRegOuts(regStatus)
     within
   -- Linearisation of register calls.  Note: if there's a pending send, it's
   -- nondeterministic whether the registerIn will synchronise with it.
     regStatus == NoReg & (
       registerInSync?t.x -> ChanState(NoReg) 
-      [] registerInWait?index -> ChanState(InReg.index)
+      [] registerInWait?a.index -> ChanState(InReg.a.index)
       [] registerOutSync?t.x -> ChanState(NoReg)
-      [] registerOutWait?index -> ChanState(OutReg.index)
+      [] registerOutWait?a.index -> ChanState(OutReg.a.index)
     )
     []
   -- Illegal call of registerIn or registerOut
     regStatus != NoReg & registerError -> STOP
     []   
   -- Deregistration from inport, including if there is no registered port.
-    deregisterIn?index:regIns ->  ChanState(NoReg)
+    deregisterIn?ai:regIns ->  ChanState(NoReg)
     []
-    regStatus == NoReg & deregisterIn?index ->  ChanState(NoReg)
+    regStatus == NoReg & deregisterIn?ai ->  ChanState(NoReg)
     []
   -- Illegal deregistration from inport
-    regStatus != NoReg & deregisterInError?index:diff(Index, regIns) -> STOP
+    regStatus != NoReg & deregisterInError?ai:diff(AltIndex, regIns) -> STOP
     []
   -- Deregistration from outport, including if there is no registered port.
-    deregisterOut?index:regOuts -> ChanState(NoReg)
+    deregisterOut?ai:regOuts -> ChanState(NoReg)
     []
-    regStatus == NoReg & deregisterOut?index ->  ChanState(NoReg)
+    regStatus == NoReg & deregisterOut?ai ->  ChanState(NoReg)
     []
   -- Illegal deregistration from outport
-    regStatus != NoReg & deregisterOutError?index:diff(Index, regOuts) -> STOP
+    regStatus != NoReg & deregisterOutError?ai:diff(AltIndex, regOuts) -> STOP
     []
   -- Synchronisation between standard send and receive
     sync?t1?t2:others(t1)?x -> ChanState(regStatus)
@@ -222,12 +226,12 @@ module IdealisedChan(size)
     commit?_ -> ChanState(regStatus)
     []
   -- Calls to maybeReceive; block other events until the call returns
-    callMaybeReceive?t?index:regIns?x -> beginMaybeReceive.t.Alt1.index.x -> 
-      endMaybeReceive.t!Alt1?res -> ChanState(NoReg)
+    callMaybeReceive?t?(a.index):regIns?x ->  beginMaybeReceive.t.a.index.x -> 
+      endMaybeReceive.t.a?res -> ChanState(NoReg)
     []
   -- Calls to maybeSend; block other events until the call returns
-    callMaybeSend?t?index:regOuts -> beginMaybeSend.t.Alt1.index -> 
-      endMaybeSend.t.Alt1?res -> ChanState(NoReg)
+    callMaybeSend?t?(a.index):regOuts -> beginMaybeSend.t.a.index -> 
+      endMaybeSend.t.a?res -> ChanState(NoReg)
     -- The initial event of each process in the last two branches is hidden, so
     -- this process may nondeterministically choose to go down that route.
     []
@@ -237,8 +241,8 @@ module IdealisedChan(size)
     close?t -> (
       if regStatus == NoReg then ChanStateClosed
       else     -- inform the registered port
-        beginPortClosed.t.Alt1?index:union(regIns,regOuts) ->
-        endPortClosed.t.Alt1 -> ChanStateClosed
+        beginPortClosed.t?(a.index):union(regIns,regOuts) -> 
+        endPortClosed.t.a -> ChanStateClosed
     )
   
   -- The channel is closed.  

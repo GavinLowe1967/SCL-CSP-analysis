@@ -1,0 +1,242 @@
+\section{Modelling and analysing a  synchronous channel}
+\label{sec:syncchan}
+
+\inlineScala
+
+In this section, we consider the operation of a single synchronous channel,
+without considering interaction with alts.
+
+We start by considering just the \SCALA{send} and \SCALA{receive} operations.
+We outline the implementation for these operations, how we model them in CSP,
+and then how we analyse their correctness.  In later subsections, we extend to
+include the timed operations and the closing of channels; for the moment we
+elide details related to those operations or to the use of alts.
+
+The implementation is based on a monitor (more precisely, using an
+implementation of monitors within the SCL library).  All operations are
+carried out while holding the monitor's lock.  In addition, the implementation
+uses a number of \emph{conditions}: one thread can wait on a condition until
+another thread signals on the same condition.
+
+The implementation uses a variable \SCALA{value} to store the value that a
+thread is currently trying to send (if any).  Further, it uses a variable
+\SCALA{status} to store the status of the current exchange, one of the
+following: 
+\begin{description}
+\item[{\scalashape Empty}:] No sender has deposited a value;
+\item[{\scalashape Filled}:] A sender has deposited a value, but no receiver
+  has yet read it;
+\item[{\scalashape Read}:] A receiver has read the current value, but the
+  corresponding sender has not yet returned.
+\end{description}
+
+The implementation also uses a variable |receiversWaiting|, which records how
+many receivers are currently waiting to receive a value. 
+
+A sender waits (on a condition \SCALA{slotEmptied}) until the status is
+\SCALA{Empty}.  It then stores its value in |value|, sets the status to
+|Filled|, and signals (on a condition |slotFull|) to a receiver.  It next 
+waits (on a condition |continue|) until the status is |Read|.  Finally, it
+sets the status back to |Empty|, and signals (on |slotEmptied|) to the next
+sender.
+
+A receiver waits (on |slotFull|) until the status is |Filled| (updating
+|receiversWaiting| before and after).  It then sets the status to |Read|,
+signals to the sender (on |continue|), and returns the value stored in
+|value|.
+
+We now outline the CSP model.  The model uses small fixed types representing
+the type of data communicated by the channel, and the type of thread
+identities.  We discuss the choices for these types later. 
+
+The monitor is modelled by a CSP module, encapsulating a process that
+maintains the state of the monitor, specifically: (1)~which thread, if any,
+holds the lock on the monitor; (2)~which threads are waiting on which
+conditions.  When no thread holds the lock, it allows a thread, other than any
+of the waiting threads, to acquire the lock.  The thread that currently holds
+the lock can:
+\begin{itemize}
+\item Release the lock;
+\item Wait on a condition, at which point it also releases the lock;
+\item Signal on a condition, at which point a thread that it waiting on that
+  condition is recorded as no longer waiting (but needs to reacquire the lock
+  before it can continue).
+\end{itemize}
+%
+The monitor module provides an interface to client processes corresponding to
+the different monitor operations.
+
+Each variable in the implementation of the channel is modelled by a CSP
+process, with CSP channels to allow it to be read or written.
+
+Each of the |send| and |receive| operations can then be straightforwardly
+translated into a CSP process that performs the operations on the monitor and
+variables, following the Scala code.  
+
+The Scala code uses several assertions.  We model these by having the CSP
+process diverge if the property does not hold.  Later, we use FDR to verify
+that such divergences do not occur.  
+
+Each operation is framed by \CSPM{begin} and \CSPM{end} events:
+%
+\begin{itemize}
+\item The event \CSPM{beginSend.t.x} represents a thread with
+  identity~\CSPM{t} calling |send(x)|, and the event
+  \CSPM{endSend.t.SendSuccess} represents it successfully returning (later we
+  extend the channel to model unsuccessful calls that find the channel has
+  been closed).
+
+\item Likewise the events \CSPM{beginReceive.t} and
+  \CSPM{endReceive.t.ReceiveSuccess.x} represent thread~\CSPM{t} calling and
+  returning from a call of |receive| that successfully receives the
+  value~\CSPM{x}. 
+\end{itemize}
+%
+The model of a channel is encapsulated in a module where only the \CSPM{begin}
+and \CSPM{end} events are visible. 
+
+
+
+%%%%%%%%%%
+
+\subsection{Analysing the basic channel}
+
+
+In this section we analyse the basic model of the channel.  We start by
+describing abstractly the required property, and then describe how to capture
+it using CSP.
+
+Each invocation of \SCALA{send} should synchronise with a corresponding
+invocation of \SCALA{receive}: the two invocations should overlap in time, and
+the \SCALA{receive} should return the value of the \SCALA{send}'s parameter.  
+
+In~\cite{LL:synchronisation}, we introduced a correctness condition,
+\emph{synchronisation linearisation}, corresponding to synchronisation objects
+like this.  The idea is that the synchronisations should appear to take place
+in a one-at-a-time order, with each between the begin and end of the two
+corresponding invocations.  We call the points at which the synchronisations
+appear to take place \emph{synchronisation points}.  (The definition is based
+on \emph{linearisation}, the standard correctness property for concurrent
+datatypes, where invocations of operations should appear to take place in a
+one-at-a-time order, with each between the begin and end of that invocation.)
+
+The diagram below illustrates the idea.
+%
+%\begin{figure}
+\begin{center}
+\unScalaMid
+\begin{tikzpicture}[xscale = 0.9]
+\draw[|-|] (0,0) -- node[above] {$\sm{send}(A)$} (4,0);
+\draw[|-|] (4.5,0) -- node[above] {$\sm{send}(B)$} (8.5,0);
+\draw[|-|] (0.5,-1) -- node[above] {$\sm{send}(A)$} (8,-1);
+\draw[|-|] (1,-2) -- node[above] {$\sm{receive}\::A$} (3,-2);
+\draw[|-|] (3.5,-2) -- node[above] {$\sm{receive}\::B$} (6.5,-2);
+\draw[|-|] (7,-2) -- node[above] {$\sm{receive}\::A$} (9,-2);
+\draw (1.9,0) \X; \draw (1.9,-2) \X; 
+\draw[dashed] (1.9,0) -- (1.9,-2); % sync 1 and 3
+\draw (5.6,0) \X; \draw (5.6,-2) \X; 
+\draw[dashed] (5.6,0) -- (5.6,-2); % sync 4 and 5
+\draw (7.5,-1) \X; \draw (7.5,-2) \X; 
+\draw[dashed] (7.5,-1) -- (7.5,-2); % sync 2 and 6 
+\end{tikzpicture}
+\scalaMid
+\end{center}
+%% \caption{Timeline representing the synchronisation example.}
+%% \label{fig:sync-timeline}
+%% \end{figure}
+%
+Time goes from left to right in the diagram.  Each horizontal line represents
+an invocation in a particular history of a channel (or in a trace of the CSP
+model), with the end points representing the call and return (or \CSPM{begin}
+and \CSPM{end} events).  The ``$\cross$''s in the diagram illustrate the
+synchronisation points of the corresponding invocations, linked by a dashed
+vertical line.
+
+Thus a history (or trace) is synchronisation linearisable if it is possible to
+identify synchronisation points with the desired properties.  A
+synchronisation object is synchronisation linearisable if all of its histories
+are synchronisation linearisable~\cite{LL:synchronisation}.
+
+%% The current model of the channel is (in the terminology
+%% of~\cite{LL:synchronisation}) \emph{stateless}: no state is carried forward
+%% from one synchronisation to another.  However, when we consider closing of the
+%% channel, it will become \emph{stateful}, with two states, open or closed.
+%% Other synchronisation objects have more interesting states.  \framebox{later?}
+
+\inlineCSP
+
+We now describe how we use model checking to test synchronisation
+linearisability of the channel. 
+We create an instance |C| of the channel module.  Below, expressions of the
+form |C::v| represent a value~|v| from this instance.  We create a process
+|System| that allows threads to call the \SCALA{send} and \SCALA{receive}
+operations.
+
+We build a CSP specification process that allows precisely the traces that are
+synchronisation linearisable.  We use events of the form
+\CSPM{sync.t}$_1$\CSPM{.t}$_2$\CSPM{.x} to represent a synchronisation point
+between sender~$\CSPMM{t}_1$ and receiver~$\CSPMM{t}_2$, passing data
+value~|x|.  We build a \emph{lineariser} process for each thread as follows,
+which ensures that the |sync| events occur between the corresponding |send|
+and |receive| events.
+%
+\begin{cspm}
+Lin(t) = 
+  C::beginSend.t?x -> sync.t?other!x -> C::endSend.t.SendSuccess -> Lin(t)
+  []
+  C::beginReceive.t -> sync?other!t?x -> C::endReceive.t.ReceiveSuccess.x -> Lin(t)
+\end{cspm}
+%
+When sending, the thread can synchronise with any other thread~|other|,
+passing its value~|x|.  When receiving, the thread can synchronise with any
+other thread, accepting its value~|x|; this |x| is subsequently returned by
+the invocation.
+
+We combine the |Lin| processes in parallel, with their natural
+alphabets, so the linearisers for threads $\CSPMM{t}_1$ and $\CSPMM{t}_2$
+synchronise on events of \CSPM{sync.t}$_1$\CSPM{.t}$_2$ and
+\CSPM{sync.t}$_2$\CSPM{.t}$_1$.  
+%
+\begin{cspm}
+alphaLin(t) =
+  {|C::beginSend.t, C::endSend.t, C::beginReceive.t, C::endReceive.t|} £$\union$£
+  {|sync.t.other, sync.other.t | other <- ThreadID-{t}|}
+Spec£$_0$£ = **|| t <- ThreadID @ [alphaLin(t)] Lin(t)
+\end{cspm} % £$\union$£
+%
+Thus each trace of |Spec|$_0$ represents a history that is synchronisation
+linearisable, together with the corresponding synchronisation points.  By
+hiding the synchronisation points, we obtain a process whose traces represent
+precisely those histories that are synchronisation linearisable.  We can then
+use FDR to check that the system is synchronisation linearisable. 
+%
+\begin{cspm}
+Spec = Spec£$_0$£ \ {|sync|}
+assert Spec [T= System
+\end{cspm}
+
+We can also test the same refinement in the stable failures model (which
+implies the refinement in the traces model).
+%
+\begin{cspm}
+assert Spec [F= System
+\end{cspm}
+%
+This captures a useful progress property, which says that if a synchronisation
+is possible (i.e.~there is at least one |send| and one |receive| operation
+that have been called but not yet returned), then some such synchronisation
+must happen and so the relevant threads reach a state where they can return.  
+(If several different synchronisations are possible, then the refinement test
+allows any to happen.) 
+
+Finally, as discussed above, we can test that |System| does not diverge, to
+verify that no thread in the implementation throws an exception.  Further,
+this verifies that threads cannot perform an infinite amount of internal
+activity without any thread returning.  These tests can be combined by testing
+for refinement in the failures-divergences model.
+%
+\begin{cspm}
+assert Spec [FD= System
+\end{cspm}
+
+\framebox{**} Number of threads.
