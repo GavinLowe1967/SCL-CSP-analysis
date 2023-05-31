@@ -1,5 +1,6 @@
 \documentclass[12pt,a4paper]{article}
 
+\usepackage{mathsx}
 \usepackage{tikz}
 \usetikzlibrary{arrows}
 \def\X{node {$\cross$}}
@@ -12,6 +13,7 @@
 
 \def\cspmsize{\footnotesize}
 \def\cspmDisplaySize{\footnotesize}
+\def\CSPMMR#1{\mbox{\cspmstyle #1}}
 %\def\cspmfont{\itshape}
 % Macros to control whether |...| produces Scala or CSP formatting.
 \def\inlineScala{\uncspMid\scalaMid}
@@ -19,8 +21,8 @@
 %\inlineCSP
 \cspMid
 
-\def\topfraction{0.8}
-\renewcommand{\floatpagefraction}{0.7}
+\def\topfraction{0.85}
+\renewcommand{\floatpagefraction}{0.75}
 \sloppy
 
 \title{Analysing a Library of Concurrency Primitives using CSP}
@@ -98,7 +100,6 @@ Compositional verification.
 
 \input{idealisedAlt}
 
-
-
+\input{combiningIdealised}
 \end{document}
  

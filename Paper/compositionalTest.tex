@@ -6,14 +6,14 @@ We now consider an alternative approach to analysing the combination of an alt
 and some channels.
 %
 \begin{enumerate}
-\item We show that a single channel (in isolation) refines a more abstract
-  model, which we call |IdealisedChannel|;
+\item We show that a single channel (in isolation) is consistent with a more
+  abstract model, which we call |IdealisedChannel|;
 
-\item We likewise show that an alt (in isolation) refines a more abstract
-  model, which we call |IdealisedAlt|;
+\item We likewise show that an alt (in isolation) is consistent with a more
+  abstract model, which we call |IdealisedAlt|;
 
 \item We show that the combination of an |IdealisedAlt| and several
-  |IdealisedChannel|s satisfies a property similar to that in the previous
+  |Idealised|\-|Channel|s satisfies a property similar to that in the previous
   section. 
 \end{enumerate}
 %
@@ -39,13 +39,13 @@ its environment breaks the alt protocol, and if so allow arbitrary behaviour.
 Thus testing whether the model of a channel refines this specification is
 equivalent to testing whether it satisfies the specification when the
 environment does follow the protocol.  More precisely, we will produce a
-process |ChannelSpec| that describes allowed behaviour when the environment
+process |IdealisedChannel| that describes allowed behaviour when the environment
 follows the protocol, but produces an \emph{error event} from a set
 |Errors|$_C$ if the environment breaks the protocol.  We then test whether the
 channel refines the process
 %
 \begin{cspm}
-(ChannelSpec [|Errors£$_C$£|> Any) \ Errors£$_C$£
+(IdealisedChannel [|Errors£$_C$£|> Any) \ Errors£$_C$£
 \end{cspm}
 %
 where |Any| allows arbitrary behaviour (the definition depends upon the
@@ -56,14 +56,15 @@ behaviour if its environment breaks the protocol.  The model will be of the
 form 
 %
 \begin{cspm}
-(AltSpec [|Errors£$_A$£|> Any) \ Errors£$_A$£
+(IdealisedAlt [|Errors£$_A$£|> Any) \ Errors£$_A$£
 \end{cspm}
 %
-where |AltSpec| describes allowed behaviour when the environment follows the
-protocol.  
+where |IdealisedAlt| describes allowed behaviour when the environment follows
+the protocol, but performs an event from~|Errors|$_A$ if the environment
+breaks the protocol.
 
-We can then consider the combination of |AltSpec| and several instances of
-|ChannelSpec|.  Part of the analysis will show that no events from
+We can then consider the combination of |IdealisedAlt| and several instances of
+|IdealisedChannel|.  Part of the analysis will show that no events from
 $\CSPMM{Errors}_C \union \CSPMM{Errors}_A$ occur: each component follows the
 alt protocol, provided the other does.  But we can also show that this
 combination satisfies a property similar to that in the previous section,

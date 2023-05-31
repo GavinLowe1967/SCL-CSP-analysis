@@ -125,6 +125,9 @@ module IdealisedAlt
 
   -- Indices in reg corresponding to regInfo.
   matchesFor(reg, regInfo) = { i | i <- Index, mapLookup(reg, i) == regInfo }
+
+  indexFor(branch) = 
+    let get({x}) = x within get(branchesFor(branch))
   
   -- Process that keeps track of registrations, and detects out-of-protocol call
   -- backs.
@@ -140,9 +143,9 @@ module IdealisedAlt
   
   -- Registration phase. 
   RegTracker1(reg) = 
-    let inRegs = getInRegs(reg)
-        outRegs = getOutRegs(reg)
-    within
+    -- let inRegs = getInRegs(reg)
+    --     outRegs = getOutRegs(reg)
+    -- within
     endRegisterIn.AltThread?c!RegisterWaiting -> 
       RecordReg(reg, InPortBranch.c, InPortReg.c)
     []
@@ -166,22 +169,30 @@ module IdealisedAlt
 
   -- Record a registration corresponding to branch and portReg, and continue
   -- to allow registering
-  RecordReg(reg, branch, portReg) = extractSingle(
+  RecordReg(reg, branch, portReg) = 
+    extractSingle(
       branchesFor(branch), 
       \ index @ expect( 
         mapLookup(reg, index) == NoReg,
         RegTracker1(mapUpdate(reg, index, portReg))
       )
     ) 
+  -- Note: within the context of the complete IdealisedAlt, the above
+  -- construction avoids the modellingError branches in extractSingle and
+  -- expect.  But compilation will fail if we try replacing them with the FDR
+  -- error construct.
+
 
   -- Record that portReg is closed, and continue to allow registering
-  RecordClosed(reg, portReg) = extractSingle(
-    branchesFor(portReg),
-    \ index @ expect( 
-      mapLookup(reg, index) == NoReg,
-      RegTracker1(mapUpdate(reg, index, Closed))
-    )  
-  )
+  RecordClosed(reg, branch) = RecordReg(reg, branch, Closed)
+
+  -- RecordClosed(reg, branch) = extractSingle(
+  --   branchesFor(branch),
+  --   \ index @ expect( 
+  --     mapLookup(reg, index) == NoReg,
+  --     RegTracker1(mapUpdate(reg, index, Closed))
+  --   )  
+  -- )
   
   -- The alt has identified a branch to run.  Allow deregistration
   RegTracker2(reg) = 
@@ -253,7 +264,7 @@ module IdealisedAlt
     portClosed?t?index:allRegs -> ( 
       let reg' = mapUpdate(reg, index, Closed) within
       if allClosed(reg') then endWait.AltAbort -> RegTracker 
-      else RegTracker3(mapUpdate(reg, index, Closed))
+      else RegTracker3(reg')
     )
     []
     portClosedError?t?index:diff(Index,allRegs) -> STOP
@@ -356,15 +367,15 @@ exports
   channel spuriousWakeup : ThreadID
 
   -- Specification, with error events visible.
-  IdealisedAltSpec = Spec0 \ {| maybeReceive, maybeSend, portClosed |}
+  IdealisedAlt = Spec0 \ {| maybeReceive, maybeSend, portClosed |}
   
   -- If an error event happens, allow arbitrary behaviour.  The definitions
   -- are different for the stable failures and failures-divergences models.
   SpecF =  
     let events = union(Interface, {|spuriousWakeup|}) within
-    ( IdealisedAltSpec [| Errors |> CHAOS(events) ) \ Errors
+    ( IdealisedAlt [| Errors |> CHAOS(events) ) \ Errors
   -- Normalisation of the above takes a long time, because of the CHAOS(events)
   
-  SpecD =  ( IdealisedAltSpec [| Errors |> DIV ) \ Errors
+  SpecD =  ( IdealisedAlt [| Errors |> DIV ) \ Errors
   
 endmodule

@@ -277,7 +277,7 @@ exports
   include "ChanInterface.csp"
 
   -- Specification, with error events visible.
-  ChannelSpec = 
+  IdealisedChannel = 
     let internals = 
           {| registerInSync, registerInWait, registerOutSync, registerOutWait, 
              deregisterIn, deregisterOut, close, isClosed,
@@ -286,9 +286,9 @@ exports
 
   -- If an error event happens, allow arbitrary behaviour.  The definitions
   -- are different for the stable failures and failures-divergences models.
-  SpecF =  (ChannelSpec [| Errors |> CHAOS(Interface) ) \ Errors
+  SpecF =  (IdealisedChannel [| Errors |> CHAOS(Interface) ) \ Errors
   
-  SpecD = (ChannelSpec [| Errors |> DIV ) \ Errors
+  SpecD = (IdealisedChannel [| Errors |> DIV ) \ Errors
   
 endmodule
   

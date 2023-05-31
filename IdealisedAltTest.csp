@@ -72,4 +72,4 @@ assert IdealisedAlt::SpecD [FD= System
 -- I think the FD refinement implies the F refinement if Spec1 is divergence
 -- free.
 
-assert IdealisedAlt::IdealisedAltSpec :[ divergence free ]
+assert IdealisedAlt::IdealisedAlt :[ divergence free ]

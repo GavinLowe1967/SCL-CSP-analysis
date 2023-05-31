@@ -12,11 +12,9 @@
   channel beginClose, endClose: ThreadID
 
   -- Signals before and after invocations of registerIn/Out or deregisterIn/Out
-  channel beginRegisterIn, beginDeregisterIn, beginDeregisterOut: 
-    ThreadID . AltID . Index
-  channel beginRegisterOut: ThreadID . AltID . Index 
-  channel endRegisterIn: ThreadID . AltID . RegisterResult
-  channel endRegisterOut: ThreadID . AltID . RegisterResult
+  channel beginRegisterIn, beginRegisterOut, 
+    beginDeregisterIn, beginDeregisterOut: ThreadID . AltID . Index
+  channel endRegisterIn, endRegisterOut: ThreadID . AltID . RegisterResult
   channel endDeregisterIn, endDeregisterOut: ThreadID . AltID
 
   -- Events for calling back to Alts. 
@@ -29,18 +27,31 @@
   channel beginPortClosed : ThreadID . AltID . Index
   channel endPortClosed : ThreadID . AltID
 
-  -- Interface with client threads
-  ClientInterface = {|
-    beginSend, endSend, beginReceive, endReceive, 
-    beginSendWithin, endSendWithin, beginReceiveWithin, endReceiveWithin,
-    beginClose, endClose
+  -- Calls of client operations
+  ClientBegins = {|
+    beginSend, beginReceive, beginSendWithin, beginReceiveWithin, beginClose
   |}
 
-  clientInterface(t) = {|
-    beginSend.t, endSend.t, beginReceive.t, endReceive.t, 
-    beginSendWithin.t, endSendWithin.t, beginReceiveWithin.t, endReceiveWithin.t,
-    beginClose.t, endClose.t
+  -- Returns of client operations
+  ClientEnds =  {|
+    endSend, endReceive, endSendWithin, endReceiveWithin, endClose
   |}
+
+  -- Interface with client threads
+  ClientInterface = union(ClientBegins, ClientEnds)
+
+  -- Calls by client thread t
+  clientBegins(t) = {|
+    beginSend.t, beginReceive.t, beginSendWithin.t, beginReceiveWithin.t,
+    beginClose.t
+  |}
+
+  -- Returns by client thread t
+  clientEnds(t) = {|
+    endSend.t, endReceive.t, endSendWithin.t, endReceiveWithin.t, endClose.t
+  |}
+
+  clientInterface(t) = union(clientBegins(t), clientEnds(t))
 
   -- Events for callbacks to an alt.
   AltCallBacks = {|

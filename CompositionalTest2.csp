@@ -1,0 +1,65 @@
+-- A test on the combination of an idealised alt and two idealised channels. 
+
+-- Identities of channels
+datatype ChanID = Chan0 | Chan1
+
+-- The list of branches in the alt
+branches =  <InPortBranch.Chan0, OutPortBranch.Chan1>
+-- branches =  <InPortBranch.Chan0, InPortBranch.Chan1>
+
+include "CompositionalTest.csp"
+
+instance IC0 = IdealisedChan(size)
+
+instance IC1 = IdealisedChan(size)
+
+IdealisedChannel0 = mkChan(
+  IC0::IdealisedChannel, Chan0, 
+  IC0::beginRegisterIn, IC0::endRegisterIn, 
+  IC0::beginRegisterOut, IC0::endRegisterOut,
+  IC0::beginDeregisterIn, IC0::endDeregisterIn, 
+  IC0::beginDeregisterOut, IC0::endDeregisterOut,
+  IC0::beginMaybeReceive, IC0::endMaybeReceive, 
+  IC0::beginMaybeSend, IC0::endMaybeSend,
+  IC0::beginPortClosed, IC0::endPortClosed)
+
+IdealisedChannel1 = mkChan(
+  IC1::IdealisedChannel, Chan1, 
+  IC1::beginRegisterIn, IC1::endRegisterIn, 
+  IC1::beginRegisterOut, IC1::endRegisterOut,
+  IC1::beginDeregisterIn, IC1::endDeregisterIn, 
+  IC1::beginDeregisterOut, IC1::endDeregisterOut,
+  IC1::beginMaybeReceive, IC1::endMaybeReceive, 
+  IC1::beginMaybeSend, IC1::endMaybeSend,
+  IC1::beginPortClosed, IC1::endPortClosed)
+
+IdealisedChans = IdealisedChannel0 ||| IdealisedChannel1
+-- A channel thread for IC0 and IC1
+
+ChanThread(me) = mkChanThread({
+  (IC0::clientBegins(me), IC0::clientEnds(me)),
+  (IC1::clientBegins(me), IC1::clientEnds(me)) 
+}) 
+
+ClientThreadInterface = Union({ 
+  IC0::ClientInterface, IC1::ClientInterface
+})
+
+-- Definitions of the ChanIDs and (CSP) channels used for beginning and ending
+-- operations.
+sendChans = {
+  (Chan0, IC0::beginSend, IC0::endSend), (Chan1, IC1::beginSend, IC1::endSend) }
+receiveChans = {
+  (Chan0, IC0::beginReceive, IC0::endReceive), 
+  (Chan1, IC1::beginReceive, IC1::endReceive) }
+sendWithinChans = {
+  (Chan0, IC0::beginSendWithin, IC0::endSendWithin), 
+  (Chan1, IC1::beginSendWithin, IC1::endSendWithin) } 
+receiveWithinChans = {
+  (Chan0, IC0::beginReceiveWithin, IC0::endReceiveWithin), 
+  (Chan1, IC1::beginReceiveWithin, IC1::endReceiveWithin) }
+closeChans = {
+  (Chan0, IC0::beginClose, IC0::endClose), 
+  (Chan1, IC1::beginClose, IC1::endClose) }
+
+clientInterface(me) = union(IC0::clientInterface(me), IC1::clientInterface(me))

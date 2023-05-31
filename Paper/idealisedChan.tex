@@ -113,8 +113,8 @@ below; internal events appear inside the box.
 
 The construction is made more complicated by the fact that the model needs to
 deal with the |begin| and |end| events for function calls, whereas these
-functions will take effect at their linearisation points.  We therefore
-construct the model from several components, as depicted in
+functions will take effect at their linearisation points.  To deal with this,
+we construct the model from several components, as depicted in
 Figure~\ref{fig:idealised-chan}.  The component |ChanState| keeps track of the
 state of the channel: whether an alt is registered at a port, and whether the
 channel is closed.  The component |RegLin| is responsible for linearising
@@ -122,7 +122,7 @@ registrations and deregistrations.  Each component |Lin(t)| is responsible for
 linearising the function calls of channel-thread~|t|.  We describe these in
 more detail below.  Some details of the definitions are unobvious, and were
 found by trial and error: their correctness is evidenced by the subsequent
-successful refinement checks. 
+successful refinement checks.
 
 %%%%%
 
@@ -130,8 +130,8 @@ successful refinement checks.
 \begin{cspm}
 RegLin = 
   beginRegisterIn.AltThread?alt?index -> RegLinRegIn(alt, index)
-  [] beginDeregisterIn.AltThread?alt?index -> RegLinDeregIn(alt, index)
   [] beginRegisterOut.AltThread?alt?index -> RegLinRegOut(alt, index)
+  [] beginDeregisterIn.AltThread?alt?index -> RegLinDeregIn(alt, index)
   [] beginDeregisterOut.AltThread?alt?index -> RegLinDeregOut(alt, index)
   
 RegLinRegIn(alt, index) = 
@@ -140,11 +140,7 @@ RegLinRegIn(alt, index) =
   [] registerInWait.alt.index -> endChan.RegisterWaiting -> RegLin
   [] isClosed.AltThread -> endChan.RegisterClosed -> RegLin
   [] registerError -> STOP
-  
-RegLinDeregIn(alt, index) = 
-  deregisterIn.alt.index -> endDeregisterIn.AltThread.alt -> RegLin
-  [] deregisterInError.alt.index -> STOP
-  
+
 RegLinRegOut(alt, index) = 
   let endChan = endRegisterOut.AltThread.alt within
   (**|~| x : Data @ registerOutSync?t!x -> endChan.RegisterSuccess.x -> RegLin)
@@ -152,6 +148,10 @@ RegLinRegOut(alt, index) =
   [] isClosed.AltThread -> endChan.RegisterClosed -> RegLin
   [] registerError -> STOP
   
+RegLinDeregIn(alt, index) = 
+  deregisterIn.alt.index -> endDeregisterIn.AltThread.alt -> RegLin
+  [] deregisterInError.alt.index -> STOP
+    
 RegLinDeregOut(alt, index) = 
   deregisterOut.a.index -> endDeregisterOut.AltThread.a -> RegLin
   [] deregisterOutError.a.index -> STOP
@@ -164,18 +164,18 @@ RegLinDeregOut(alt, index) =
 
 The |RegLin| process is defined in Figure~\ref{fig:RegLin}; it accepts the
 relevant |begin| events, with each function being handled by a different
-subprocess. 
+subsidiary process. 
 
-The process |RegLinRegIn(alt, index)| models the linearisation of a
-\SCALA{registerIn(alt, index)} call, which can happen in several ways.
+The process |RegLinRegIn(alt, index)| models the linearisation of a call of
+\SCALA{registerIn(alt, index)}, which can happen in several ways.
 %
 \begin{itemize}
 \item A synchronisation with a waiting \SCALA{send} by a channel thread~|t|,
-  with the alt receiving~|x|, is modelled by an event~|registerInSync.t.x|;
+  with the alt receiving~|x|, is modelled by~|registerInSync.t.x|;
   this synchronises with the corresponding |Lin(t)| process.
 
-\item An unsuccessful registration is modelled by an
-  event |registerInWait.alt.index|.
+\item An unsuccessful registration is modelled by
+  |registerIn|\-|Wait.alt.index|.
 
 \item A registration that finds the channel closed is modelled by an event
   |isClosed.AltThread|.
@@ -187,9 +187,9 @@ The process |RegLinRegIn(alt, index)| models the linearisation of a
 The |ChanState| process synchronises on each of these events, to make sure the
 correct one is selected, based on the current channel state. 
 
-The process |RegLinRegOut(alt, index)| models the linearisation of a
-\SCALA{registerOut(alt, index)} call, in a similar way.  The processes
-|RegLinDeregIn(alt, index)| and |RegLinDeregOut(alt, index)| model
+The process |RegLinRegOut(alt, index)| models the linearisation of a call of
+\SCALA{registerOut(alt, index)}, in a similar way.  The processes
+|RegLin|\-|DeregIn(alt, index)| and |RegLinDeregOut(alt, index)| model
 deregistrations, including the possibility of an erroneous deregistration.
 
 %%%%%
@@ -206,30 +206,22 @@ Lin(t) =
 SendingLin(t, x, endChan, timed) = 
   let Success = endChan.SendSuccess -> Lin(t) within
   sync.t?t':ChanThread-{t}!x -> commit.t -> Success
-  []
-  registerInSync.t.x -> commit.t -> Success
-  []
-  callMaybeReceive.t?alt?index!x -> beginMaybeReceive.t.alt.index.x -> 
+  [] registerInSync.t.x -> commit.t -> Success
+  [] callMaybeReceive.t?alt?index!x -> beginMaybeReceive.t.alt.index.x -> 
     endMaybeReceive.t.alt?res -> 
     (if res then Success else SendingLin(t, x, endChan, timed))
-  []
-  isClosed.t -> endChan.Closed -> Lin(t)
-  []
-  timed & timeout.t -> endChan.Timeout -> Lin(t)
+  [] isClosed.t -> endChan.Closed -> Lin(t)
+  [] timed & timeout.t -> endChan.Timeout -> Lin(t)
   
 ReceivingLin(t, endChan, timed) =  
   let Success(x) = endChan.ReceiveSuccess.x -> Lin(t) within
   sync?t':ChanThread-{t}!t?x -> Success(x) 
-  []
-  registerOutSync.t?x -> Success(x) 
-  []
-  callMaybeSend.t?alt?index -> beginMaybeSend.t.alt.index -> (
+  [] registerOutSync.t?x -> Success(x) 
+  [] callMaybeSend.t?alt?index -> beginMaybeSend.t.alt.index -> (
     endMaybeSend.t.alt.Some?x -> Success(x) 
     [] endMaybeSend.t.alt.None -> ReceivingLin(t, endChan, timed) )
-  [] 
-  isClosed.t -> endChan.Closed -> Lin(t)
-  []
-  timed & timeout.t -> endChan.Timeout -> Lin(t)
+  [] isClosed.t -> endChan.Closed -> Lin(t)
+  [] timed & timeout.t -> endChan.Timeout -> Lin(t)
 \end{cspm}
 \caption{Definition of the {\scalashape Lin} processes, controlling
   channel-thread functions.  \label{fig:Lin}}
@@ -239,7 +231,7 @@ ReceivingLin(t, endChan, timed) =
 
 The |Lin(t)| processes are defined in Figure~\ref{fig:Lin}.  Each accepts the
 relevant \SCALA{begin} and \SCALA{end} events from channel-thread~|t|, with
-most of the functions modelled by relevant subprocesses.
+most of the functions modelled by subsidiary processes.
 
 The process |SendingLin| models the linearisation of the \SCALA{send} and
 \SCALA{sendWithin} functions; the parameter |timed| indicates the latter case.
@@ -261,9 +253,8 @@ cases.
 \item A decision to call |maybeReceive| on an alt~|alt| registered with
   index~|index| is modelled by the event |callMaybeReceive.t.alt.index.x|;
   this event is a synchronisation with |ChanState|, which allows it only when
-  there is an alt registered at the inport, and sets the |alt| and |index|
-  fields.  Thread~|t| then calls |maybeReceive|, waits to receive back the
-  result, and reacts accordingly.
+  |alt| is suitably registered.  Thread~|t| then calls |maybeReceive|, waits
+  to receive back the result, and reacts accordingly.
 
 \item The thread can find the channel closed via the event |isClosed.t|.
 
@@ -274,7 +265,7 @@ cases.
 The process |ReceivingLin| models the linearisation of the \SCALA{receive} and
 \SCALA{receiveWithin}, in a similar way.  There is no need for the extra
 synchronisation on the |commit| channel in this case: in the implementation,
-these functions can return straightaway. 
+these functions can return straightaway after synchronisation. 
 
 Finally, the |Lin| processes directly deal with closing.  The event |close.t|
 represents the linearisation point of the operation.  The \SCALA{close}
@@ -437,19 +428,19 @@ to the channel having been closed.
 
 The components are combined together as illustrated in
 Figure~\ref{fig:idealised-chan}, hiding all the internal events (those inside
-the box in the figure).  This produces a process |ChannelSpec|.  Recall that
-we want to allow arbitrary behaviour after one of the events that represents
-that the environment has not followed the alt protocol, on channels
+the box in the figure).  This produces a process |IdealisedChannel|.  Recall
+that we want to allow arbitrary behaviour after one of the events that
+represents that the environment has not followed the alt protocol, on channels
 |registerError|, |deregisterInError| and |deregisterOutError|.  In the
 stable-failures model, the process |CHAOS(Interface)| allows arbitrary
 behaviour over the set |Interface| (the interface of the channel); in the
 failures-divergences model, the process |DIV| allows arbitrary behaviour.  We
-therefore define the following. 
+therefore define the following.
 %
 \begin{cspm}
-Errors = {|registerError, deregisterInError, deregisterOutError|}
-Spec£$_F$£ = (ChannelSpec [|Errors|> CHAOS(Interface) ) \ Errors
-Spec£$_D$£ = (ChannelSpec [|Errors|> DIV ) \ Errors
+Errors£$_C$£ = {|registerError, deregisterInError, deregisterOutError|}
+Spec£$_F$£ = (IdealisedChannel [|Errors£$_C$£|> CHAOS(Interface) ) \ Errors£$_C$£
+Spec£$_D$£ = (IdealisedChannel [|Errors£$_C$£|> DIV ) \ Errors£$_C$£
 \end{cspm}
 
 We can then compare the CSP model of a synchronous channel implementation
