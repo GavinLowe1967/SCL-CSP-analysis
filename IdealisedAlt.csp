@@ -143,9 +143,6 @@ module IdealisedAlt
   
   -- Registration phase. 
   RegTracker1(reg) = 
-    -- let inRegs = getInRegs(reg)
-    --     outRegs = getOutRegs(reg)
-    -- within
     endRegisterIn.AltThread?c!RegisterWaiting -> 
       RecordReg(reg, InPortBranch.c, InPortReg.c)
     []
@@ -182,17 +179,8 @@ module IdealisedAlt
   -- expect.  But compilation will fail if we try replacing them with the FDR
   -- error construct.
 
-
   -- Record that portReg is closed, and continue to allow registering
   RecordClosed(reg, branch) = RecordReg(reg, branch, Closed)
-
-  -- RecordClosed(reg, branch) = extractSingle(
-  --   branchesFor(branch),
-  --   \ index @ expect( 
-  --     mapLookup(reg, index) == NoReg,
-  --     RegTracker1(mapUpdate(reg, index, Closed))
-  --   )  
-  -- )
   
   -- The alt has identified a branch to run.  Allow deregistration
   RegTracker2(reg) = 

@@ -1,0 +1,74 @@
+\section{Data independence}
+
+\framebox{Rewrite following}
+
+I think we can use data independence to argue taking |Data| of size~2 is
+enough.  
+
+divergence freedom
+
+Clarify the property in question.  For a trace representing a complete
+history, checking synchronisation linearisation amounts to testing whether
+it's possible to pair off sends and receives.
+
+Now consider incomplete histories.  Define a \emph{full failure} to be one
+such that for every pending invocation, all of the end events are refused.
+For example, $(\trace{\CSPMM{beginSend}.t.A}, \eset{\CSPMM{endSend}.t})$ is a
+full failure.  If there is no full failure corresponding to a particular
+trace, then necessarily (assuming divergence freedom) there is an available
+|end| event, so consider the trace $tr'$ formed by adding that event.  We can
+continue in this way, adding |end| events until we reach a full failure.  We
+call the corresponding trace a \emph{full trace}: any pending invocation is
+stuck.  We can then take the full trace, remove the |begin| events of pending
+invocations, to obtain a complete history, and consider whether that history
+is synchronisation linearisable.
+
+Claim: it is enough to consider full traces to decide if all traces of a
+process are synchronisation linearisable.  No!  A trace where a send and
+receive synchronise, but the send gets stuck, is linearisable but doesn't
+satisfy progress.  So consider linearisability and progressability together:
+if a total trace has stuck operations, it's not progressable; otherwise
+proceed as above. 
+
+Claim: a process satisfies synchronisation linearisability and progressability
+if and only if every full trace does.  No, that's not true.  If, after some
+trace, two threads can synchronise but then have to return in a fixed order
+(e.g.~|send| then |return|), then progressability isn't satisfied, but the
+corresponding full trace is fine.  But real traces aren't like this: if an
+|end| event is available, it happening doesn't enable other events.
+
+..........
+
+For a full trace, with an arbitrary type of |Data|, suppose it doesn't satisfy
+linearisability and progressability.  Then there is a particular data value
+$X$ such that either (a)~the complete invocations involving~$X$ can't be paired
+off, or (b)~some synchronisations should be possible.  In case~(a), mapping
+$X$ to~|A| and all other values to~|B| would also give the error.  In
+case~(b), mapping all values to~|A| would give the error.   
+
+
+
+
+
+Consider traces first.  Suppose there is a trace of the system, for
+some choice of |Data|, that is not a trace of the specification.  That could
+arise for a number of reasons.
+
+Consider first where we allow only |send|s and |receive|s.  Consider first a
+trace representing a complete history, i.e.~where for every |begin| event
+there is a corresponding |end| event.  Suppose this is not synchronisation
+linearisable.  Then it's not possible to pair off |send|s and |receive|s
+correctly.  In that case, there must be a particular data value |X| such that
+it's not possible to pair off all invocations of |send(X)| with a
+corresponding invocation of |receive|.  (If it were possible, for every |X|,
+then combining the pairings for the individual |X| values would give an
+overall pairing.)  But then mapping |X| to~|A| and all other values to~|B|
+would give a non-linearisable trace for |Data = {A,B}|.
+
+Now consider the case where there are pending sends and/or receives.  
+
+If the returns of all invocations are refused after trace $tr$, then the same
+would be true when we reduce to |Data = {A,B}|.  Otherwise, we can produce an
+extended trace where an extra invocation has returned.  Repeat until all
+pending invocations are refusing to return.  If this extended trace is
+linearisable then so is~$tr$. 

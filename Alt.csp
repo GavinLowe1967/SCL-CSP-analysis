@@ -63,8 +63,8 @@ module Alt(this, branches, ThreadID, ChanID)
   --------- Run the Alt, and apply cont to the value received.
   Run :: (ThreadID, (AltResult) -> Proc) -> Proc
   Run(me, cont) = 
-    -- synchronized{ registering = true }
-    -- JVMMonitor::Synchronized(me, setRegistering.me.true -> SKIP);
+    -- Note: we can't use the Synchronized contruct here, because we need to
+    -- release the lock in the AltAbort case.
     JVMMonitor::Lock(me); setRegistering.me.true ->
     RegisterLoop(me, cont, 0)
 
@@ -72,8 +72,6 @@ module Alt(this, branches, ThreadID, ChanID)
   RegisterLoop(me, cont, i) = 
     if i == size then AfterLoop(me, cont)
     -- we short-circuit when done gets set to true
-    -- else getDone.me?done -> 
-    --   if done then AfterLoop(me, cont)
     else Register(me, cont, i, nth(branches, i)) 
 
   -- Register with an InPort
@@ -92,6 +90,8 @@ module Alt(this, branches, ThreadID, ChanID)
   -- Register with an OutPort
   Register(me, cont, i, OutPortBranch.c) = 
     beginRegisterOut.me.c.i -> (
+      -- Note: the value sent is chosen nondeterministically within the
+      -- registerOut function of the channel.
       endRegisterOut.me.c.RegisterSuccess?x -> setToRun.me.i -> 
         setDone.me.true -> setValueSent.me.Some.x -> AfterLoop(me, cont)
       []
@@ -102,18 +102,8 @@ module Alt(this, branches, ThreadID, ChanID)
         setEnabled.me.i.false -> RegisterLoop(me, cont, i+1)
     )
 
-  -- Code after the registration loop.  
+  -- Code after the registration loop. 
   AfterLoop(me, cont) = 
-    -- JVMMonitor::Lock(me); 
-    AfterLoop1(me, cont)
-
-  -- Note: we can't use the Synchronized contruct here, because we need to
-  -- release the lock in the AltAbort case.
-
--- IMPROVE structure
-
-  -- The body of the synchronized block. 
-  AfterLoop1(me, cont) = 
     setRegistering.me.false -> JVMMonitor::NotifyAll(me);
     getDone.me?done -> 
     if not done then
@@ -126,13 +116,12 @@ module Alt(this, branches, ThreadID, ChanID)
       -- if(numEnabled == 0) throw new AltAbort
       getNumEnabled.me?ne -> 
       if ne == 0 then JVMMonitor::Unlock(me); cont(AltAbort) 
-      else AfterLoop2(me, cont) -- SKIP
-    else AfterLoop2(me, cont) -- SKIP
-
-  AfterLoop2(me, cont) = JVMMonitor::Unlock(me); PostWait(me, cont)
+      else PostWait(me, cont) 
+    else PostWait(me, cont) 
 
   -- Code after the (possible) wait
   PostWait(me, cont) = 
+    JVMMonitor::Unlock(me); 
     IfStrict(getDone.me?done -> Assert1(done)); 
     DeregisterLoop(me, cont, 0)
 
@@ -191,25 +180,23 @@ module Alt(this, branches, ThreadID, ChanID)
 
   -- Body of maybeReceive
   MaybeReceive1(me, value, index)(cont) = 
---    WaitWhileRegistering(me);
--- Experiment; assert(!registering)
-getRegistering.me?registering -> Assert1(not registering);
-    -- assert(enabled(index))
-    getEnabled.me.index?enab -> Assert1(enab);
+    -- assert(!registering)
+    getRegistering.me?registering -> Assert1(not registering);
+    -- assert(enabled(index)); enabled(index) = false
+    getEnabled.me.index?enab -> Assert1(enab); setEnabled.me.index.false -> 
     -- if(done) ...
     getDone.me?done -> 
     if done then
       -- enabled(index) = false; false
-      setEnabled.me.index.false -> cont(false)
+      -- setEnabled.me.index.false -> 
+      cont(false)
     else  
-      -- assert(enabled(index)); 
-      -- getEnabled.me.index?enab -> Assert1(enab); 
--- IMPROVE: unnecessary check in Scala
-      -- enabled(index) = false; valueReceived = value
-      setEnabled.me.index.false -> setValueReceived.me.value -> 
-      -- toRun = index; done = true; notify(); true
-      setToRun.me.index -> setDone.me.true -> 
-      JVMMonitor::Notify(me); cont(true)
+      -- enabled(index) = false; 
+      -- setEnabled.me.index.false -> 
+      -- valueReceived = value; toRun = index; 
+      setValueReceived.me.value -> setToRun.me.index -> 
+      -- done = true; notify(); true
+      setDone.me.true -> JVMMonitor::Notify(me); cont(true)
 
   -------- The maybeSend function
 
@@ -218,20 +205,22 @@ getRegistering.me?registering -> Assert1(not registering);
     JVMMonitor::SynchronizedC(me, MaybeSend1(me, index), cont)
 
   MaybeSend1(me, index)(cont) =  
-   -- WaitWhileRegistering(me);
--- Experiment; assert(!registering)
-getRegistering.me?registering -> Assert1(not registering);
+    getRegistering.me?registering -> Assert1(not registering);
     -- assert(numEnabled > 0 && enabled(index))
     -- getNumEnabled.me?ne -> Assert1(ne > 0); 
     getEnabled.me.index?enab -> Assert1(enab);
+    -- enabled(index) = false
+    setEnabled.me.index.false ->
     -- if(done){ enabled(index) = false; None }
     getDone.me?done ->
-    if done then setEnabled.me.index.false -> cont(None)
+    if done then cont(None) -- setEnabled.me.index.false -> cont(None)
     else
-      -- enabled(index) = false; toRun = index; done = true; notify();
-      setEnabled.me.index.false -> setToRun.me.index -> setDone.me.true ->
-      JVMMonitor::Notify(me);
+      -- // enabled(index) = false; 
+      -- setEnabled.me.index.false -> 
+      -- toRun = index; done = true; notify();
+      setToRun.me.index -> setDone.me.true -> JVMMonitor::Notify(me);
       -- val result = opb.value(); Some(result)
+      -- decision point for value sent
       setValueSent.me.Some$x -> cont(Some.x)
 
 
@@ -240,10 +229,8 @@ getRegistering.me?registering -> Assert1(not registering);
   PortClosed(me, index) = JVMMonitor::Synchronized(me, PortClosed1(me, index))
 
   PortClosed1(me, i) = 
-    -- while(registering) wait() 
-    --WaitWhileRegistering(me);
--- Experiment; assert(!registering)
-getRegistering.me?registering -> Assert1(not registering);
+    -- assert(!registering)
+    getRegistering.me?registering -> Assert1(not registering);
     -- assert(enabled(i))
     getEnabled.me.i?en -> Assert1(en);
     -- if(!done) ...

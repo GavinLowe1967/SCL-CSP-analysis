@@ -463,12 +463,12 @@ idealised model of a channel.
 %
 \begin{cspm}
 Errors£$_A$£ = {|maybeReceiveError, maybeSendError, portClosedError|}
-Spec£$_F$£ = (IdealisedAlt [|Errors£$_A$£|> CHAOS(Interface) ) \ Errors£$_A$£
-Spec£$_D$£ = (IdealisedAlt [|Errors£$_A$£|> DIV ) \ Errors£$_A$£
+AltSpec£$_F$£ = (IdealisedAlt [|Errors£$_A$£|> CHAOS(Interface) ) \ Errors£$_A$£
+AltSpec£$_D$£ = (IdealisedAlt [|Errors£$_A$£|> DIV ) \ Errors£$_A$£
 \end{cspm}
 
 We can then compare the CSP model of an alt implementation to the idealised
-model.  We can verify that the implementation model refines |Spec|$_F$ and
-|Spec|$_D$ in the relevant models.
+model.  We can verify that the implementation model refines |AltSpec|$_F$ and
+|AltSpec|$_D$ in the relevant models.
 
 \framebox{**} Number of threads, timing. 

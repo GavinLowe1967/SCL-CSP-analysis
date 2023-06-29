@@ -60,7 +60,8 @@ thread~|t|$_1$ and a receiving thread~|t|$_2$, both of which are
 channel-threads, using channel~|c|, passing value~|x|.
 %
 We introduce similar events of the form |altSync.t|$_1$|.t|$_2$|.c.x| to
-represent a synchronisation where one of the threads is  the alt-thread.
+represent a synchronisation between a sending thread~|t|$_1$ and a receiving
+thread~|t|$_2$, where one of the threads is the alt-thread.
 
 We build lineariser processes for the channel threads.  These are very similar
 to as in Section~\ref{sec:syncchan}, so we elide some parts.  They are
@@ -76,12 +77,12 @@ ChanThreadLin(me) =
 
 LinSending(me, x, c, endChan) = 
   sync.me?other:others(me)!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
-  [] altSync?altThread!me!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
+  [] altSync.me?altThread!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
   [] isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
 
 LinReceiving(me, c, endChan) = 
   sync?other:others(me)!me!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
-  [] altSync.me?altThread!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
+  [] altSync?altThread!me.c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
   [] isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
 
 LinSendingWithin(me, x, c, endChan) = 
@@ -106,9 +107,9 @@ returning an |AltAbort|, it must detect that all the channels are closed.
 \begin{cspm}
 AltLin(me) = 
   A1::beginAlt.me -> (
-    altSync.me?other:ChanThreads?c:inPorts?x -> 
+    altSync?other:ChanThreads!me?c:inPorts?x -> 
       A1::endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me)
-    [] altSync?other:ChanThreads!me?c:outPorts?x ->
+    [] altSync.me?other:ChanThreads?c:outPorts?x ->
         A1::endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
     [] allClosed -> A1::endAlt.me.AltAbort -> AltLin(me)
   )
@@ -136,3 +137,5 @@ linearisable, and satisfies the corresponding progress property.
 
 However, this approach suffers from a state-space explosion.
 \framebox{Details.} 
+
+

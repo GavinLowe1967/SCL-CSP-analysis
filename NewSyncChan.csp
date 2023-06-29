@@ -463,7 +463,7 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     else -- if(status == Empty) ... 
       getStatus.me?s -> 
       if s == Empty then 
-        -- store value
+        -- store value; decision point for value sent
         setValue.me$x -> setStatus.me.Filled -> 
 	-- call completeSend, and assert that this succeeds
 	CompleteSend(me)(\ res @ Assert1(res); cont(RegisterSuccess.x))

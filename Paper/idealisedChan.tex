@@ -439,15 +439,15 @@ therefore define the following.
 %
 \begin{cspm}
 Errors£$_C$£ = {|registerError, deregisterInError, deregisterOutError|}
-Spec£$_F$£ = (IdealisedChannel [|Errors£$_C$£|> CHAOS(Interface) ) \ Errors£$_C$£
-Spec£$_D$£ = (IdealisedChannel [|Errors£$_C$£|> DIV ) \ Errors£$_C$£
+ChannelSpec£$_F$£ = (IdealisedChannel [|Errors£$_C$£|> CHAOS(Interface) ) \ Errors£$_C$£
+ChannelSpec£$_D$£ = (IdealisedChannel [|Errors£$_C$£|> DIV ) \ Errors£$_C$£
 \end{cspm}
 
 We can then compare the CSP model of a synchronous channel implementation
 against the idealised model.  We create a system using the model of the
 implementation, allowing threads to call appropriate operations.  We can then
-verify that this system refines |Spec|$_F$ and |Spec|$_D$ in the relevant
-models. 
+verify that this system refines |ChannelSpec|$_F$ and |ChannelSpec|$_D$ in the
+relevant models.
 
 \framebox{**} Number of threads, timing.  FD check faster than F check. 
 

@@ -1,16 +1,12 @@
 -- A test on the combination of an idealised alt and idealised channels. 
 
 -- This file is expected to be included from a file that defines a specific
--- collection of channels.  More specifically: (1) a type ChanId; (2) a
--- consistent definition of branches; (3) IdealisedChans, defining the
--- channels, probably using the mkChan function; (4) processes ChanThread(t),
--- probably using mkChanThread; (5) ClientThreadInterface; (6) sets sendChans,
--- receiveChans, sendWithinChans, receiveWithinChans, closeChans and
--- clientInterface, as for CombinedSpec.
-
--- Thread identities.  Thread AltThread will run the Alt; other threads will
--- act on channels.
-datatype ThreadID = AltThread | T1 | T2 -- | T3 -- | T4
+-- collection of channels.  More specifically: (0) A type ThreadID, including
+-- AltThread; (1) a type ChanId; (2) a consistent definition of branches; (3)
+-- IdealisedChans, defining the channels, probably using the mkChan function;
+-- (4) processes ChanThread(t), probably using mkChanThread; (5)
+-- ClientThreadInterface; (6) sets sendChans, receiveChans, sendWithinChans,
+-- receiveWithinChans, closeChans and clientInterface, as for CombinedSpec.
 
 ChanThreads =  diff(ThreadID, {AltThread})
 
@@ -22,27 +18,17 @@ include "Types.csp"
 -- Identities of Alts
 datatype AltID = Alt1
 
--- -- The list of branches in the alt
--- branches =  <InPortBranch.Chan0, OutPortBranch.Chan1>
--- -- branches =  <InPortBranch.Chan0, InPortBranch.Chan1>
-
 size = length(branches)
 
 Index = {0..size-1}
 
--- Create idealised channels
+-- Definition of IdealisedChan module.  Including file should make instances.
 
 include "IdealisedChan.csp"
-
--- instance IC0 = IdealisedChan(size)
-
--- instance IC1 = IdealisedChan(size)
 
 -- Create the idealised alt.
 
 include "IdealisedAlt.csp"
-
--- Rename events of IdealisedChans to be consistent with A1
 
 transparent normal, sbisim, diamond
 
@@ -76,31 +62,11 @@ mkChan(
     endPortClosed.t.Alt1 <- IdealisedAlt::endPortClosed.t
       | t <- ThreadID ]]
 
--- IdealisedChannel0 = mkChan(
---   IC0::IdealisedChannel, Chan0, 
---   IC0::beginRegisterIn, IC0::endRegisterIn, 
---   IC0::beginRegisterOut, IC0::endRegisterOut,
---   IC0::beginDeregisterIn, IC0::endDeregisterIn, 
---   IC0::beginDeregisterOut, IC0::endDeregisterOut,
---   IC0::beginMaybeReceive, IC0::endMaybeReceive, 
---   IC0::beginMaybeSend, IC0::endMaybeSend,
---   IC0::beginPortClosed, IC0::endPortClosed)
-
--- IdealisedChannel1 = mkChan(
---   IC1::IdealisedChannel, Chan1, 
---   IC1::beginRegisterIn, IC1::endRegisterIn, 
---   IC1::beginRegisterOut, IC1::endRegisterOut,
---   IC1::beginDeregisterIn, IC1::endDeregisterIn, 
---   IC1::beginDeregisterOut, IC1::endDeregisterOut,
---   IC1::beginMaybeReceive, IC1::endMaybeReceive, 
---   IC1::beginMaybeSend, IC1::endMaybeSend,
---   IC1::beginPortClosed, IC1::endPortClosed)
 
 -- The combination of the idealised channels and alts.
 System00 = 
-  IdealisedChans -- (IdealisedChannel0 ||| IdealisedChannel1) 
+  IdealisedChans 
   [| IdealisedAlt::ChannelInterface |] 
-  -- compress(IdealisedAlt::IdealisedAltSpec)
   sbisim(diamond(IdealisedAlt::IdealisedAlt))
 
 System0 = System00 \ IdealisedAlt::ChannelInterface
@@ -122,18 +88,12 @@ mkChanThread(pairs) =
   [] (begins, ends) <- pairs @  
    [] e: begins @ e -> [] e': ends @ e' -> mkChanThread(pairs) 
 
--- -- A channel thread for IC0 and IC1
--- ChanThread(me) = mkChanThread({
---   (IC0::clientBegins(me), IC0::clientEnds(me)),
---   (IC1::clientBegins(me), IC1::clientEnds(me)) 
--- }) 
-
+-- Including file is expected to define ChanThread(_) in terms of the above.
 
 AllThreads = TheAltThread ||| (||| t <- ChanThreads @ ChanThread(t))
 
 ThreadInterface = Union({ 
   IdealisedAlt::AltInterface, ClientThreadInterface
-  -- IC0::ClientInterface, IC1::ClientInterface
 })
 
 System = System0 [| ThreadInterface |]  AllThreads
@@ -151,25 +111,6 @@ assert CHAOS(Alpha) [T= System
 
 beginAlt = IdealisedAlt::beginAlt
 endAlt = IdealisedAlt::endAlt
-
--- -- Definitions of the ChanIDs and (CSP) channels used for beginning and ending
--- -- operations.
--- sendChans = {
---   (Chan0, IC0::beginSend, IC0::endSend), (Chan1, IC1::beginSend, IC1::endSend) }
--- receiveChans = {
---   (Chan0, IC0::beginReceive, IC0::endReceive), 
---   (Chan1, IC1::beginReceive, IC1::endReceive) }
--- sendWithinChans = {
---   (Chan0, IC0::beginSendWithin, IC0::endSendWithin), 
---   (Chan1, IC1::beginSendWithin, IC1::endSendWithin) } 
--- receiveWithinChans = {
---   (Chan0, IC0::beginReceiveWithin, IC0::endReceiveWithin), 
---   (Chan1, IC1::beginReceiveWithin, IC1::endReceiveWithin) }
--- closeChans = {
---   (Chan0, IC0::beginClose, IC0::endClose), 
---   (Chan1, IC1::beginClose, IC1::endClose) }
-
--- clientInterface(me) = union(IC0::clientInterface(me), IC1::clientInterface(me))
 
 include "CombinedSpec.csp"
 

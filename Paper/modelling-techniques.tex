@@ -1,0 +1,96 @@
+\section{Modelling techniques}
+
+\inlineCSP
+
+We describe here a few modelling techniques that we found useful during our
+analysis.  These techniques are rather orthogonal to the main ideas of the
+paper, but we think they might be useful elsewhere. 
+
+We model variables using a CSP process as follows.  Here |value| is the
+current value of the variable, and |get| and |set| are channels on which a
+thread~|t| can get or set the value.
+%
+\begin{cspm}
+Var(value, get, set) = 
+  get?t!value -> Var(value, get, set)
+  [] set?t?value' -> Var(value', get, set)
+\end{cspm}
+%
+For example, the implementation of a channel has a variable
+\SCALA{receiversWaiting} that stores the current number of threads that are
+waiting to receive on the channel.  In the implementation, this can be an
+arbitrary \SCALA{Int}; however, we would expect the value to be non-negative
+and at most the number of threads in the CSP model (and the subsequent
+analysis confirms this).  The variable can therefore be modelled as follows. 
+%
+\begin{cspm}
+N = card(ThreadID)
+channel getReceiversWaiting, setReceiversWaiting : ThreadID.{0..N}
+ReceiversWaiting = Var(0, getReceiversWaiting, setReceiversWaiting)
+\end{cspm}
+
+The Scala implementation contains a number of assertions.  We model such
+assertions by having the model diverge if the property does not hold; our
+subsequent analysis verifies that such a divergence does not happen.  (An
+alternative is to perform an explicit |error| event; however, our experience
+is that it is easy to get that approach wrong, for example by accidentally
+omitting |error| from a process's alphabet.)  The following two macros are
+useful.
+%
+\begin{cspm}
+Assert(b, P) = if b then P else DIV
+Assert1(b) = Assert(b, SKIP)
+\end{cspm}
+%
+In the former, the continuation |P| is provided explicitly, whereas the latter
+can be used with sequential composition.  The two processes \CSPM{Assert(b,
+  P)} and \CSPM{Assert1(b); P} are CSP-equivalent; but the FDR compiler treats
+them differently.  In the former, |P| is compiled only if~|b| is true, but in
+the latter, |P| is compiled regardless.  This can make a difference if
+compilation would fail when |b| is false.  The following macros, to increment
+or decrement the \SCALA{receiversWaiting} variable, illustrate this point; the
+use of |Assert| ensures that the compiler does not try to produce an event on
+|setReceiversWaiting| outside the correct range |{0..N}|.
+%
+\begin{cspm}
+IncReceiversWaiting(me) = 
+  getReceiversWaiting.me?r -> Assert(r < N, setReceiversWaiting.me.r+1 -> SKIP)
+DecReceiversWaiting(me) =
+  getReceiversWaiting.me?r -> Assert(r > 0, setReceiversWaiting.me.r-1 -> SKIP)
+\end{cspm}
+
+We now discuss the modelling of Scala functions in the implementation, in
+particular how to model the value returned.  CSP has no notion of returning a
+value.  Instead, we adopt a continuation-passing approach.  If the Scala
+function returns a result of type~\SCALA{A}, the corresponding CSP process is
+given a parameter \CSPM{cont :: A -> Proc},  representing a continuation,
+i.e.~what the rest of the program does with the result.  Returns from the
+Scala function are then modelled by applying |cont| to the returned value.  A
+call to the function is modelled by providing a suitable function as the
+continuation.
+
+A continuation-passing style can also be used to model computations that are
+passed to other constructs.  For example, the following macro captures an
+\SCALA{if} statement.  The test of the \SCALA{if} is modelled by a process
+|test(k)| that applies its continuation parameter~|k| to an appropriate
+boolean. 
+%
+\begin{cspm}
+If:: (((Bool) -> Proc) -> Proc, Proc, Proc) -> Proc
+If(test, P, Q) = test(£$\lambda$£res @ if res then P else Q)
+\end{cspm}
+%
+For example, Scala code \SCALA{if(result == None && status != Filled)\{...\}
+  else \{...\}} can be modelled as follows. 
+%
+\begin{cspm}
+let Test(k) = if result==None then getStatus.me?s -> k(s != Filled) else k(false)
+within If(Test,...,...)
+\end{cspm}
+%
+Likewise, a \SCALA{while} loop can be captured using the following macro.
+%
+\begin{cspm}
+While :: (((Bool) -> Proc) -> Proc, Proc) -> Proc
+While(test, body) = test(£$\lambda$£b @ if b then body; While(test, body) else SKIP)
+\end{cspm}

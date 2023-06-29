@@ -8,7 +8,7 @@ Implementing the |close| operation correctly proved harder than expected.  An
 earlier version of the implementation suffered from a bug involving three
 threads acting concurrently: thread~$A$ calls |send(x)|, thread~$B$ calls
 |receive|, and thread~$C$ calls |close|.  Under certain conditions, it was
-possible for thread~$B$ to return successfully, having received~$x$, but for
+possible for thread~$B$ to return successfully, having received~|x|, but for
 thread~$A$ to see the channel closed, and so throw a |Closed| exception.  We
 consider this behaviour to be incorrect: either both~$A$ and~$B$ should think
 the communication has succeeded, or both should throw |Closed| exceptions.

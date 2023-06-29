@@ -31,60 +31,11 @@
 \begin{document}
 \maketitle
 
-\section{Introduction}
+\input{introduction}
 
-Overview of SCL.  Channels, alts, closing, timeouts.  Guards.  Restrictions.
-Continuations. 
-
-Main contributions to emphasise:
-%
-\begin{itemize}
-\item Specification of synchronisation.
-
-\item Difficulty of capturing correct behaviour when the channel is closed. 
-
-\item Direct versus compositional verification. 
-
-\end{itemize}
-
-One-page summary of modelling technique.  Variables, monitors.  Assertions.
-Continuation-passing? 
-
-Overview of basic model.  |beginSend|, |endSend| events.
-
-Specification of this, capturing synchronisations.
-
-Adding closing.  Extending specification.  Why the previous implementation
-went wrong. 
-
-Adding timed operations.
-
-Overview of alt protocol.  Locking. 
-
-Extension of channel model:  Registering and deregistering.  call backs:
-|beginMaybeReceive|, |endMaybeReceive|, etc. 
-
-Model of alt.  Interface. 
-
-Direct analysis.  Specification.  Limitations.
-
-Compositional verification idea.
-
-Idealised channel; analysis.
-
-Idealised alt; analysis.
-
-Compositional verification. 
-
-%%%%%%%%%%
-
-%% \section{Building blocks}
-
-%% Variables, continuation passing, computations, JVM monitors, SCL monitors. 
-
-%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%% Overview of basic model.  |beginSend|, |endSend| events.
+\section{Overview of CSP} 
+\label{sec:csp}
+\framebox{\ldots}
 
 \input{syncchan} % Basic model of SyncChan
 
@@ -101,5 +52,11 @@ Compositional verification.
 \input{idealisedAlt}
 
 \input{combiningIdealised}
+
+\appendix
+
+\input{modelling-techniques}
+
+% \input{data-independence} Probably omit this.
 \end{document}
  

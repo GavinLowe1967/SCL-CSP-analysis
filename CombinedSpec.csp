@@ -64,10 +64,10 @@ AltLin(me) =
       outPorts = { c | OutPortBranch.c <- set(branches) } 
   within
   beginAlt.me -> (
-    altSync.me?other:ChanThreads?c:inPorts?x -> 
+    |~| x: Data @ altSync?other:ChanThreads!me?c:inPorts!x -> 
       endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me)
     []
-    altSync?other:ChanThreads!me?c:outPorts?x ->
+    altSync.me?other:ChanThreads?c:outPorts?x ->
       endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
     []
     allClosed -> endAlt.me.AltAbort -> AltLin(me)
@@ -101,7 +101,7 @@ LinSending :: (ThreadID, Data, ChanID, (Result) => Event) -> Proc
 LinSending(me, x, c, endChan) = 
   sync.me?other:others(me)!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
   [] 
-  altSync?altThread!me!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
+  altSync.me?altThread!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
   [] 
   isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
 
@@ -109,7 +109,7 @@ LinSending(me, x, c, endChan) =
 LinReceiving(me, c, endChan) = 
   sync?other:others(me)!me!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
   [] 
-  altSync.me?altThread!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
+  altSync?altThread!me.c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
   [] 
   isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
 
