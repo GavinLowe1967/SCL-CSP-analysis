@@ -1,5 +1,4 @@
--- A test on the combination of an alt and a single channels.
--- This file needs to be included in a file that defines the list of branches.
+-- A test on the combination of an alt and a single channel.
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
@@ -17,10 +16,7 @@ include "Types.csp"
 -- Identities of Alts
 datatype AltID = Alt1 -- | Alt2
 
--- The list of branches in the alt.  The main file needs to include a
--- definition like one of the following.
--- branches =  <InPortBranch.c1, InPortBranch.c2>
--- branches =  <InPortBranch.c1, OutPortBranch.c2>
+-- The list of branches in the alt.  Select one of the following.
 branches = <OutPortBranch.c1>
 --branches = <InPortBranch.c1>
 
@@ -41,57 +37,37 @@ IfStrict(P) = if Strict then P else SKIP
 -- include "SyncChanAlt.csp"
 include "NewSyncChan.csp" 
 
--- Create two channels
+-- Create channel
 instance C1 = SyncChan(ThreadID, AltID, Data, size)
---instance C2 = SyncChan(ThreadID, AltID, Data, size)
 
 include "Alt.csp"
 
 -- Create the alt.
 instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
 
--- include "Macros.csp"
-
 ------ Threads
 
 -- The thread that runs the Alt repeatedly. 
 
--- Allow all ops
--- FLAG = true
-
 ALTFLAG = true
 
-CLOSEFLAG = true
-
-TheAltThread(me) = 
-ALTFLAG & -- FIXME
-  A1::beginAlt.me -> (
-    A1::endAlt.me.AltReceive?i.x -> TheAltThread(me) 
-    [] 
-    A1::endAlt.me.AltSend?i.x -> TheAltThread(me)
-    []
-    A1::endAlt.me.AltAbort -> STOP  -- IMPROVE: continue?
-  )
-  |~| STOP
-
+TheAltThread(me) = ALTFLAG & RUN(A1::altInterface(AltThread))
 
 -- A thread that tries to send on a channel
+
+CLOSEFLAG = true
 
 -- Thread with identity me, which repeatedly sends or receives, or neither.
 Thread(me) = 
   C1::beginSend.me?x -> C1::endSend.me?res -> Thread(me) 
-  |~|
+  []
   C1::beginReceive.me -> C1::endReceive.me?res -> Thread(me)
-  |~|
+  []
   C1::beginSendWithin.me?x -> C1::endSendWithin.me?b -> Thread(me)
-  |~|
+  []
   C1::beginReceiveWithin.me -> C1::endReceiveWithin.me?ox -> Thread(me)
-  |~|
-CLOSEFLAG & (
-  C1::beginClose.me -> C1::endClose.me -> Thread(me)
-)
-  |~| 
-  STOP
+  []
+  CLOSEFLAG & C1::beginClose.me -> C1::endClose.me -> Thread(me)
 
 Threads = (||| t <- ChanThreads @ Thread(t)) ||| TheAltThread(AltThread)
 
@@ -165,7 +141,6 @@ ALTFLAG &
     []
     isAltClosed -> A1::endAlt.me.AltAbort -> AltLin(me)
   )
-  |~| STOP
 
 alphaAltLin(me) = union(
   {| A1::beginAlt.me, A1::endAlt.me, altSync.me, isAltClosed |},
@@ -188,16 +163,14 @@ alphaChanSpecs = {| sync, altSync, close, isClosed, isAltClosed |}
 ChanThreadLin(me) = 
   let Others = others(me) within
   C1::beginSend.me?x -> LinSending(me, x, c1, C1::endSend)
-  |~|
+  []
   C1::beginReceive.me -> LinReceiving(me, c1, C1::endReceive)
-  |~| 
+  [] 
   C1::beginSendWithin.me?x -> LinSendingWithin(me, x, c1, C1::endSendWithin)
-  |~|
+  []
   C1::beginReceiveWithin.me -> LinReceivingWithin(me, c1, C1::endReceiveWithin)
-  |~|
+  []
   C1::beginClose.me -> close.me.c1 -> C1::endClose.me -> ChanThreadLin(me)
-  |~|
-  STOP
 
 -- Thread me sending x on c; endSend.me will signal the end of the sending. 
 LinSending(me, x, c, endSend) = 
@@ -219,24 +192,11 @@ LinReceiving(me, c, endReceive) =
 -- Thread me within sendWithin(x) on c; endSendWithin.me will signal the end
 -- of the sending.
 LinSendingWithin(me, x, c, endSendWithin) = 
-  ( sync.me?other:others(me)!c!x -> endSendWithin.me.SendSuccess -> 
-      ChanThreadLin(me)
-    [] 
-    altSync?altThread!me!c!x -> endSendWithin.me.SendSuccess -> ChanThreadLin(me)
-    []
-    isClosed.me.c -> endSendWithin.me.Closed -> ChanThreadLin(me)
-  )
+  LinSending(me, x, c, endSendWithin)
   [> endSendWithin.me.Timeout -> ChanThreadLin(me)
 
 LinReceivingWithin(me, c, endReceiveWithin) = 
-  ( sync?other:others(me)!me!c?x -> 
-      endReceiveWithin.me.ReceiveSuccess.x -> ChanThreadLin(me) 
-    []
-    altSync.me?altThread!c?x -> endReceiveWithin.me.ReceiveSuccess.x -> 
-      ChanThreadLin(me) 
-    [] 
-    isClosed.me.c -> endReceiveWithin.me.Closed -> ChanThreadLin(me)
-  )
+  LinReceiving(me, c, endReceiveWithin)
   [> endReceiveWithin.me.Timeout -> ChanThreadLin(me) 
 
 -- Alphabet of ChanThreadLin(me)
@@ -265,13 +225,3 @@ Spec = (
 assert Spec [T= System
 
 assert Spec [F= System 
-
--- tr = 
---   C1::beginClose.T2 -> (
---     A1::beginAlt.AltThread -> isAltClosed -> 
---     A1::endAlt.AltThread.A1::AltAbort -> STOP 
---     |~| STOP
---   )
---   |~| STOP
-
--- assert tr [F= Spec [| Events |] tr

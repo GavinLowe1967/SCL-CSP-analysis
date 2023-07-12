@@ -124,7 +124,7 @@ more detail below.  Some details of the definitions are unobvious, and were
 found by trial and error: their correctness is evidenced by the subsequent
 successful refinement checks.
 
-%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% RegLin
 
 \begin{figure}
 \begin{cspm}
@@ -162,6 +162,8 @@ RegLinDeregOut(alt, index) =
 
 %%%%%
 
+\paragraph{The {\cspmstyle RegLin} process.}
+
 The |RegLin| process is defined in Figure~\ref{fig:RegLin}; it accepts the
 relevant |begin| events, with each function being handled by a different
 subsidiary process. 
@@ -180,7 +182,7 @@ The process |RegLinRegIn(alt, index)| models the linearisation of a call of
 \item A registration that finds the channel closed is modelled by an event
   |isClosed.AltThread|.
 
-\item In incorrect registration, where an alt is already registered, is
+\item An incorrect registration, where an alt is already registered, is
   modelled by the event |registerError|.
 \end{itemize}
 % 
@@ -192,7 +194,7 @@ The process |RegLinRegOut(alt, index)| models the linearisation of a call of
 |RegLin|\-|DeregIn(alt, index)| and |RegLinDeregOut(alt, index)| model
 deregistrations, including the possibility of an erroneous deregistration.
 
-%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Lin
 
 \begin{figure}
 \begin{cspm}
@@ -229,6 +231,8 @@ ReceivingLin(t, endChan, timed) =
 
 %%%%%
 
+\paragraph{The {\cspmstyle Lin} processes.}
+
 The |Lin(t)| processes are defined in Figure~\ref{fig:Lin}.  Each accepts the
 relevant \SCALA{begin} and \SCALA{end} events from channel-thread~|t|, with
 most of the functions modelled by subsidiary processes.
@@ -236,7 +240,8 @@ most of the functions modelled by subsidiary processes.
 The process |SendingLin| models the linearisation of the \SCALA{send} and
 \SCALA{sendWithin} functions; the parameter |timed| indicates the latter case.
 The subprocess |Success| indicates a successful send.  There are several
-cases.
+cases.  The |ChanState| process synchronises on the relevant events to ensure
+an appropriate one is selected.
 %
 \begin{itemize}
 \item A synchronisation with another channel thread~|t'| is represented by the
@@ -274,7 +279,7 @@ call \SCALA{portClosed} on a registered port (modelled within |ChanState|),
 and wait for that call to return; the event |isClosed.t| becomes available at
 that point.
 
-%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% ChanState
  
 \begin{figure}
 \begin{cspm}
@@ -321,6 +326,8 @@ ChanState(regStatus) =
 
 %%%%%
 
+\paragraph{The {\cspmstyle ChanState} process.}
+
 The |ChanState| process is in Figure~\ref{fig:ChanState}.  The parameter
 |regStatus| records the current registration status, and is taken from the
 following type.
@@ -351,7 +358,7 @@ Several possibilities are available when there is no registered alt.
 \item A \SCALA{deregisterIn} or \SCALA{deregisterOut} operation may happen;
   which has no effect.  These events can arise if an alt is trying to
   deregister concurrently with an unsuccessful call back of
-  \SCALA{maybeReceive} or \SCALA{maybeSend}, which clears the registration
+  \SCALA{maybeReceive} or \SCALA{maybeSend} that clears the registration
   status. 
 \end{itemize}
 
@@ -449,6 +456,38 @@ implementation, allowing threads to call appropriate operations.  We can then
 verify that this system refines |ChannelSpec|$_F$ and |ChannelSpec|$_D$ in the
 relevant models.
 
-\framebox{**} Number of threads, timing.  FD check faster than F check. 
 
+\begin{window}[0,r,{
+%
+\begin{tabular}{\|cccc\|}
+Model & Threads & States  & Time\\
+F & 4 & 236M & 530s \\
+FD & 4 & 176M & 105s 
+\end{tabular}
+},]
+%
+The table to the right gives statistics about the number of states explored
+and the times taken to perform these checks, in different models; in each
+case, one thread was an alt-thread and the remainder where channel-threads.
+\framebox{***} With five threads, the check in the failures-divergences model
+runs out of memory post compilation.
+\end{window}
  
+Interestingly, the failures-divergences check is faster than the
+stable-failures model: normally, it is the other way round.  The difference in
+time is because of the time taken to normalise the specification.  This step
+builds an automaton equivalent to the specification, but with the property
+that after each trace, a unique state is reached; if, after trace~$tr$, the
+specification can reach states~$st_1,\ldots,st_k$, then the normalised
+automaton contains a corresponding state equivalent to $st_1$ \CSPM{\|~\|}
+\ldots \CSPM{\|~\|} $st_k$.  Consider the case where the trace~$tr$ might have
+included an error event.  In the failures-divergences model, the resulting
+normalised state includes |DIV|, and the normalisation algorithm identifies
+that the normalised state is precisely equal to |DIV|, and so does not need to
+expand its successor states.  However, in the stable-failures model, this is
+not the case, so the normalisation algorithm does construct those successor
+states.  It is straightforward to show that the failures-divergences check
+implies the corresponding stable-failures check, because |IdealisedChan| is
+divergence-free.
+
+

@@ -270,7 +270,17 @@ module IdealisedChan(size)
      
   -- Error events
   Errors = {| registerError, deregisterInError, deregisterOutError |}
-  
+
+  -- Compression
+  transparent normal, sbisim, diamond
+  -- compress(P) = P -- normal(P) -- sbisim(diamond(P))
+  compress(P) = P --  sbisim(diamond(P))
+
+  -- Prioitise Errors over others.  This doesn't seem to help 
+  external prioritise
+  pri(P) = P
+  -- pri(P) = prioritise(P, <Errors, diff(Events,Errors)>)
+
 exports
 
   -- Definition of the interface of the channel.  Shared with SyncChan.
@@ -282,7 +292,7 @@ exports
           {| registerInSync, registerInWait, registerOutSync, registerOutWait, 
              deregisterIn, deregisterOut, close, isClosed,
              sync, commit, timeout, callMaybeReceive, callMaybeSend |}
-    within ChannelSpec0 \ internals
+    within compress(pri(ChannelSpec0) \ internals)
 
   -- If an error event happens, allow arbitrary behaviour.  The definitions
   -- are different for the stable failures and failures-divergences models.

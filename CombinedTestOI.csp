@@ -1,4 +1,0 @@
-include "CombinedTest.csp"
-
--- The list of branches in the alt
-branches =  <OutPortBranch.c1, InPortBranch.c2>

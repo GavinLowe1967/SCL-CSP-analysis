@@ -1,26 +1,26 @@
 -- A test on the combination of an alt and two channels.
--- This file needs to be included in a file that defines the list of branches.
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
-datatype ThreadID = AltThread | T1 | T2 -- | T3 -- | T4
+datatype ThreadID = AltThread | T1 | T2 | T3 
 
 -- others(t) = diff(ChanThreads, {t})
 
 ChanThreads =  diff(ThreadID, {AltThread})
 
 -- Identities of channels
-datatype ChanID = Chan1 | Chan2 -- c1 | c2
+datatype ChanID = Chan1 | Chan2 
 
 include "Types.csp"
 
 -- Identities of Alts
 datatype AltID = Alt1 -- | Alt2
 
--- The list of branches in the alt.  The main file needs to include a
--- definition like one of the following.
--- branches =  <InPortBranch.c1, InPortBranch.c2>
--- branches =  <InPortBranch.c1, OutPortBranch.c2>
+-- The list of branches in the alt.  Select one of the following.
+-- branches =  <InPortBranch.Chan1, InPortBranch.Chan2>
+branches =  <InPortBranch.Chan1, OutPortBranch.Chan2>
+-- branches =  <OutPortBranch.Chan1, InPortBranch.Chan2>
+-- branches =  <OutPortBranch.Chan1, OutPortBranch.Chan2>
 
 size = length(branches)
 

@@ -11,7 +11,11 @@
 \unScalaMid  % We need "|" to have standard meaning when cspm.sty is read
 \usepackage{cspm}
 
+\def\scalasize{\footnotesize}
+\def\scalaInlineSize{\footnotesize}
+
 \def\cspmsize{\footnotesize}
+%\def\cspmInlineSize{\footnotesize}
 \def\cspmDisplaySize{\footnotesize}
 \def\CSPMMR#1{\mbox{\cspmstyle #1}}
 %\def\cspmfont{\itshape}
@@ -21,6 +25,12 @@
 %\inlineCSP
 \cspMid
 
+\usepackage{picinpar}
+
+\def\tick{
+  \tikz\fill[scale=0.4](0,.35) -- (.25,0) -- (0.8,.7) -- (.25,.15) -- cycle;
+} 
+\lstset{columns=fullflexible}
 \def\topfraction{0.85}
 \renewcommand{\floatpagefraction}{0.75}
 \sloppy
@@ -33,9 +43,8 @@
 
 \input{introduction}
 
-\section{Overview of CSP} 
-\label{sec:csp}
-\framebox{\ldots}
+\input{csp}
+
 
 \input{syncchan} % Basic model of SyncChan
 
@@ -52,6 +61,12 @@
 \input{idealisedAlt}
 
 \input{combiningIdealised}
+
+\section{Conclusions}
+\label{sec:conc}
+
+\bibliographystyle{alpha}
+\bibliography{SCL-CSP}
 
 \appendix
 

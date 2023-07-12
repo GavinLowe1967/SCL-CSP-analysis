@@ -1,0 +1,115 @@
+\section{Overview of CSP} 
+\label{sec:csp}
+
+In this section we give a brief overview of the syntax for the fragment of CSP
+that we will be using in this paper.  We then review the relevant aspects of
+CSP semantics, and the use of the model checker FDR in verification.  For more
+details, see~\cite{awr:UCS}.
+
+CSP is a process algebra for describing programs or {\em processes}\/ that
+interact with their environment by communication.  Processes communicate via
+atomic \emph{events}.  Events often involve passing values over channels; for
+example, the event \CSPM{c.3} represents the value~\CSPM{3} being passed on
+channel~\CSPM{c}.  Channels may be declared using the keyword \CSPM{channel};
+for example, \CSPM{channel c : Int} declares \CSPM{c} to be a channel that
+passes an \CSPM{Int}.  (In this paper, the word ``channel'' can mean either an
+SCL channel or a CSP channel; the intention should be clear from the context.)
+The notation \CSPM{\{|c|\}} represents the set of events over
+channel~\CSPM{c}.
+
+The simplest process is \CSPM{STOP}, which represents a deadlocked process that
+cannot communicate with its environment.  The process |SKIP| is a process that
+terminates immediately, represented by the distinguished event~$\tick$. 
+
+The process \CSPM{CHAOS(A)} can perform any events from the set~|A|, or can
+refuse any of those events; however, it cannot diverge.  Thus it allows
+arbtrary non-divergent behaviour over~|A|.  By contrast, \CSPM{DIV} is a
+divergent process that performs an unbounded number of internal $\tau$~events.
+
+The process \CSPM{a -> P} offers its environment the event~\CSPM{a}; if the
+event is performed, the process then acts like~\CSPM{P}.  The process
+\CSPM{c?x -> P} is initially willing to input a value \CSPM{x} on
+channel~\CSPM{c}, i.e.~it is willing to perform any event of the
+form~\CSPM{c.x}; it then acts like~\CSPM{P} (which may use~\CSPM{x}).
+Similarly, the process \CSPM{c?x:X -> P} is willing to input any
+value~\CSPM{x} from set~\CSPM{X} on channel~\CSPM{c}, and then act
+like~\CSPM{P}.  Within input constructs, we use ``\CSPM{_}'' as a wildcard:
+\CSPM{c?_} indicates an input of an arbitrary value.  The process \CSPM{c!v ->
+  P} outputs value \CSPM{v} on channel~\CSPM{c}.  Inputs and outputs may be
+mixed within the same communication, for example \CSPM{c?x!v -> P}.
+
+The process \CSPM{P [] Q} can act like either \CSPM{P} or~\CSPM{Q}, the choice
+being made by the environment: the environment is offered the choice between
+the initial events of~\CSPM{P} and~\CSPM{Q}.  By contrast, \CSPM{P |~| Q} may
+act like either~\CSPM{P} or~\CSPM{Q}, with the choice being made
+nondeterministically, not under the control of the environment.  \CSPM{**[]
+  x:X @ P(x)} is an indexed external choice, with the choice being made over
+the processes \CSPM{P(x)} for~\CSPM{x} in~\CSPM{X}.  Likewise, 
+\CSPM{**|~| x:X @  P(x)} represents a nondeterministic choice over the~\CSPM{P(x)}.
+
+The process \CSPM{if b then P else Q} represents a conditional. 
+The process \CSPM{b & P} is a guarded process, that makes \CSPM{P} available
+only if \CSPM{b} is true; it is equivalent to \CSPM{if b then P else STOP}.
+
+The process |P; Q| represents a sequential composition of~|P| and~|Q|:
+initially, |P| is run, but when it terminates (as indicated by event~$\tick$),
+|Q| is run. 
+
+The process \CSPM{P [|E|> Q} 
+% {]}
+(sometimes denoted $\CSPMM{P} \mathbin{\theta_E} \CSPMM{Q}$) denotes a
+  throw-catch mechanism: initially, |P| is executed, but if it performs an
+  event from~|E|, control is passed to~|Q|: the events from~|E| can be thought
+  of as exceptions, and |Q| as an exception handler.
+
+The process \CSPM{P [|A|] Q} runs \CSPM{P} and~\CSPM{Q} in parallel,
+synchronising on events from~\CSPM{A}.  The process \CSPM{**|| x:X @ [A(x)]
+  P(x)} represents an indexed parallel composition, where, for each \CSPM{x}
+in \CSPM{X},\, \CSPM{P(x)} is given alphabet~\CSPM{A(x)}; processes
+synchronize on events in the intersection of their alphabets.  
+% By contrast, in
+% the process \CSPM{[|A|] x:X @ P(x)}, all processes \CSPM{P(x)} synchronize on
+% events from~\CSPM{A}, but performs other events without synchronization. 
+The process \CSPM{P ||| Q} interleaves \CSPM{P} and \CSPM{Q}, i.e.\ runs them
+in parallel with no synchronisation.  \CSPM{**||| x:X @ P(x)} represents an
+indexed interleaving.
+
+The process \CSPM{P \\ A} acts like~\CSPM{P}, except the events from~\CSPM{A}
+are hidden, i.e.~turned into internal $\tau$~events.
+
+CSP, as implemented in the model checker FDR, is supported by a functional
+sublanguage, roughly equivalent to Haskell, but without type classes, and
+augmented with sets and mappings. 
+ 
+A \emph{trace} of a process is a sequence of (visible) events that a process
+can perform.  We say that \CSPM{P} is refined by~\CSPM{Q} in the traces model,
+written \CSPM{P [T= Q}, if every trace of~\CSPM{Q} is also a trace
+of~\CSPM{P}\@.  FDR can test such refinements automatically, for finite-state
+processes.  Typically, \CSPM{P} is a specification process, describing what
+traces are acceptable; this test checks whether \CSPM{Q} has only such
+acceptable traces.  
+
+Traces refinement tests can only ensure that no ``bad'' traces can occur: they
+cannot ensure that anything ``good'' actually happens; for this we need the
+stable failures or failures-divergences models.  A \emph{stable failure} of a
+process~\CSPM{P} is a pair $(tr,X)$, which represents that \CSPM{P} can
+perform the trace~$tr$ to reach a stable state (i.e.~where no internal events
+are possible) where $X$ can be refused, i.e., where none of the events of~$X$
+is available.  We say that \CSPM{P} is refined by~\CSPM{Q} in the stable
+failures model, written \CSPM{P [F= Q}, if every trace of~\CSPM{Q} is also a
+  trace of~\CSPM{P}, and every stable failure of~\CSPM{Q} is also a stable
+  failure of~\CSPM{P}.
+
+We say that a process \emph{diverges} if it can perform an infinite number of
+internal (hidden) events without any intervening visible events.  We do not
+use the full power of the failures-divergences model in this paper.  The only
+failures-divergences refinement checks we use are of the form \CSPM{P [FD= Q}
+  where |P| is divergence-free; this tests that |Q| is also divergence-free,
+  and that \CSPM{P [F= Q}.
+
+
+%% If  \CSPM{P [F= Q} and \CSPM{Q} is divergence-free, then if
+%% \CSPM{P} can stably offer an event~\CSPM{a}, then so can~\CSPM{Q}; hence
+%% such tests can be used to ensure \CSPM{Q} makes useful progress.
+
+

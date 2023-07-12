@@ -68,11 +68,13 @@ The monitor module provides an interface to client processes corresponding to
 the different monitor operations.
 
 Each variable in the implementation of the channel is modelled by a CSP
-process, with CSP channels to allow it to be read or written.
+process, with CSP channels to allow the variable's value to be read or
+written.
 
-Each of the send and receive operations can then be straightforwardly
-translated into a CSP process that performs the operations on the monitor and
-variables, following the Scala code.  
+Each of the send (``|!|'') and receive (``|?|'') operations can then be
+straightforwardly translated into a CSP process that performs the operations
+on the monitor and variables, following the Scala code.  (The appendix
+describes various techniques that we found useful in this modelling.)
 
 The Scala code uses several assertions.  We model these by having the CSP
 process diverge if the property does not hold.  Later, we use FDR to verify
@@ -89,12 +91,12 @@ Each operation is framed by \CSPM{begin} and \CSPM{end} events:
 
 \item Likewise the events \CSPM{beginReceive.t} and
   \CSPM{endReceive.t.ReceiveSuccess.x} represent thread~\CSPM{t} calling and
-  returning from a call of the receive operation that successfully receives
-  the value~\CSPM{x}.
+  returning from an invocation of the receive operation that successfully
+  receives the value~\CSPM{x}.
 \end{itemize}
 %
-Inside the module is a process corresponding to each thread, which accepts the
-\CSPM{begin} events, simulates the operation, and then performs
+Inside the channel module is a process corresponding to each thread, which
+accepts the \CSPM{begin} events, simulates the operation, and then performs
 the appropriate \CSPM{end} event.  The module encapsulates this so only the
 \CSPM{begin} and \CSPM{end} events are visible.  A process outside the module
 can simulate calling the operation by synchronising on those events.
@@ -104,8 +106,8 @@ can simulate calling the operation by synchronising on those events.
 \subsection{Analysing the basic channel}
 
 We now analyse the basic model of the channel.  We start by describing
-abstractly the required property, and then describe how to capture it using
-CSP.
+abstractly the property that we expect to hold, and then describe how to
+capture it using CSP.
 
 Each invocation of the send operation should synchronise with a corresponding
 invocation of receive: the two invocations should overlap in time, and
@@ -122,7 +124,7 @@ property for concurrent datatypes, where invocations of operations should
 appear to take place in a one-at-a-time order, with each between the begin and
 end of that invocation.)
 
-The diagram below illustrates the idea, which illustrates a particular history
+The diagram below illustrates the idea; it illustrates a particular history
 of a channel (or a trace of the CSP model).
 %
 %\begin{figure}
@@ -132,9 +134,9 @@ of a channel (or a trace of the CSP model).
 \draw[|-|] (0,0) -- node[above] {$\sm{send}(A)$} (4,0);
 \draw[|-|] (4.5,0) -- node[above] {$\sm{send}(B)$} (8.5,0);
 \draw[|-|] (0.5,-1) -- node[above] {$\sm{send}(A)$} (8,-1);
-\draw[|-|] (1,-2) -- node[above] {$\sm{receive}\::A$} (3,-2);
-\draw[|-|] (3.5,-2) -- node[above] {$\sm{receive}\::B$} (6.5,-2);
-\draw[|-|] (7,-2) -- node[above] {$\sm{receive}\::A$} (9,-2);
+\draw[|-|] (1,-2) -- node[above] {$\sm{receive}\mathord{:}A$} (3,-2);
+\draw[|-|] (3.5,-2) -- node[above] {$\sm{receive}\mathord{:}B$} (6.5,-2);
+\draw[|-|] (7,-2) -- node[above] {$\sm{receive}\mathord{:}A$} (9,-2);
 \draw (1.9,0) \X; \draw (1.9,-2) \X; 
 \draw[dashed] (1.9,0) -- (1.9,-2); % sync 1 and 3
 \draw (5.6,0) \X; \draw (5.6,-2) \X; 
@@ -190,8 +192,8 @@ Lin(t) =
 %
 When sending, the thread can synchronise with any other thread~|other|,
 passing its value~|x|.  When receiving, the thread can synchronise with any
-other thread, accepting its value~|x|; this |x| is subsequently returned by
-the invocation.
+other thread, accepting that thread's value~|x|; this |x| is subsequently
+returned by the invocation.
 
 We combine the |Lin| processes in parallel, with their natural
 alphabets, so the linearisers for threads $\CSPMM{t}_1$ and $\CSPMM{t}_2$
@@ -241,4 +243,3 @@ for refinement in the failures-divergences model.
 assert Spec [FD= System
 \end{cspm}
 
-\framebox{**} Number of threads.

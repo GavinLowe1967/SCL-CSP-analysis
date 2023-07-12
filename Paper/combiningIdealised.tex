@@ -16,12 +16,12 @@ that the system does not perform any of the error events
 from~$\CSPMM{Errors}_A \union \CSPMM{Errors}_C$: each component follows the
 alt protocol assuming the other does. 
 
-Recall that we earlier considered processes |ChannelSpec| and |AltSpec|, that
+Recall that we earlier considered processes |ChannelSpec| and |AltSpec|, which
 allowed arbitrary behaviours after an error event.  The fact that the
 combination of |IdealisedChannel|s and |IdealisedAlt| does not perform any
 error events means that the same combination of |ChannelSpec|s and |AltSpec|
-would behave identically, so that combination would also pass the tests in the
-previous paragraph (although the checks would take slightly longer).  
+would behave identically; so that combination would also pass the tests in the
+previous paragraph (although the checks would take slightly longer).
 
 Further, we earlier showed that the models of the implementations refine
 |ChannelSpec| and |AltSpec|.  This then implies that the same combination of

@@ -3,10 +3,10 @@
 
 \inlineScala
 
-We now describe the implementation and modelling of alts.  We start by
-describing the high-level interactions between an alt and channels, and then
-go on to describe how those interactions are implemented within alts and
-channels, and outline how they are modelled in CSP.
+We now consider alts.  We start by describing the high-level interactions
+between an alt and channels, and how those interactions are implemented within
+alts and channels.  We then outline how these interactions are modelled in
+CSP, and describe a direct analysis of an alt and associated channels.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -25,18 +25,18 @@ def registerIn(alt: AltT, index: Int, iter: Int): RegisterInResult[A]
 %
 on each of its inports, where |alt| is a reference to the calling alt, |index|
 is the index of the branch within the alt, and |iter| is an iteration number
-(used only for assertions).  It receives a result of type
+(used only for assertions).  The function returns a result of type
 |RegisterInResult[A]|, where |A| is the type of data passed by the port, of
 one of the following forms.
 %
 \begin{description}
-\item[{\scalastyle RegisterInSuccess(x)}:] the port was willing to
+\item[\rm{\scalastyle RegisterInSuccess(x)}:] the port was willing to
   communicate, and the alt has received~|x| from it;
 
-\item[{\scalastyle RegisterInWaiting}:] the port is not currently willing to
+\item[\rm{\scalastyle RegisterInWaiting}:] the port is not currently willing to
   communicate (but the registration has been recorded); 
 
-\item[{\scalastyle RegisterInClosed}:] the port has been closed.
+\item[\rm{\scalastyle RegisterInClosed}:] the port has been closed.
 \end{description}
 %
 Similarly, the alt calls a function
@@ -46,16 +46,17 @@ def registerOut(alt: AltT, index: Int, iter: Int, value: () => A): RegisterOutRe
 \end{scala}
 on each of its outports, where |alt|, |index| and |iter| are as for
 |registerIn|, and |value| is a computation that, when evaluated, produces the
-value to be sent.  It receives a result of one of the following forms.
+value to be sent.  The function returns a result of one of the following
+forms.
 %
 \begin{description}
-\item[{\scalastyle RegisterOutSuccess}:] the port was willing to
+\item[\rm{\scalastyle RegisterOutSuccess}:] the port was willing to
   communicate, and the alt has sent it a value;
 
-\item[{\scalastyle RegisterOutWaiting}:] the port is not currently willing to
+\item[\rm{\scalastyle RegisterOutWaiting}:] the port is not currently willing to
   communicate (but the registration has been recorded); 
 
-\item[{\scalastyle RegisterOutClosed}:] the port has been closed.
+\item[\rm{\scalastyle RegisterOutClosed}:] the port has been closed.
 \end{description}
 
 If one of the registrations is successful, the alt deregisters from the
@@ -222,9 +223,10 @@ it did continue to hold the lock, and consider the case that the alt-thread is
 trying to deregister from channel~$c$, at the same time that a channel-thread
 is trying to perform a callback from~$c$: the channel-thread holds the lock
 on~$c$, so the deregistration would be blocked; but the alt-thread holds the
-lock on the alt, so the callback would be blocked.
+lock on the alt, so the callback would be blocked.  The alt-thread therefore
+releases the lock during deregistration. 
 
-The implementation uses a variable |done| that gets set to |true| when a
+The implementation uses a variable |done| that is set to |true| when a
 branch is found that is willing to communicate, either during registration or
 as the result of a callback.  If a callback of |maybeSend| or |maybeReceive|
 finds that |done| is |true|, it can return a negative result.  Otherwise, it
@@ -280,20 +282,29 @@ CSP\@.  Much of the construction of the model follows a similar form to the
 model of a channel.  We highlight the main differences. 
 
 A JVM monitor is modelled by a CSP module, in a similar way to an SCL monitor.
-One difference, however, concerns a bug in the implementation of JVM monitors:
-a thread that is waiting for a signal may resume, even though it has received
-no signal!  This is known as a \emph{spurious wakeup}.  The implementation of
-an alt guards against spurious wakeups by performing suitable checks when
-resuming after a wait, and waiting again if appropriate.  
+A process records which thread, if any, currently holds the lock, and which
+threads are currently waiting for a signal.  One difference, however, concerns
+a bug in the implementation of JVM monitors: a thread that is waiting for a
+signal may resume, even though it has received no signal!  This is known as a
+\emph{spurious wakeup}.  The implementation of an alt guards against spurious
+wakeups by performing suitable checks when resuming after a wait, and waiting
+again if appropriate.
 
-Our model reflects the possibility of spurious wakeups, allowing a waiting
-thread~|t| to resume either as the result of a signal, or a spurious wakeup,
-modelled by the event |spuriousWakeup.t|.  We run this in parallel with a
-\emph{regulator process} that nondeterministically chooses whether or not to
-allow a spurious wakeup.  This last point is important: if we allowed
-unrestricted spurious wakeups, there is a danger that our analysis would seem
-to show that suitable progress properties are satisfied, when in reality the
-system can get stuck unless there are sufficient spurious wakeups.
+Our CSP model of a monitor reflects the possibility of spurious wakeups,
+allowing a waiting thread~|t| to resume either as the result of a signal, or a
+spurious wakeup, modelled by the event |spuriousWakeup.t|.  We run this
+monitor process in parallel with a \emph{regulator process} that
+nondeterministically chooses whether or not to allow a spurious wakeup.  This
+last point is important: if we allowed unrestricted spurious wakeups, there is
+a danger that our analysis would seem to show that suitable progress
+properties are satisfied, when in reality the system can get stuck unless
+there are sufficient spurious wakeups.
+
+We choose not to model the guards of alt branches, for we believe that doing
+so would add a lot of complexity to the model, without adding much assurance.
+The part of the implementation concerning guards is rather straightforward: a
+branch whose guard is false is simply ignored.  We think it is best to
+concentrate on the more difficult parts of the implementation.
 
 In the model of a channel, the registration and deregistration functions are
 wrapped in suitable |begin| and |end| events.  In the model of an alt, the
@@ -307,8 +318,8 @@ suitable |begin| and |end| events.  In the model of a channel, the
 channel-thread performs these events, and reacts to the result in the |end|
 event.  
 
-Each use of the alt is framed with events |beginAlt.me| and |endAlt.me.result|
-where |result| is of one of the following forms.
+Each use of the alt of alt-thread~|t| is framed with events |beginAlt.t| and
+|endAlt.t.result| where |result| is of one of the following forms.
 %
 \begin{itemize}
 \item |AltSend.i.x|, representing the sending of value~|x| on the port

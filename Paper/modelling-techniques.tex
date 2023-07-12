@@ -85,7 +85,7 @@ For example, Scala code \SCALA{if(result == None && status != Filled)\{...\}
 %
 \begin{cspm}
 let Test(k) = if result==None then getStatus.me?s -> k(s != Filled) else k(false)
-within If(Test,...,...)
+within If(Test,£\ldots£,£\ldots£)
 \end{cspm}
 %
 Likewise, a \SCALA{while} loop can be captured using the following macro.

@@ -162,7 +162,7 @@ AltLin = beginAlt.AltThread -> beginRegistration -> Register(0)
 Register(i) = 
   if i==size then endRegistration?ac -> 
     if ac then endAlt.AltThread.AltAbort -> AltLin else Waiting
-  else Register1(i, nth(branches, i))
+  else Register1(i, nth(branches,i))
   
 Register1(i, InPortBranch.c) = 
   beginRegisterIn.AltThread.c.i -> (

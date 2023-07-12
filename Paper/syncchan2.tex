@@ -24,9 +24,10 @@ When a thread calls |send| or |receive|, if |isChanClosed| is set, it throws a
 performs a similar check when it receives a signal.  
 
 If a receiving thread waits on |slotFull|, when it receives a signal, it first
-checks whether |status| holds |Filled|.  If so, it continues as above: thus we
-prioritise completing the communication over checking whether the channel has
-been closed (this seems necessary for correct interaction with alts).
+checks whether |status| holds |Filled|.  If so, it continues as described
+earlier: thus we prioritise completing the communication over checking whether
+the channel has been closed (this seems necessary for correct interaction with
+alts).
 %% More precisely, an alt might have filled the slot, which implies it has
 %% performed the computation to calculate the value: at this point, it is
 %% committed to the communication. 
@@ -34,14 +35,16 @@ Otherwise, it checks whether the channel has been closed, and if so throws an
 exception; otherwise, it waits again on |slotFull|.
 
 If a sending thread waits on |continue|, when it receives a signal, it 
-first checks whether |status| holds |Read|, and if so continue as described
+first checks whether |status| holds |Read|, and if so continues as described
 earlier.  Otherwise, it must be the case that |isChanClosed| has been set (the
 implementation asserts this, and the analysis below checks this).  However, if
 there is a receiver waiting (as recorded by |receiversWaiting|), then that
 receiver will eventually return the value being sent, so the sending thread
 should also return successfully.  If there is no waiting receiver, the sending
-the thread throws a |Closed| exception.  The precise order of checks is thus
-rather subtle: this is where the earlier implementation went wrong.
+thread throws a |Closed| exception.  The precise order of checks is thus
+rather subtle; this is where the earlier implementation went wrong: when the
+waiting thread received a signal, it first checked |isChanClosed|, which can
+go wrong if a receiving thread has received the sending thread's value. 
 
 %%%%%%%%%% Model
 
@@ -55,7 +58,7 @@ and |endClosed|.
 
 %%%%%%%%%% Testing
 
-To analyse this extended model, we adapt the process |System| from earlier to
+To analyse this extended model, we adapt the |System| process from earlier to
 also allow threads to close channels.  
 
 The previous model of the channel was (in the terminology
@@ -74,7 +77,7 @@ between sends and receives should take place before the linearisation point of
 the close; and sends and receives that return |Closed| should be linearised
 after the close.
 
-We use an event |close.t| to represent the linearisation point of a
+We use a CSP event |close.t| to represent the linearisation point of a
 \SCALA{close} operation by thread~|t|.  Further, we use an event |closed.t| to
 represent the linearisation point of a send or receive operation by thread~|t|
 that returns |Closed|, because it finds the channel is closed.
@@ -147,7 +150,7 @@ thread waits until either it receives a signal, or the time is elapsed; the
 operation returns a boolean indicating whether a signal was received.  The
 timed send and receive operations are based around this. 
 
-The |sendWithin(x, duration)| operation initially waits on |slotEmptied| until
+The |sendWithin(duration)(x)| operation initially waits on |slotEmptied| until
 either |status| holds |Empty| or the channel is closed (which it rechecks when
 it receives a signal), or the deadline is reached.  If the channel is closed,
 it throws a |Closed| exception.  If it timedout, it returns |false|.
@@ -215,3 +218,54 @@ ReceivingWithinLin(me, endChan) =
 Further, we adapt the |ChanSpec| process to allow |timeout| events only before
 the channel is closed.  The rest of the construction and checks are then as
 before. 
+
+%% \par
+
+%% \medskip
+
+%% \noindent
+%% %\let\pindent\parindent
+%% \begin{minipage}{84mm}
+%% %\null\hspace*{\parindent}
+%% %\quad
+%% \hspace{8mm}
+
+\begin{window}[0,r,{
+%
+\begin{tabular}{\|cccc\|}
+Model & Threads & States  & Time\\
+FD & 3  & 1.23M & 3.5s\\
+FD & 4 & 92.5M  & 43s \\
+F & 5 & 7.22B & 35min
+\end{tabular}
+},]
+%
+The table to the right gives statistics about the number of states explored
+and the times taken to perform these checks, in different models, for
+different numbers of threads (in each case, using two data values).  All
+experiments in this paper were performed on a 32-core server (two 2.1GHz
+Intel(R) Xeon(R) Gold 6130 CPUs with hyperthreading enabled, with 512GB of
+RAM).  The check with 5 threads in the failures-divergences model was beyond
+the limits of this machine.
+\end{window}
+
+%% \unitlength1cm
+%% \begin{picture}(3,1.4)
+%% \put(0.7,0.7){\circle*{0.2}} \put(0.7,0.7){\circle{1.2}}
+%% \put(0.7,0.7){\vector(0,1){0.6}} \put(2.5,0.7){\circle*{0.5}}
+%% \end{picture}
+%% },{Kreise und Pfeile}]
+%% Was leisten nun diese Macros ...
+%% ... sieht hierbei wie folgt aus:
+%% \end{figwindow}
+%% The table to the right gives statistics about the times taken to perform these
+%% checks, in the failures-divergences model, for different numbers of threads
+%% (in each case, using two data values).
+%% \end{minipage}
+%% %
+%% \quad
+%% \begin{tabular}{@{}crr@{}}
+%% Threads & Time & States \\
+%% 3 & 3.5s & 1.23M \\
+%% 4 & 43s & 92.5M 
+%% \end{tabular}
