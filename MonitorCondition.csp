@@ -5,7 +5,7 @@ module MonitorCondition
   -- Events for monitor actions
   channel acquire, release: ThreadID
   channel await, timedAwait: ThreadID . ConditionID
-  channel signal: ThreadID . ConditionID . ThreadID
+  -- channel signal: ThreadID . ConditionID . ThreadID -- exported
   channel signalAll: ThreadID . ConditionID
   -- timeout from a timed wait
   channel timeout: ThreadID . ConditionID  
@@ -84,6 +84,7 @@ module MonitorCondition
       Locked(t, mapUpdate(waitingMap, c, {}), mapUpdate(timedWaitingMap, c, {}))
 
 exports
+  channel signal: ThreadID . ConditionID . ThreadID
 
   events = 
     {| acquire, release, await, signal, signalAll, timedAwait, timeout |}

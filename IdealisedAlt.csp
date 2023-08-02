@@ -22,8 +22,8 @@ module IdealisedAlt
   
   -- Linearisation point for maybeReceive, maybeSend and portClosed, including
   -- erroneous calls.
-  channel maybeReceive : ChanThreads.Index.Data.Bool
-  channel maybeSend : ChanThreads.Index.Option
+  --channel maybeReceive : ChanThreads.Index.Data.Bool
+  --channel maybeSend : ChanThreads.Index.Option
   channel portClosed : ChanThreads . Index
   channel maybeReceiveError, maybeSendError, portClosedError : ChanThreads.Index
   
@@ -330,7 +330,7 @@ module IdealisedAlt
   
   -------- Combined spec
   
-  transparent normal
+  -- transparent normal
   
   -- Combine AltLin and RegTracker
   Spec00 = 
@@ -343,11 +343,32 @@ module IdealisedAlt
   -- Add Lins
   Spec0 = 
     normal(Spec00) [ union(alphaAltLin, alphaRegTracker) || alphaLins ] Lins
+
+  -- Construct in different way
+  Spec10 = 
+    (AltLin [ alphaAltLin || alphaRegTracker ] RegTracker)
+    [ union(alphaAltLin, alphaRegTracker) || alphaLins ] 
+    Lins
   
   -- Error events
   Errors = {| maybeReceiveError, maybeSendError, portClosedError |}
   
+  -- Compression
+  transparent normal, sbisim, diamond
+  -- compress(P) = sbisim(diamond(P)) 
+  compress(P) =  normal(P) --
+  --compress(P) = P --  sbisim(diamond(P))
+
+  -- Prioitise Errors over others.
+  external prioritise
+  -- pri(P) = P
+  pri(P) = prioritise(P, <Errors, diff(Events,Errors)>)
+
 exports
+
+  -- Linearisation point for maybeReceive, maybeSend and portClosed
+  channel maybeReceive : ChanThreads.Index.Data.Bool
+  channel maybeSend : ChanThreads.Index.Option
 
   -- The interface.  Shared with an Alt
   include "AltInterface.csp"
@@ -355,15 +376,36 @@ exports
   channel spuriousWakeup : ThreadID
 
   -- Specification, with error events visible.
-  IdealisedAlt = Spec0 \ {| maybeReceive, maybeSend, portClosed |}
+  IdealisedAltX = Spec0 \ {|maybeReceive, maybeSend, portClosed|}
+
+  IdealisedAlt = 
+    let internals = {| 
+      beginRegistration, endRegistration, 
+      getToDeregisterIn, getToDeregisterOut, deregisterDone, endWait,
+      maybeReceive, maybeSend, portClosed
+    |}  
+    within pri(Spec10) \ internals
+
+  -- Model of idealised alt with maybeReceive events visible.
+  IdealisedAltLP = 
+    let internals = Union({
+      {| beginRegistration, endRegistration, 
+         getToDeregisterIn, getToDeregisterOut, deregisterDone, endWait,
+         portClosed |},
+      {| maybeReceive.t.i.x.false | t <- ChanThreads, i <- Index, x <- Data |},
+      {| maybeSend.t.i.None | t <- ChanThreads, i <- Index |}
+    })  
+    within pri(Spec10) \ internals
   
   -- If an error event happens, allow arbitrary behaviour.  The definitions
   -- are different for the stable failures and failures-divergences models.
   SpecF =  
     let events = union(Interface, {|spuriousWakeup|}) within
-    ( IdealisedAlt [| Errors |> CHAOS(events) ) \ Errors
+    ( compress(IdealisedAlt) [| Errors |> CHAOS(events) ) \ Errors
   -- Normalisation of the above takes a long time, because of the CHAOS(events)
   
   SpecD =  ( IdealisedAlt [| Errors |> DIV ) \ Errors
+
+  -- Note: Compression seems to help for the F check, but not the FD check.
   
 endmodule

@@ -6,7 +6,8 @@
 -- IdealisedChans, defining the channels, probably using the mkChan function;
 -- (4) processes ChanThread(t), probably using mkChanThread; (5)
 -- ClientThreadInterface; (6) sets sendChans, receiveChans, sendWithinChans,
--- receiveWithinChans, closeChans and clientInterface, as for CombinedSpec.
+-- receiveWithinChans, closeChans and clientInterface, as for CombinedSpec;
+-- (7) a process TheIdealisedAlt, defining the idealised alt.
 
 ChanThreads =  diff(ThreadID, {AltThread})
 
@@ -67,7 +68,8 @@ mkChan(
 System00 = 
   IdealisedChans 
   [| IdealisedAlt::ChannelInterface |] 
-  sbisim(diamond(IdealisedAlt::IdealisedAlt))
+  sbisim(diamond(TheIdealisedAlt))
+  -- sbisim(diamond(IdealisedAlt::IdealisedAlt))
 
 System0 = System00 \ IdealisedAlt::ChannelInterface
 

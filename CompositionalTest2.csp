@@ -3,7 +3,7 @@
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
-datatype ThreadID = AltThread | T1 | T2 | T3 -- | T4
+datatype ThreadID = AltThread | T1 | T2 | T3 | T4
 
 -- Identities of channels
 datatype ChanID = Chan0 | Chan1
@@ -68,3 +68,6 @@ closeChans = {
   (Chan1, IC1::beginClose, IC1::endClose) }
 
 clientInterface(me) = union(IC0::clientInterface(me), IC1::clientInterface(me))
+
+-- Model of the alt
+TheIdealisedAlt = IdealisedAlt::IdealisedAlt

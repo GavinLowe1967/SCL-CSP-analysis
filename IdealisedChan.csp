@@ -21,7 +21,7 @@ module IdealisedChan(size)
   
   -- Linearisation points of register(In|Out) corresponding to a synchronisation,
   -- waiting, or an out-of-protocol call.
-  channel registerInSync, registerOutSync : ChanThreads . Data
+  -- channel  registerOutSync : ChanThreads . Data
   channel registerInWait, registerOutWait : AltID . Index 
   channel registerError 
   -- Linearisation points of deregistration, corresponding to legal or
@@ -83,7 +83,7 @@ module IdealisedChan(size)
   ------------ Linearisers for channel thread ops
   
   -- synchronsation between a sender (first field) and receiver (second field).
-  channel sync : ChanThreads . ChanThreads . Data
+  --channel sync : ChanThreads . ChanThreads . Data
   
   -- A thread, having synchronised with either a channel thread or the alt
   -- thread, commits to returning.  This corresponds to that thread re-acquiring
@@ -97,10 +97,10 @@ module IdealisedChan(size)
   channel callMaybeSend : ChanThreads . AltID . Index
 
   -- A channel timesout within a sendWithin or receiveWithin
-  channel timeout : ChanThreads
+  --channel timeout : ChanThreads
   
   -- channel closing linearization point
-  channel close : ChanThreads
+  --channel close : ChanThreads
   
   -- A lineariser for thread me
   Lin(me) = 
@@ -253,35 +253,61 @@ module IdealisedChan(size)
     [] deregisterIn?_ -> ChanStateClosed
     [] deregisterOut?_ -> ChanStateClosed
   
+  -- Synchronisations between ChanState and Lins
+  ChanStateLinsSync = union(
+    {| callMaybeReceive, callMaybeSend, sync, commit, timeout, close |},
+    {| isClosed.t | t <- ChanThreads |}
+  )
+
   alphaChanState = Union({
     AltCallBacks, -- External
     RegLPs, -- Synchronisations with RegIn; registerInSync.t,
 	    -- registerOutSync.t also sync with Lin(t)
-    {| callMaybeReceive, callMaybeSend, sync, commit, timeout, close, isClosed |}
+    {|isClosed.AltThread|},
+    ChanStateLinsSync
        -- Events synchonising with Lin(t)s
   })
   
-  -- Put the specification together
+  ----------------------  Put the specification together
   ChannelSpec0 = 
     let syncSet = inter(union(alphaChanState, alphaRegLin), alphaLins)
     within
      (ChanState(NoReg) [ alphaChanState || alphaRegLin ] RegLin) 
      [| syncSet |] Lins
+
+  ChannelSpec10 = 
+    (ChanState(NoReg) [ alphaChanState || alphaLins ] Lins) \ ChanStateLinsSync
+  ChannelSpec0X = 
+    let syncSet = union(RegLPs, {|isClosed.AltThread|}) within
+    (compress1(ChannelSpec10) [| syncSet |] RegLin) \ diff(syncSet, Errors)
      
   -- Error events
   Errors = {| registerError, deregisterInError, deregisterOutError |}
 
   -- Compression
   transparent normal, sbisim, diamond
-  -- compress(P) = P -- normal(P) -- sbisim(diamond(P))
+  --compress(P) = sbisim(diamond(P)) -- normal(P) --
   compress(P) = P --  sbisim(diamond(P))
+  compress1(P) = sbisim(diamond(P))
 
   -- Prioitise Errors over others.  This doesn't seem to help 
   external prioritise
-  pri(P) = P
-  -- pri(P) = prioritise(P, <Errors, diff(Events,Errors)>)
+  --pri(P) = P
+  pri(P) = prioritise(P, <Errors, diff(Events,Errors)>)
 
 exports
+  -- synchronsation between a sender (first field) and receiver (second field).
+  channel sync : ChanThreads . ChanThreads . Data
+
+  -- Linearisation points of register(In|Out) corresponding to a synchronisation,
+  -- waiting, or an out-of-protocol call.
+  channel registerInSync, registerOutSync : ChanThreads . Data
+
+  -- channel closing linearization point
+  channel close : ChanThreads
+
+  -- A channel timesout within a sendWithin or receiveWithin
+  channel timeout : ChanThreads
 
   -- Definition of the interface of the channel.  Shared with SyncChan.
   include "ChanInterface.csp"
@@ -294,9 +320,23 @@ exports
              sync, commit, timeout, callMaybeReceive, callMaybeSend |}
     within compress(pri(ChannelSpec0) \ internals)
 
+  -- Specification, with error, sync, close, timeout, register(In|Out)Sync
+  -- events visible.
+  IdealisedChannelLP = 
+    let internals = 
+          {|  registerInWait,  registerOutWait, 
+             deregisterIn, deregisterOut, isClosed,
+             commit, callMaybeReceive, callMaybeSend |} -- registerInSync,registerOutSync,
+    within compress(pri(ChannelSpec0) \ internals)
+
   -- If an error event happens, allow arbitrary behaviour.  The definitions
   -- are different for the stable failures and failures-divergences models.
-  SpecF =  (IdealisedChannel [| Errors |> CHAOS(Interface) ) \ Errors
+  SpecF0 = IdealisedChannel [| Errors |> CHAOS(Interface)
+
+  SpecF = SpecF0 \ Errors
+
+  --channel assertionError
+  --SpecFX = SpecF0[[ e <- assertionError | e <- Errors ]]
   
   SpecD = (IdealisedChannel [| Errors |> DIV ) \ Errors
   

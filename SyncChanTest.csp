@@ -1,7 +1,7 @@
 -- Test upon SyncChan (without alts).  This file is really a stepping stone 
 -- towards more sophisticated tests.
 
-datatype ThreadID = T1 | T2 | T3 -- | T4 | T5
+datatype ThreadID = T1 | T2  | T3 -- | T4 | T5
 
 -- The following are needed in Types.csp, but aren't otherwise used here. 
 datatype ChanID = Chan1
@@ -20,7 +20,7 @@ instance C = SyncChan(ThreadID, AltID, Data, MaxIndex)
 
 -- Flags to control whether we include the timed operations and closing of
 -- channels.
-TIMED_FLAG = true 
+TIMED_FLAG = false -- true 
 CLOSE_FLAG = true 
 
 -- Client interface events that we allow to be performed.  The flags can be
@@ -35,6 +35,9 @@ AllowedEvents = Union({
 Threads = RUN(AllowedEvents)
 
 System = C::runWithAndHide(Threads)
+
+-- System where synchronisation points are visible
+--SystemSP = C::runWithSP(Threads)
 
 assert System  :[divergence free]
 
@@ -101,11 +104,24 @@ ChanSpecClosed = isClosed?_ -> ChanSpecClosed [] close?_ -> ChanSpecClosed
 alphaChanSpec = {| sync, close, isClosed, timeout |} 
 
 -- Specification of synchronisation linearisation.
-Spec = (
+Spec0 = 
   (|| t <- ThreadID @ [alphaLin(t)] Linearizer(t)) 
   [| alphaChanSpec |] ChanSpec
-) \ alphaChanSpec
+
+Spec = Spec0 \ alphaChanSpec
 
 assert Spec [T= System
 assert Spec [F= System
 assert Spec [FD= System
+
+-- Now using explicit SPs
+
+-- SpecSP = 
+--   (Spec0 \ {| isClosed, timeout |})
+--   [[ sync.t1.t2.x <- C::SP | t1 <- ThreadID, t2 <- ThreadID, x <- Data ]]
+--   [[ close.t <- C::closeLP.t | t <- ThreadID ]]
+
+
+-- assert SpecSP [T= SystemSP
+-- assert SpecSP [F= SystemSP
+-- assert SpecSP [FD= SystemSP

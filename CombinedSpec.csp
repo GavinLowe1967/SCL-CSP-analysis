@@ -64,11 +64,12 @@ AltLin(me) =
       outPorts = { c | OutPortBranch.c <- set(branches) } 
   within
   beginAlt.me -> (
-    |~| x: Data @ altSync?other:ChanThreads!me?c:inPorts!x -> 
-      endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me)
+-- FIXME: why is following |~| x ??
+    (|~| x: Data @ altSync?other:ChanThreads!me?c:inPorts!x -> 
+      endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me) )
     []
-    altSync.me?other:ChanThreads?c:outPorts?x ->
-      endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
+    (|~| x: Data @ altSync.me?other:ChanThreads?c:outPorts!x ->
+      endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me) )
     []
     allClosed -> endAlt.me.AltAbort -> AltLin(me)
   )
@@ -115,11 +116,11 @@ LinReceiving(me, c, endChan) =
 
 LinSendingWithin(me, x, c, endChan) = 
   LinSending(me, x, c, endChan)
-  [] timeout.me.c -> endChan.Timeout -> ChanThreadLin(me) 
+  |~| timeout.me.c -> endChan.Timeout -> ChanThreadLin(me) 
 
 LinReceivingWithin(me, c, endChan) = 
   LinReceiving(me, c, endChan)
-  [] timeout.me.c -> endChan.Timeout -> ChanThreadLin(me) 
+  |~| timeout.me.c -> endChan.Timeout -> ChanThreadLin(me) 
 
 -- Alphabet of ChanThreadLin(me)
 alphaChanThreadLin(me) = Union({
@@ -139,4 +140,12 @@ alphaLin(me) =
 
 AllLins = || t <- ThreadID @ [alphaLin(t)] Lin(t)
 
-Spec = (AllLins [| alphaChanSpecs |] ChanSpecs) \ alphaChanSpecs 
+Spec0 = AllLins [| alphaChanSpecs |] ChanSpecs
+
+-- Spec with sync, close, timeout events visible.
+SpecLP = Spec0 \ diff(alphaChanSpecs, {|sync,close,timeout|})
+
+-- Spec with sync, altSync, close, timeout events visible.
+SpecLP1 = Spec0 \ diff(alphaChanSpecs, {|sync,altSync,close,timeout|})
+
+Spec = Spec0 \ alphaChanSpecs 

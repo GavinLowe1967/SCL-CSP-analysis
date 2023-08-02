@@ -24,6 +24,11 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -- Closed.
   CheckOpen(me, cont, P) = IfClosed(me, cont(Closed), P)
 
+  -- Experimental use of assertions
+
+  -- AssertX(b) = if b then SKIP else assertionError -> DIV 
+  AssertX(b) = Assert1(b)
+
   -- Number of threads
   N = card(ThreadID)
 
@@ -318,7 +323,7 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
 
   Close1(me) = 
     -- if(!isChanClosed) ...
-    getIsClosed.me?cl -> if not cl then Close2(me) else SKIP
+    getIsClosed.me?cl -> if not cl then Close2(me) else SKIP -- closeLP.me -> SKIP
 
   Close2(me) = 
     -- isChanClosed = true
@@ -391,8 +396,8 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
 
   -- Check no alts are registered: checkCanregisterIn/Out in Chan.scala
   CheckNoAlts(me) = 
-    getReceivingAlt.me?a -> Assert1(a == NoAlt);
-    getSendingAlt.me?a -> Assert1(a == NoAlt) 
+    getReceivingAlt.me?a -> AssertX(a == NoAlt);
+    getSendingAlt.me?a -> AssertX(a == NoAlt) 
 
   -- If(canReceive) ...; canReceive in SyncChan just reads full
   RegisterIn2(me, alt, index, cont) = 
@@ -478,7 +483,7 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
 
   DeregisterIn1(me, alt, index) = 
     IfStrict(
-      getReceivingAlt.me?a -> Assert1(a == (SomeAlt.alt.index) or a == NoAlt));
+      getReceivingAlt.me?a -> AssertX(a == (SomeAlt.alt.index) or a == NoAlt));
     setReceivingAlt.me.NoAlt -> SKIP
 
   DeregisterOut(me, alt, index) = 
@@ -486,7 +491,7 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
 
   DeregisterOut1(me, alt, index) = 
     IfStrict(
-      getSendingAlt.me?a -> Assert1(a == (SomeAlt.alt.index) or a == NoAlt));
+      getSendingAlt.me?a -> AssertX(a == (SomeAlt.alt.index) or a == NoAlt));
     setSendingAlt.me.NoAlt -> SKIP
 
   ---------- Threads
@@ -533,9 +538,19 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   --   compress(MonitorCondition::runWithAndHide(Threads)) [| varEvents |] Variables
   -- Internals = compress(Internals0 \ internals)
 
+  -- Hide internals and compress.  Compression is a serious bottleneck. 
+  transparent normal, sbisim, diamond
+  compress(P) = P -- sbisim(diamond(P))
+  -- Internals10 = compress((Threads [| varEvents |] Variables) \ varEvents)
+  -- Internals1 = compress(MonitorCondition::runWithAndHide(Internals10))
+  Internals10 = compress(MonitorCondition::runWithAndHide(Threads))
+  Internals1 = (Internals10 [| varEvents |] Variables) \ varEvents
+
 exports
   -- Definition of the interface of the channel.  Shared with ChanInterface.
   include "ChanInterface.csp"
+
+  channel assertionError 
 
   ------ Administrative functions
 
@@ -544,9 +559,30 @@ exports
 
   -- Run P with this channel, and hide internals
   runWithAndHide(P) = runWith(P) \ internals
+  -- runWithAndHide(P) = P [| Interface |] Internals1
 
   -- Run with P on the client interface, but leave the interface with alts
   -- open.
   runWithClientsAndHide(P) = (P [| ClientInterface |] Internals) \ internals
+
+  -- Now version with explicit synchronisation point for receiver,
+  -- linearisation point for closing
+  -- channel SP
+  -- channel closeLP : ThreadID
+
+  -- runWithSP(P) = 
+  --   runWith(P) 
+  --   [[ MonitorCondition::signal.tr.Continue.ts <- SP | 
+  --       tr <- ThreadID, ts <- ThreadID ]] 
+  --   [[ setIsClosed.t.true <- closeLP.t | t <- ThreadID ]]
+  --   \ internals -- diff(internals, LPs)
+
+  -- The above isn't right, for the following reason.  Consider the following
+  -- (1) a receiver waits; (2) a sender stores and signals on SlotFull; (3)
+  -- the channel is closed; (4) the receiver collects the value and signals on
+  -- Continue.  Then the claimed synchronisation point is after the channel is
+  -- closed.  In this case, we want the SP earlier, say when the sender
+  -- signals on SlotFull.  But in some cases, that value will be taken by a
+  -- receiver that hasn't yet started.
 
 endmodule

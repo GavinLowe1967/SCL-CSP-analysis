@@ -471,4 +471,47 @@ We can then compare the CSP model of an alt implementation to the idealised
 model.  We can verify that the implementation model refines |AltSpec|$_F$ and
 |AltSpec|$_D$ in the relevant models.
 
-\framebox{**} Number of threads, timing. 
+\begin{window}[0,r,{
+%
+\begin{tabular}{\|cccc\|}
+Model & Threads & States  & Time\\
+F & 4 & 33.3M & 25s \\
+FD & 4 & 5.7M & 6s  \\
+F & 5 & 604M & 476s \\
+FD & 5 & 63.8M & 47s  \\ % prev 39s ? 
+F & 6 & 10.7B & 155min \\
+FD & 6 & 672M & 713s
+\end{tabular}
+},]
+%
+The table to the right gives statistics about these checks.  In each case, we
+considered an alt with two branches, one inport branch and one outport
+branch.  The checks are faster than the corresponding checks for a channel.
+Part of the reason for this was that normalisation of the specification was
+faster than for a channel, because the idealised alt has fewer states than an
+idealised channel.  We think the main reason for this is that the |Lin(t)|
+processes in the idealised alt have fewer states than the |Lin(t)| processes
+in the idealised channel (there is one such process for each channel thread,
+so the total number of states increases exponentially).  In addition, the
+implementation model for an alt has fewer states than for a channel: in the
+latter, there might be multiple channel threads waiting in different states,
+whereas in the 
+
+because 
+reflecting the smaller state space: we believe the main reason the state space
+for a 
+
+\end{window}
+
+We took a couple of steps to improve the efficiency of these checks.  Firstly,
+we applied the prioritisation operator of FDR to |IdealisedAlt| to give
+priority to error events over all other events (except $\tau$s); so in any
+state where an error event (or $\tau$) is possible, all other events are
+blocked.  This is sound here because the subsequent behaviours allowed by the
+specification (in |CHAOS(Interface)| or |DIV|) include the behaviours
+corresponding to the blocked events.
+
+Further, for the check in the stable-failures model, we normalised
+|IdealisedAlt| before the application of the throws operator.  This made the
+subsequent normalisation of |AltSpec|$_F$ faster.  (However, the same
+technique in the failures-divergences model made the check slower.)

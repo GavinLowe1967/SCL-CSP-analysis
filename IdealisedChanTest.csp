@@ -2,7 +2,7 @@
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
-datatype ThreadID = AltThread | T1 | T2 | T3 | T4
+datatype ThreadID = AltThread | T1 | T2  | T3 -- | T4
 
 ChanThreads =  diff(ThreadID, {AltThread})
 
@@ -43,6 +43,7 @@ AllowedEvents = Union({
 System0 = C1::runWithAndHide(RUN(AllowedEvents)) 
 
 include "IdealisedChan.csp"
+-- include "IdealisedChan2.csp"
 
 instance IC = IdealisedChan(size)
 
@@ -67,12 +68,17 @@ System = System0[[
   C1::beginMaybeSend <- IC::beginMaybeSend,
   C1::endMaybeSend <- IC::endMaybeSend,
   C1::beginPortClosed <- IC::beginPortClosed,
-  C1::endPortClosed <- IC::endPortClosed
+  C1::endPortClosed <- IC::endPortClosed-- ,
+  -- C1::assertionError <- IC::assertionError
 ]]  
+
+--System = System1 \ { IC::assertionError }
 
 assert IC::SpecF [T= System
 
 assert IC::SpecF [F= System
+
+--assert IC::SpecFX [F= System1
 
 assert IC::SpecD [FD= System
 

@@ -104,7 +104,7 @@ module Alt(this, branches, ThreadID, ChanID)
 
   -- Code after the registration loop. 
   AfterLoop(me, cont) = 
-    setRegistering.me.false -> JVMMonitor::NotifyAll(me);
+    setRegistering.me.false -> -- JVMMonitor::NotifyAll(me);
     getDone.me?done -> 
     if not done then
       -- while(!done && numEnabled > 0) wait()
@@ -174,9 +174,9 @@ module Alt(this, branches, ThreadID, ChanID)
     JVMMonitor::SynchronizedC(me, MaybeReceive1(me, value, index), cont)
 
   -- while(registering) wait() 
-  WaitWhileRegistering(me) = 
-    let Test(k) = getRegistering.me?registering -> k(registering) within
-    While(Test, JVMMonitor::Wait(me))
+  -- WaitWhileRegistering(me) = 
+  --   let Test(k) = getRegistering.me?registering -> k(registering) within
+  --   While(Test, JVMMonitor::Wait(me))
 
   -- Body of maybeReceive
   MaybeReceive1(me, value, index)(cont) = 
