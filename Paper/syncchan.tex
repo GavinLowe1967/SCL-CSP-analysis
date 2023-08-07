@@ -6,12 +6,11 @@
 In this section, we consider the operation of a single synchronous channel,
 without considering interaction with alts.
 
-We start by considering just the send (``\SCALA{!}'') and receive
-(``\SCALA{?}'')  operations.  We outline the implementation for these
-operations, how we model them in CSP, and then how we analyse their
-correctness.  In later subsections, we extend to include the timed operations
-and the closing of channels; for the moment we elide details related to those
-operations or to the use of alts.
+We start by considering just the send and receive operations.  We outline the
+implementation for these operations, how we model them in CSP, and then how we
+analyse their correctness.  In later subsections, we extend to include the
+timed operations and the closing of channels; for the moment we elide details
+related to those operations or to the use of alts.
 
 The implementation is based on a monitor (more precisely, using an
 implementation of monitors within the SCL library).  All operations are
@@ -24,10 +23,10 @@ thread is currently trying to send (if any).  Further, it uses a variable
 \SCALA{status} to store the status of the current exchange, one of the
 following: 
 \begin{description}
-\item[{\scalashape Empty}:] No sender has deposited a value;
-\item[{\scalashape Filled}:] A sender has deposited a value, but no receiver
+\item[{\scalastyle Empty}:] No sender has deposited a value;
+\item[{\scalastyle Filled}:] A sender has deposited a value, but no receiver
   has yet read it;
-\item[{\scalashape Read}:] A receiver has read the current value, but the
+\item[{\scalastyle Read}:] A receiver has read the current value, but the
   corresponding sender has not yet returned.
 \end{description}
 %
@@ -48,7 +47,7 @@ signals to the sender (on |continue|), and returns the value stored in
 
 We now outline the CSP model.  The model uses small fixed types representing
 the type of data communicated by the channel, and the type of thread
-identities.  We discuss the choices for these types later. 
+identities.  We discuss the choices for these types later \framebox{?}. 
 
 The monitor is modelled by a CSP module, encapsulating a process that
 maintains the state of the monitor, specifically: (1)~which thread, if any,
@@ -71,10 +70,10 @@ Each variable in the implementation of the channel is modelled by a CSP
 process, with CSP channels to allow the variable's value to be read or
 written.
 
-Each of the send (``|!|'') and receive (``|?|'') operations can then be
-straightforwardly translated into a CSP process that performs the operations
-on the monitor and variables, following the Scala code.  (The appendix
-describes various techniques that we found useful in this modelling.)
+Each of the send and receive operations can then be straightforwardly
+translated into a CSP process: this process performs the operations on the
+monitor and variables, following the Scala code.  (The appendix describes
+various techniques that we found useful in this modelling.)
 
 The Scala code uses several assertions.  We model these by having the CSP
 process diverge if the property does not hold.  Later, we use FDR to verify
@@ -84,14 +83,14 @@ Each operation is framed by \CSPM{begin} and \CSPM{end} events:
 %
 \begin{itemize}
 \item The event \CSPM{beginSend.t.x} represents a thread with
-  identity~\CSPM{t} calling |!x| on the channel, and the event
+  identity~\CSPM{t} calling |send(x)| on the channel, and the event
   \CSPM{endSend.t.SendSuccess} represents it successfully returning (later we
-  extend the channel to model unsuccessful calls that find the channel has
+  add events to model unsuccessful calls that find the channel has
   been closed).
 
 \item Likewise the events \CSPM{beginReceive.t} and
   \CSPM{endReceive.t.ReceiveSuccess.x} represent thread~\CSPM{t} calling and
-  returning from an invocation of the receive operation that successfully
+  returning from an invocation of the |receive| operation that successfully
   receives the value~\CSPM{x}.
 \end{itemize}
 %
@@ -109,9 +108,9 @@ We now analyse the basic model of the channel.  We start by describing
 abstractly the property that we expect to hold, and then describe how to
 capture it using CSP.
 
-Each invocation of the send operation should synchronise with a corresponding
-invocation of receive: the two invocations should overlap in time, and
-the receive should return the value of the send's parameter.  
+Each successful invocation of the send operation should synchronise with a
+corresponding invocation of receive: the two invocations should overlap in
+time, and the receive should return the value of the send's parameter.
 
 In~\cite{LL:synchronisation}, we introduced a correctness condition,
 \emph{synchronisation linearisation}, corresponding to synchronisation objects

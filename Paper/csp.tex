@@ -21,22 +21,19 @@ The simplest process is \CSPM{STOP}, which represents a deadlocked process that
 cannot communicate with its environment.  The process |SKIP| is a process that
 terminates immediately, represented by the distinguished event~$\tick$. 
 
-The process \CSPM{CHAOS(A)} can perform any events from the set~|A|, or can
-refuse any of those events; however, it cannot diverge.  Thus it allows
-arbtrary non-divergent behaviour over~|A|.  By contrast, \CSPM{DIV} is a
-divergent process that performs an unbounded number of internal $\tau$~events.
-
 The process \CSPM{a -> P} offers its environment the event~\CSPM{a}; if the
 event is performed, the process then acts like~\CSPM{P}.  The process
-\CSPM{c?x -> P} is initially willing to input a value \CSPM{x} on
+\CSPM{c?x -> P}  is initially willing to input a value \CSPM{x} on
 channel~\CSPM{c}, i.e.~it is willing to perform any event of the
 form~\CSPM{c.x}; it then acts like~\CSPM{P} (which may use~\CSPM{x}).
 Similarly, the process \CSPM{c?x:X -> P} is willing to input any
 value~\CSPM{x} from set~\CSPM{X} on channel~\CSPM{c}, and then act
-like~\CSPM{P}.  Within input constructs, we use ``\CSPM{_}'' as a wildcard:
-\CSPM{c?_} indicates an input of an arbitrary value.  The process \CSPM{c!v ->
-  P} outputs value \CSPM{v} on channel~\CSPM{c}.  Inputs and outputs may be
-mixed within the same communication, for example \CSPM{c?x!v -> P}.
+like~\CSPM{P}. 
+%%  Within input constructs, we use ``\CSPM{_}'' as a wildcard:
+%% \CSPM{c?_} indicates an input of an unnamed value.  
+The process \CSPM{c!v -> P} outputs value \CSPM{v} on channel~\CSPM{c}.
+Inputs and outputs may be mixed within the same communication, for example
+\CSPM{c?x!v -> P}.
 
 The process \CSPM{P [] Q} can act like either \CSPM{P} or~\CSPM{Q}, the choice
 being made by the environment: the environment is offered the choice between
@@ -55,6 +52,11 @@ The process |P; Q| represents a sequential composition of~|P| and~|Q|:
 initially, |P| is run, but when it terminates (as indicated by event~$\tick$),
 |Q| is run. 
 
+The process \CSPM{CHAOS(A)} can perform any events from the set~|A|, or can
+refuse any of those events; however, it cannot diverge.  Thus it allows
+arbtrary non-divergent behaviour over~|A|.  By contrast, \CSPM{DIV} is a
+divergent process that performs an unbounded number of internal $\tau$~events.
+
 The process \CSPM{P [|E|> Q} 
 % {]}
 (sometimes denoted $\CSPMM{P} \mathbin{\theta_E} \CSPMM{Q}$) denotes a
@@ -64,9 +66,9 @@ The process \CSPM{P [|E|> Q}
 
 The process \CSPM{P [|A|] Q} runs \CSPM{P} and~\CSPM{Q} in parallel,
 synchronising on events from~\CSPM{A}.  The process \CSPM{**|| x:X @ [A(x)]
-  P(x)} represents an indexed parallel composition, where, for each \CSPM{x}
-in \CSPM{X},\, \CSPM{P(x)} is given alphabet~\CSPM{A(x)}; processes
-synchronize on events in the intersection of their alphabets.  
+  P(x)} represents an indexed parallel composition of processes |P(x)| for
+\CSPM{x} in \CSPM{X}; each \CSPM{P(x)} is given alphabet~\CSPM{A(x)};
+processes synchronize on events in the intersection of their alphabets.
 % By contrast, in
 % the process \CSPM{[|A|] x:X @ P(x)}, all processes \CSPM{P(x)} synchronize on
 % events from~\CSPM{A}, but performs other events without synchronization. 
@@ -75,7 +77,11 @@ in parallel with no synchronisation.  \CSPM{**||| x:X @ P(x)} represents an
 indexed interleaving.
 
 The process \CSPM{P \\ A} acts like~\CSPM{P}, except the events from~\CSPM{A}
-are hidden, i.e.~turned into internal $\tau$~events.
+are hidden, i.e.~turned into internal $\tau$~events.  
+%
+The process \CSPM{P[[a <- b]]} represents a renaming of~|P|: each occurrence of
+event~|a| is replaced by~|b|; this extends to the renaming of multiple
+events. 
 
 CSP, as implemented in the model checker FDR, is supported by a functional
 sublanguage, roughly equivalent to Haskell, but without type classes, and
@@ -97,15 +103,34 @@ perform the trace~$tr$ to reach a stable state (i.e.~where no internal events
 are possible) where $X$ can be refused, i.e., where none of the events of~$X$
 is available.  We say that \CSPM{P} is refined by~\CSPM{Q} in the stable
 failures model, written \CSPM{P [F= Q}, if every trace of~\CSPM{Q} is also a
-  trace of~\CSPM{P}, and every stable failure of~\CSPM{Q} is also a stable
-  failure of~\CSPM{P}.
+% ]
+trace of~\CSPM{P}, and every stable failure of~\CSPM{Q} is also a stable
+failure of~\CSPM{P}.  Again, |P| is typically a specification process,
+describing both what traces are acceptable, but also what events must be
+available after particular traces. 
 
 We say that a process \emph{diverges} if it can perform an infinite number of
-internal (hidden) events without any intervening visible events.  We do not
-use the full power of the failures-divergences model in this paper.  The only
-failures-divergences refinement checks we use are of the form \CSPM{P [FD= Q}
-  where |P| is divergence-free; this tests that |Q| is also divergence-free,
-  and that \CSPM{P [F= Q}.
+internal (hidden) events without any intervening visible events.  The
+failures-divergences model describes a process by a set of divergences and a
+set of failures.  The model satisfies two closure properties, in order to
+correctly capture intuitions.  The set of divergences of process~|P| contains
+all traces after which |P| can diverge, and also all extensions of those
+traces.  The failures of process~|P| contains all its stable failures, and all
+failures using a trace from its divergences set.  Thus the immediately
+divergent process~|DIV| has all divergences and all failures.  We say that
+\CSPM{P} is refined by~\CSPM{Q} in the failures-divergences model, written
+\CSPM{P [FD= Q}
+% ]
+if every divergence of~|Q| is a divergence of~|P|, and every failure of~|Q| is
+a failure of~|P|.  Thus |DIV| is refined by every other process in this model,
+so, as a specification, allows arbitrary behaviour.
+
+
+%% We do not
+%% use the full power of the failures-divergences model in this paper.  The only
+%% failures-divergences refinement checks we use are of the form \CSPM{P [FD= Q}
+%%   where |P| is divergence-free; this tests that |Q| is also divergence-free,
+%%   and that \CSPM{P [F= Q}.
 
 
 %% If  \CSPM{P [F= Q} and \CSPM{Q} is divergence-free, then if

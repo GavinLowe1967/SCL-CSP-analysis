@@ -1,7 +1,7 @@
 \subsection{Idealised model of a channel}
 
 We now give an idealised model of a channel: this describes the behaviour of a
-channel in terms of the calls and returns of functions, while abstracting away
+channel in terms of the calls and returns of operations, while abstracting away
 from the implementation.  We assume (for simplicity) a single thread,
 |AltThread|, that runs any alt that interacts with the channel.
 
@@ -112,14 +112,14 @@ below; internal events appear inside the box.
 %%%%%
 
 The construction is made more complicated by the fact that the model needs to
-deal with the |begin| and |end| events for function calls, whereas these
-functions will take effect at their linearisation points.  To deal with this,
+deal with the |begin| and |end| events for operation calls, whereas these
+operations will take effect at their linearisation points.  To deal with this,
 we construct the model from several components, as depicted in
 Figure~\ref{fig:idealised-chan}.  The component |ChanState| keeps track of the
 state of the channel: whether an alt is registered at a port, and whether the
 channel is closed.  The component |RegLin| is responsible for linearising
 registrations and deregistrations.  Each component |Lin(t)| is responsible for
-linearising the function calls of channel-thread~|t|.  We describe these in
+linearising the operation calls of channel-thread~|t|.  We describe these in
 more detail below.  Some details of the definitions are unobvious, and were
 found by trial and error: their correctness is evidenced by the subsequent
 successful refinement checks.
@@ -165,7 +165,7 @@ RegLinDeregOut(alt, index) =
 \paragraph{The {\cspmstyle RegLin} process.}
 
 The |RegLin| process is defined in Figure~\ref{fig:RegLin}; it accepts the
-relevant |begin| events, with each function being handled by a different
+relevant |begin| events, with each operation being handled by a different
 subsidiary process. 
 
 The process |RegLinRegIn(alt, index)| models the linearisation of a call of
@@ -226,7 +226,7 @@ ReceivingLin(t, endChan, timed) =
   [] timed & timeout.t -> endChan.Timeout -> Lin(t)
 \end{cspm}
 \caption{Definition of the {\scalashape Lin} processes, controlling
-  channel-thread functions.  \label{fig:Lin}}
+  channel-thread operations.  \label{fig:Lin}}
 \end{figure}
 
 %%%%%
@@ -235,10 +235,10 @@ ReceivingLin(t, endChan, timed) =
 
 The |Lin(t)| processes are defined in Figure~\ref{fig:Lin}.  Each accepts the
 relevant \SCALA{begin} and \SCALA{end} events from channel-thread~|t|, with
-most of the functions modelled by subsidiary processes.
+most of the operations modelled by subsidiary processes.
 
 The process |SendingLin| models the linearisation of the \SCALA{send} and
-\SCALA{sendWithin} functions; the parameter |timed| indicates the latter case.
+\SCALA{sendWithin} operations; the parameter |timed| indicates the latter case.
 The subprocess |Success| indicates a successful send.  There are several
 cases.  The |ChanState| process synchronises on the relevant events to ensure
 an appropriate one is selected.
@@ -263,18 +263,18 @@ an appropriate one is selected.
 
 \item The thread can find the channel closed via the event |isClosed.t|.
 
-\item In the case of the |sendWithin| function, the thread can timeout,
+\item In the case of the |sendWithin| operation, the thread can timeout,
   modelled by the event |timeout.t|.  
 \end{itemize}
 
 The process |ReceivingLin| models the linearisation of the \SCALA{receive} and
 \SCALA{receiveWithin}, in a similar way.  There is no need for the extra
 synchronisation on the |commit| channel in this case: in the implementation,
-these functions can return straightaway after synchronisation. 
+these operations can return straightaway after synchronisation. 
 
 Finally, the |Lin| processes directly deal with closing.  The event |close.t|
 represents the linearisation point of the operation.  The \SCALA{close}
-function might not be able to return immediately: the channel might need to
+operation might not be able to return immediately: the channel might need to
 call \SCALA{portClosed} on a registered port (modelled within |ChanState|),
 and wait for that call to return; the event |isClosed.t| becomes available at
 that point.
@@ -457,20 +457,21 @@ verify that this system refines |ChannelSpec|$_F$ and |ChannelSpec|$_D$ in the
 relevant models.
 
 
-\begin{window}[0,r,{
+\begin{window}[2,r,{
 %
 \begin{tabular}{\|cccc\|}
 Model & Threads & States  & Time\\
-F & 4 & 236M & 530s \\
-FD & 4 & 176M & 105s 
+F & 4 & 236M & 569s \\
+FD & 4 & 176M & 107s \\
+%% F & 4 & 236M & 530s \\
+%% FD & 4 & 176M & 105s 
 \end{tabular}
 },]
 %
 The table to the right gives statistics about the number of states explored
 and the times taken to perform these checks, in different models; in each
 case, one thread was an alt-thread and the remainder where channel-threads.
-\framebox{***} With five threads, the check in the failures-divergences model
-runs out of memory, post-compilation.
+With five threads, the checks fail to complete on the available architecture.
 \end{window}
  
 Interestingly, the failures-divergences check is faster than the
@@ -478,11 +479,11 @@ stable-failures model: normally, it is the other way round.  The difference in
 time is because of the time taken to normalise the specification, which
 accounted for about 90\% of the total in the stable-failures model.  This step
 builds an automaton equivalent to the specification, but with the property
-that after each trace, a unique state is reached; if, after trace~$tr$, the
-specification can reach states~$st_1,\ldots,st_k$, then the normalised
-automaton contains a corresponding state equivalent to $st_1
+that after each trace (of visible events), a unique state is reached; if,
+after trace~$tr$, the specification can reach states~$st_1,\ldots,st_k$, then
+the normalised automaton contains a corresponding state equivalent to $st_1
 \mathbin{\CSPMM{\|~\|}} \ldots \mathbin{\CSPMM{\|~\|}} st_k$.  Consider the
-case where the trace~$tr$ might have included an error event.  In the
+case where the trace~$tr$ might have included a (hidden) error event.  In the
 failures-divergences model, the resulting normalised state includes |DIV|, and
 so is equal to~|DIV|: the normalisation algorithm identifies this, and so does
 not need to expand its successor states.  However, in the stable-failures

@@ -2,19 +2,35 @@
 
 We now perform the final step in our compositional verification by combining
 an |IdealisedAlt| and corresponding |IdealisedChannel|s.
-
-Fix, for the moment, a definition of |branches|, defining the branches of an
+%
+Fix a definition of |branches|, defining the branches of an
 alt.  We can then build a system comprising an |IdealisedAlt| (based on
 |branches|) and a corresponding set of |IdealisedChannel|s, synchronising
 appropriately.
 
+\begin{window}[2,r,{
+%
+% \vspace*{1mm}
+\begin{tabular}{\|cccc\|}
+Model & Threads & States  & Time\\
+F & 4 & 12.2M & 19s \\
+D & 4 & 5.53M & 24s \\
+F & 5 & 909M & 1820s \\
+D & 5 & 227M & 1710s \\
+\end{tabular}
+},]
+%
 We can then use FDR to verify that this system is divergence-free (when the
 |spuriousWakeup| events are kept visible), and that it refines (in the
 stable-failures model) the specification from Section~\ref{sec:combined} (with
-the |spuriousWakeup| events hidden).  In particular, the latter test verifies
-that the system does not perform any of the error events
-from~$\CSPMM{Errors}_A \union \CSPMM{Errors}_C$: each component follows the
-alt protocol assuming the other does. 
+the |spuriousWakeup| events hidden).  The table to the right gives statistics about these checks, where
+|branches| contains one inport branch and one output branch.
+\end{window}
+
+In particular, the above stable-failures test verifies that the system does
+not perform any of the error events from |Errors|$_A \union\null$|Errors|$_C$:
+each component follows the alt protocol assuming the other has not previously
+broken the protocol.
 
 Recall that we earlier considered processes |ChannelSpec| and |AltSpec|, which
 allowed arbitrary behaviours after an error event.  The fact that the
@@ -29,4 +45,49 @@ the implementations would also pass the tests described above (although the
 checks might be infeasible in practice): formally, this is because all CSP
 operators are monotonic with respect to refinement.
 
-\framebox{Type sizes, timing}
+%% \framebox{Type sizes, timing}
+
+%% However, we can make the analysis more efficient.  The idealised model of a
+%% synchronous channel contains events representing synchronisations between two
+%% channel threads; these events are on a CSP channel |sync|, which are hidden.
+%% Likewise, the specification from Section~\ref{sec:combined} contains events
+%% representing these synchronisations; these events are also on a channel called
+%% |sync|, and are hidden (the two |sync| channels are in different CSP modules,
+%% so are distinct).  Instead, we could leave these events visible, and apply a
+%% renaming to identify them.  We can then test for refinement between the
+%% resulting processes: this refinement implies the refinement tested for
+%% earlier.  This new refinement test explores fewer states, because the two
+%% processes are more tightly coupled: each performs the same |sync| events.
+
+%% We can extend this idea.  Each of the processes contain events representing
+%% the linearisation point of a channel being closed (on hidden |close|
+%% channels), and a timed operation timing out (on hidden |timeout| channels); we
+%% can again keep these events visible and identify them.  
+
+%% We can perform a similar transformation for the synchronisations between an
+%% alt-thread and a channel-thread, on hidden |altSync| channels.  However, the
+%% transformed specification doesn't quite capture the desired property.
+%% Consider a state where an alt-thread could synchronise with either of two
+%% channel-threads.  In the implementation model, the choice of which
+%% synchronisation happens is made internally, i.e.~nondeterministically.
+%% Likewise, in the earlier specification, the choice of which synchronisation
+%% happens corresponds to a choice between two internal |altSync| events, so is
+%% nondeterministic.  But when we keep these events visible, the choice is
+%% external (corresponding to the use of an external choice in the |AltLin|
+%% processes), which means that the specification requires that \emph{both}
+%% |altSync| events are simultaneously available.  This means that the refinement
+%% test will not hold.   
+
+%% \begin{tabular}{\|cccc\|}
+%% Model & Threads & States  & Time\\
+%% F & 4 &  6.8M & 15.4s \\
+%% F & 5 & 247M & 751s
+%% \end{tabular}
+
+%% \framebox{!!!}  I don't think this is sound.  In a state where there are two
+%% possible synchronisations between channel threads, the idealised channel model
+%% with |sync| events visible will give an \emph{external} choice between the
+%% |sync| events.  However, the implementation model will make a nondeterministic
+%% choice between which synchronisation happens.  The idealised channel model
+%% with visible |sync| events does not correctly reflect the behaviour of the
+%% implementation.

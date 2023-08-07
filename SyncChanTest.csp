@@ -1,7 +1,7 @@
 -- Test upon SyncChan (without alts).  This file is really a stepping stone 
 -- towards more sophisticated tests.
 
-datatype ThreadID = T1 | T2  | T3 -- | T4 | T5
+datatype ThreadID = T1 | T2  | T3 | T4  | T5 -- | T6
 
 -- The following are needed in Types.csp, but aren't otherwise used here. 
 datatype ChanID = Chan1
@@ -20,7 +20,7 @@ instance C = SyncChan(ThreadID, AltID, Data, MaxIndex)
 
 -- Flags to control whether we include the timed operations and closing of
 -- channels.
-TIMED_FLAG = false -- true 
+TIMED_FLAG = true 
 CLOSE_FLAG = true 
 
 -- Client interface events that we allow to be performed.  The flags can be

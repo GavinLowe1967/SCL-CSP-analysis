@@ -3,7 +3,7 @@
 
 -- Thread identities.  Thread AltThread will run the Alt; other threads will
 -- act on channels.
-datatype ThreadID = AltThread | T1 | T2 | T3 | T4
+datatype ThreadID = AltThread | T1 | T2 | T3 -- | T4
 
 -- Identities of channels
 datatype ChanID = Chan0 | Chan1

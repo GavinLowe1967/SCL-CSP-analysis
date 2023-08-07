@@ -31,8 +31,9 @@ alts).
 %% More precisely, an alt might have filled the slot, which implies it has
 %% performed the computation to calculate the value: at this point, it is
 %% committed to the communication. 
-Otherwise, it checks whether the channel has been closed, and if so throws an
-exception; otherwise, it waits again on |slotFull|.
+If |status| does not hold |Filled|, the thread checks whether the channel has
+been closed, and if so throws an exception; otherwise, it waits again on
+|slotFull|.
 
 If a sending thread waits on |continue|, when it receives a signal, it 
 first checks whether |status| holds |Read|, and if so continues as described
@@ -67,15 +68,15 @@ from one synchronisation to another.  However, when we consider closing of the
 channel, it becomes \emph{stateful}, with two states, open or closed.  (Other
 synchronisation objects have more interesting states.)  
 
-Our specification will treat \SCALA{close} as a linearisable operation: it will
-appear to take place atomically, at some point, called the \emph{linearisation
-  point}, between the |beginClose| and |endClose| events (equivalently, the
-|close| operation can be thought of as a unary synchronisation, involving a
-single thread, in contrast to the earlier binary synchronisations).  We
-require that the history is consistent with this closing: synchronisations
-between sends and receives should take place before the linearisation point of
-the close; and sends and receives that return |Closed| should be linearised
-after the close.
+Our specification will treat \SCALA{close} as a linearisable operation: it
+will appear to take place atomically, at some point, called the
+\emph{linearisation point}, between the |beginClose| and |endClose| events.
+(Equivalently, the |close| operation can be thought of as a unary
+synchronisation, involving a single thread, in contrast to the earlier binary
+synchronisations.)  We require that the history is consistent with this
+closing: synchronisations between sends and receives should take place before
+the linearisation point of the close; and sends and receives that return
+|Closed| should be linearised after the close.
 
 We use a CSP event |close.t| to represent the linearisation point of a
 \SCALA{close} operation by thread~|t|.  Further, we use an event |closed.t| to
@@ -101,7 +102,7 @@ the channel is closed and so return the |Closed| value.  (The |SendingLin|
 process that describes this is parameterised by the corresponding |endSend|
 channel, to facilitate extension to the timed operations later.)  Receiving is
 treated similarly.  Further, the linearisation point for a \SCALA{close}
-operation can take place between |beginClose|and |endClose| events.
+operation can take place between |beginClose| and |endClose| events.
 %
 \begin{cspm}
 Lin(t) = 
@@ -128,7 +129,7 @@ Spec = (Spec£$_0$£ [| alphaChanSpec |] ChanSpec) \ alphaChanSpec
 \end{cspm}
 %
 Thus |Spec| allows all traces, containing the |begin| and |end| events, that
-are synchronisation linearisable.  Thus testing \CSPM{Spec [T= System}
+are synchronisation linearisable.  So testing \CSPM{Spec [T= System}
 %] bracket match hack
 verifies synchronisation linearisability for this system.  Performing the
 corresponding test in the stable failures model also verifies the
@@ -168,7 +169,7 @@ The |receiveWithin(duration)| operation acts much as the untimed version,
 except it waits on |slotFull| until at most |duration| after the initial
 call.  If it finds that |status| holds |Filled|, it continues as in the
 untimed case, returning a suitable |Some| value.  If the channel is closed, it
-throws a |Closed| exception.  otherwise it must have timedout, so returns
+throws a |Closed| exception.  Otherwise it must have timedout, so returns
 |None|.  
 
 %%%%% Modelling
@@ -219,53 +220,22 @@ Further, we adapt the |ChanSpec| process to allow |timeout| events only before
 the channel is closed.  The rest of the construction and checks are then as
 before. 
 
-%% \par
-
-%% \medskip
-
-%% \noindent
-%% %\let\pindent\parindent
-%% \begin{minipage}{84mm}
-%% %\null\hspace*{\parindent}
-%% %\quad
-%% \hspace{8mm}
-
-\begin{window}[0,r,{
+\begin{window}[2,r,{
 %
 \begin{tabular}{\|cccc\|}
 Model & Threads & States  & Time\\
-FD & 3  & 1.23M & 3.5s\\
+FD & 3  & 1.23M & 3.6s\\
 FD & 4 & 92.5M  & 43s \\
-F & 5 & 7.22B & 35min
+F & 5 & 7.22B & 34min 
 \end{tabular}
 },]
 %
 The table to the right gives statistics about the number of states explored
-and the times taken to perform these checks, in different models, for
+and the times taken to perform these checks, in different models, and for
 different numbers of threads (in each case, using two data values).  All
 experiments in this paper were performed on a 32-core server (two 2.1GHz
 Intel(R) Xeon(R) Gold 6130 CPUs with hyperthreading enabled, with 512GB of
 RAM).  The check with 5 threads in the failures-divergences model was beyond
-the limits of this machine.
+the limits of this machine.  As is normally the case, the state space, and
+hence the checking time, grows rapidly with the number of threads.   
 \end{window}
-
-%% \unitlength1cm
-%% \begin{picture}(3,1.4)
-%% \put(0.7,0.7){\circle*{0.2}} \put(0.7,0.7){\circle{1.2}}
-%% \put(0.7,0.7){\vector(0,1){0.6}} \put(2.5,0.7){\circle*{0.5}}
-%% \end{picture}
-%% },{Kreise und Pfeile}]
-%% Was leisten nun diese Macros ...
-%% ... sieht hierbei wie folgt aus:
-%% \end{figwindow}
-%% The table to the right gives statistics about the times taken to perform these
-%% checks, in the failures-divergences model, for different numbers of threads
-%% (in each case, using two data values).
-%% \end{minipage}
-%% %
-%% \quad
-%% \begin{tabular}{@{}crr@{}}
-%% Threads & Time & States \\
-%% 3 & 3.5s & 1.23M \\
-%% 4 & 43s & 92.5M 
-%% \end{tabular}

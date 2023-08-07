@@ -9,14 +9,14 @@
 
 \usepackage{scalalistings}
 \unScalaMid  % We need "|" to have standard meaning when cspm.sty is read
-\usepackage{cspm}
+\usepackage[slashRename]{cspm}
 
-\def\scalasize{\footnotesize}
-\def\scalaInlineSize{\footnotesize}
+%% \def\scalasize{\footnotesize}
+%% \def\scalaInlineSize{\footnotesize}
 
-\def\cspmsize{\footnotesize}
-%\def\cspmInlineSize{\footnotesize}
-\def\cspmDisplaySize{\footnotesize}
+%% \def\cspmsize{\footnotesize}
+%% \def\cspmInlineSize{\footnotesize}
+%% \def\cspmDisplaySize{\footnotesize}
 \def\CSPMMR#1{\mbox{\cspmstyle #1}}
 %\def\cspmfont{\itshape}
 % Macros to control whether |...| produces Scala or CSP formatting.
@@ -42,27 +42,17 @@
 \maketitle
 
 \input{introduction}
-
 \input{csp}
-
-
 \input{syncchan} % Basic model of SyncChan
-
 \input{syncchan2} % Closing channels
-
 \input{alt} % Introduction to alts
-
-\input{combinedTest}
-
+\input{combinedTest} % direct test of alts + channels
 \input{compositionalTest}
-
 \input{idealisedChan}
-
 \input{idealisedAlt}
-
 \input{combiningIdealised}
 
-\framebox{Try keeping sync visible}
+%%%%%
 
 \section{Conclusions}
 \label{sec:conc}

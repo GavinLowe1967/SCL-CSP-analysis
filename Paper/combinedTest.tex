@@ -16,9 +16,10 @@ branches =  <InPortBranch.c1, OutPortBranch.c2>
 %
 In different tests, we can vary whether the branches correspond to inports or
 outports, so test different combinations.  We also create two instances |C1|
-and |C2| of channels, with identities~|c1| and |c2|.  We combine these
-together in parallel, synchronising on the |begin| and |end| events that
-correspond to the alt calling operations on a channel, or vice versa.
+and |C2| of the channel module, corresponding to channels with
+identities~|c1| and |c2|.  We combine these together in parallel,
+synchronising on the |begin| and |end| events that correspond to the alt
+calling operations on a channel, or vice versa.
 
 We combine these together with some threads.  One thread, which we denote
 |AltThread|, repeatedly runs the alt.  The other threads, from set
@@ -136,13 +137,13 @@ verify that the system refines this specification in both the traces and
 stable-failures models, showing that the system is synchronisation
 linearisable and progressible.
 
-\begin{window}[0,r,{
+\begin{window}[2,r,{
 %
 \begin{tabular}{\|crr\|}
 Model & Time & States \\
-D & 950s & 846M \\
-F & 390s & 1.10B 
-\end{tabular}
+D & 920s & 834M \\ %???
+F & 390s & 1.09B 
+\end{tabular} % resp 2, 3 SF
 },]
 %
 However, this approach suffers from a state-space explosion.  The table on the

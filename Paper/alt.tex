@@ -12,12 +12,12 @@ CSP, and describe a direct analysis of an alt and associated channels.
 
 \subsection{High-level design}
 
-We describe the interactions between an alt and relevant channels via function
+We describe the interactions between an alt and relevant channels via operation
 calls.  We call this the \emph{alt protocol}. 
 
 When an alt runs, it starts by registering, in turn, with each of the relevant
 ports whose guard evaluates to |true|.  This asks the port whether it is ready
-to communicate.  The alt calls a function
+to communicate.  The alt calls an operation
 %
 \begin{scala}
 def registerIn(alt: AltT, index: Int, iter: Int): RegisterInResult[A]  
@@ -25,9 +25,9 @@ def registerIn(alt: AltT, index: Int, iter: Int): RegisterInResult[A]
 %
 on each of its inports, where |alt| is a reference to the calling alt, |index|
 is the index of the branch within the alt, and |iter| is an iteration number
-(used only for assertions).  The function returns a result of type
-|RegisterInResult[A]|, where |A| is the type of data passed by the port, of
-one of the following forms.
+within a |serve| construct (used only for assertions).  The operation returns a
+result of type |RegisterInResult[A]|, where |A| is the type of data passed by
+the port, of one of the following forms.
 %
 \begin{description}
 \item[\rm{\scalastyle RegisterInSuccess(x)}:] the port was willing to
@@ -39,14 +39,14 @@ one of the following forms.
 \item[\rm{\scalastyle RegisterInClosed}:] the port has been closed.
 \end{description}
 %
-Similarly, the alt calls a function
+Similarly, the alt calls an operation
 %
 \begin{scala}
 def registerOut(alt: AltT, index: Int, iter: Int, value: () => A): RegisterOutResult
 \end{scala}
 on each of its outports, where |alt|, |index| and |iter| are as for
 |registerIn|, and |value| is a computation that, when evaluated, produces the
-value to be sent.  The function returns a result of one of the following
+value to be sent.  The operation returns a result of one of the following
 forms.
 %
 \begin{description}
@@ -60,7 +60,7 @@ forms.
 \end{description}
 
 If one of the registrations is successful, the alt deregisters from the
-waiting branches, via functions |deregisterIn| and |deregisterOut|.  It then
+waiting branches, via operations |deregisterIn| and |deregisterOut|.  It then
 executes the continuation of the successful branch.  
 
 \def\IP{\emph{IP}}
@@ -68,7 +68,7 @@ executes the continuation of the successful branch.
 
 Figure~\ref{fig:alt-1}
 gives an example: an alt first registers unsuccessfully with an inport~\IP;
-then it registers successfully from an outport~\OP; and finally deregisters
+then it registers successfully with an outport~\OP; and finally deregisters
 from~\IP. 
 
 %%%%%
@@ -205,7 +205,7 @@ term ``alt-thread'' for the thread that is running the alt, and
 ``channel-thread'' for a thread performing an operation in a channel that
 makes a callback to the alt. 
 
-Each call of a function on a channel (registering or deregistering) uses that
+Each call of an operation on a channel (registering or deregistering) uses that
 channel's lock, to avoid races.  
 
 The implementation of the alt is based on a monitor, more specifically a
@@ -214,7 +214,7 @@ efficient than SCL monitors, because they are implemented directly in the JVM;
 however, they do not allow targeting of signals.)  
 
 The alt-thread holds the alt's lock throughout the registration phase.  Each
-callback function has to obtain this lock, so those functions are blocked
+callback operation has to obtain this lock, so those operations are blocked
 until registration is complete. 
 
 However, it would be a mistake for the alt-thread to continue to hold the
@@ -245,7 +245,7 @@ branch.  Otherwise, if all ports are closed, it throws an |AltAbort|.
 We now describe how the implementation of channels is extended to deal with
 alts.
 
-The |registerIn| function checks whether another alt is currently registered
+The |registerIn| operation checks whether another alt is currently registered
 (which would be an error), and if so throws an exception.  If the channel is
 closed, it returns |RegisterInClosed|.  If there is a waiting sender
 (corresponding to the variable |status| holding |Filled|), it acts like a
@@ -253,7 +253,7 @@ standard receive, setting status to |Read| and signalling to the sender, and
 then returns a |RegisterInSuccess| result.  Otherwise it records the
 registration, and returns |RegisterInWaiting|.  
 
-The |registerOut| function is somewhat similar.  If there are waiting
+The |registerOut| operation is somewhat similar.  If there are waiting
 receivers, it first waits for any current exchange to finish (i.e.~for
 |status| to hold |Empty|).  If there are still waiting receivers, it continues
 as for a standard send: it stores its value, sets |status| to |Filled| and
@@ -263,12 +263,12 @@ is necessary to ensure correct synchronisation: without it, the value could be
 taken by a new receiver that calls |receive| only after the alt-thread has
 returned.  
 
-The deregister functions simply clear the registration information.
+The deregister operations simply clear the registration information.
 
 If a call of |send| or |sendWithin| finds that there is an alt registered at
 the inport, it calls |maybeReceive| on that alt, and reacts accordingly.
 Calls to |receive| or |receiveWithin| act similarly, calling |maybeSend|.  
-
+%
 Finally, if a channel is closed, it calls |portClosed| on any registered alt. 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -297,8 +297,8 @@ monitor process in parallel with a \emph{regulator process} that
 nondeterministically chooses whether or not to allow a spurious wakeup.  This
 last point is important: if we allowed unrestricted spurious wakeups, there is
 a danger that our analysis would seem to show that suitable progress
-properties are satisfied, when in reality the system can get stuck unless
-there are sufficient spurious wakeups.
+properties are satisfied, when in fact it is only spurious wakeups that allow
+progress, and without them the system would get stuck.
 
 We choose not to model the guards of alt branches, for we believe that doing
 so would add a lot of complexity to the model, without adding much assurance.
@@ -306,14 +306,25 @@ The part of the implementation concerning guards is rather straightforward: a
 branch whose guard is false is simply ignored.  We think it is best to
 concentrate on the more difficult parts of the implementation.
 
-In the model of a channel, the registration and deregistration functions are
+We also don't model the expression that generates the value to be sent in an
+outport branch, but just pick the value nondeterministically.  Likewise, we
+don't model the continuations of branches.  Each of these could contain
+arbitrary code (of the correct type); but they are outside the operation of
+the alt itself.  Instead, the model just records the index of the branch
+selected. 
+ 
+Finally, we don't model the |iter| parameter in the registration and
+deregistration operations, since it is used only in assertions, and would
+greatly increase the state space of the models. 
+
+In the model of a channel, the registration and deregistration operations are
 wrapped in suitable |begin| and |end| events.  In the model of an alt, the
 alt-thread performs these |begin| and |end| events, and then reacts to the
 result in the |end| event.  Later, we combine the models of the alt and
 channels together, synchronising on these events, so as to achieve the desired
 effect.
 
-Similarly, in the model of an alt, the callback functions are wrapped in
+Similarly, in the model of an alt, the callback operations are wrapped in
 suitable |begin| and |end| events.  In the model of a channel, the
 channel-thread performs these events, and reacts to the result in the |end|
 event.  
