@@ -4,9 +4,14 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   include "Variable.csp"
   include "Macros.csp"
 
+  -- Do we initialise Value to a specific value, arguing by symmetry?
+  useSymmetry = false
+
   -- The "value" variable: the current or previous value.
   channel getValue, setValue: ThreadID.Data
-  Value = Var(head(seq(Data)), getValue, setValue)  
+  Value = 
+    if useSymmetry then Var(head(seq(Data)), getValue, setValue)  
+    else |~| x:Data @ Var(x, getValue, setValue) 
 
   -- The "status" variable: the current status of an exchange.
   datatype StatusT = Empty | Filled | Read
@@ -522,7 +527,10 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     beginDeregisterOut.me?alt.index -> 
       (DeregisterOut(me, alt, index); endDeregisterOut.me.alt -> Thread(me))
 
-  Threads = ||| t : ThreadID @ Thread(t)
+  Threads0 = ||| t : ThreadID @ Thread(t)
+  Threads = if useSymmetry then Threads0 else  getValue?t?x -> Threads0
+  -- Note: we have a dummy read of value here, to force the value to be chosen
+  -- initially, as a state-space reduction trick.
 
   --------  All internal processes and events
 

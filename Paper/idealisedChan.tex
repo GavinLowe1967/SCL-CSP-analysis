@@ -263,7 +263,7 @@ an appropriate one is selected.
 
 \item The thread can find the channel closed via the event |isClosed.t|.
 
-\item In the case of the |sendWithin| operation, the thread can timeout,
+\item In the case of the |sendWithin| operation, the thread can time out,
   modelled by the event |timeout.t|.  
 \end{itemize}
 
@@ -392,7 +392,7 @@ Other possibilities are available regardless of the registration status.
   explanation concerning the |Lin(t)| process). 
 
 \item A channel-thread in a \SCALA{sendWithin} or \SCALA{receiveWithin} can
-  timeout. 
+  time out. 
 
 \item The channel can be closed.  If there is a registered port, the channel
   calls |portClosed| on the relevant alt, and waits for it to return.

@@ -181,9 +181,9 @@ synchronisations right, rather than the length of the delay.
 
 The CSP model of an SCL monitor also models timed waits.  It records which
 threads are doing timed waits on which conditions.  Such threads can receive a
-signal, as for untimed waits.  In addition, they can timeout and acquire the
+signal, as for untimed waits.  In addition, they can time out and acquire the
 lock on the monitor, assuming no other thread holds the lock.  Thus we model
-that such threads can eventually timeout, but don't model the length of the
+that such threads can eventually time out, but don't model the length of the
 delay. 
 
 The |sendWithin| and |receiveWithin| operations can then be modelled in CSP

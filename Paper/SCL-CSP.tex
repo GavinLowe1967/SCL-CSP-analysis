@@ -1,15 +1,22 @@
 \documentclass[12pt,a4paper]{article}
 
-\usepackage{mathsx}
+\usepackage{mathsx,tech}
 \usepackage{tikz}
 \usetikzlibrary{arrows}
-\def\X{node {$\cross$}}
-\def\inCircle#1{\raisebox{.5pt}{\textcircled{\raisebox{-.9pt}{#1}}}}
-\def\m{$\mathord{\mid}$}
-
 \usepackage{scalalistings}
 \unScalaMid  % We need "|" to have standard meaning when cspm.sty is read
 \usepackage[slashRename]{cspm}
+\usepackage{picinpar}
+
+\def\X{node {$\cross$}}
+\def\inCircle#1{\raisebox{.5pt}{\textcircled{\raisebox{-.9pt}{#1}}}}
+\def\m{$\mathord{\mid}$}
+\def\banana#1{\mathord{(\!\|} #1 \mathord{\|\!)}}
+\def\tick{
+  \tikz\fill[scale=0.4](0,.35) -- (.25,0) -- (0.75,.7) -- (.25,.15) -- cycle;
+} 
+
+\def\project{\mathord{\|}}
 
 %% \def\scalasize{\footnotesize}
 %% \def\scalaInlineSize{\footnotesize}
@@ -22,15 +29,16 @@
 % Macros to control whether |...| produces Scala or CSP formatting.
 \def\inlineScala{\uncspMid\scalaMid}
 \def\inlineCSP{\unScalaMid\cspMid}
+\lstset{columns=fullflexible}
 %\inlineCSP
 \cspMid
 
-\usepackage{picinpar}
+\newtheorem{theorem}{Theorem}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{note}[theorem]{Note}
+\newtheorem{prop}[theorem]{Proposition}
 
-\def\tick{
-  \tikz\fill[scale=0.4](0,.35) -- (.25,0) -- (0.8,.7) -- (.25,.15) -- cycle;
-} 
-\lstset{columns=fullflexible}
 \def\topfraction{0.85}
 \renewcommand{\floatpagefraction}{0.75}
 \sloppy
@@ -63,6 +71,7 @@
 \appendix
 
 \input{modelling-techniques}
+\input{di}
 
 % \input{data-independence} Probably omit this.
 \end{document}

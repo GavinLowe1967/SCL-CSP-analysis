@@ -22,9 +22,14 @@ module Alt(this, branches, ThreadID, ChanID)
   channel getToRun, setToRun : ThreadID . union({(-1)}, Index)
   ToRun = Var(-1, getToRun, setToRun)
 
+  -- Do we initialise ValueReceived to a specific value, arguing by symmetry?
+  useSymmetry = false
+
   -- The value received.  
   channel getValueReceived, setValueReceived : ThreadID . Data
-  ValueReceived = Var(A, getValueReceived, setValueReceived)
+  ValueReceived =
+    if useSymmetry then  Var(A, getValueReceived, setValueReceived)
+    else |~| x:Data @ Var(x, getValueReceived, setValueReceived)
 
   -- The numEnabled variable
   channel getNumEnabled, setNumEnabled : ThreadID . {0..size}
@@ -261,7 +266,10 @@ module Alt(this, branches, ThreadID, ChanID)
     beginPortClosed.me?index -> PortClosed(me, index); 
       endPortClosed.me -> Thread(me)
 
-  Threads = ||| t <- ThreadID @ Thread(t)
+  Threads0 = ||| t <- ThreadID @ Thread(t)
+  Threads = if useSymmetry then Threads0 else getValueReceived?t?x -> Threads0
+  -- Note: we have a dummy read of valueReceived here, to force the value to
+  -- be chosen initially, as a state-space reduction trick.
 
   ---- The internals of the Alt: threads, variables, monitor.
   Internals = JVMMonitor::runWith(Threads [| varEvents |] Variables)
