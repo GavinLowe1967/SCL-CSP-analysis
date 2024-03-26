@@ -34,8 +34,7 @@ Strict = false
 -- Execute P if Strict is set.  Used for optional assertions. 
 IfStrict(P) = if Strict then P else SKIP
 
--- include "SyncChanAlt.csp"
-include "NewSyncChan.csp" 
+include "SyncChan.csp" 
 
 -- Create channel
 instance C1 = SyncChan(ThreadID, AltID, Data, size)

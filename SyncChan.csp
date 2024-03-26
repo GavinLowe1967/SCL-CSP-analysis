@@ -244,9 +244,6 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
   -- completeReceive.  The continuation cont is applied to the value received.
   CompleteReceive :: (ThreadID, (Data) -> Proc) -> Proc 
   CompleteReceive(me, cont) = 
-    -- require(status == Filled)
-    -- IfStrict(getStatus.me?s -> Assert1(s == Filled)); 
-    -- status = Read; continue.signal(); value
     setStatus.me!Read -> MonitorCondition::Signal(me, Continue); 
     getValue.me?v -> cont(v) 
 
@@ -387,8 +384,6 @@ module SyncChan(ThreadID, AltID, Data, MaxIndex)
     getSendingAlt.me.NoAlt -> cont(None)
 
   ----- registerIn/Out (in InPort.scala/OutPort.scala)
-
--- IMPROVE, include iter.
 
   -- Thread me, in an alt, does registerIn with continuation cont
   RegisterIn :: (ThreadID, AltID, Int, (RegisterResult) -> Proc) -> Proc

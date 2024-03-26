@@ -1,0 +1,54 @@
+\section{Conclusions}
+\label{sec:conc}
+
+In this paper we have analysed a library of communication primitives, using
+CSP and its model checker FDR\@.  We have shown how the properties of
+synchronisation linearisability and synchronisation progressibility can be  
+captured as CSP refinement checks.  The analysis revealed an error in the
+code.  We have shown how compositional verification can be used to make an
+analysis more efficient, and so to allow larger systems to be analysed. 
+
+
+
+We should be clear about what we have shown.  We have analysed particular
+models, with particular numbers channel-threads, particular choices for the
+branches of an alt, and a particular choice of the type |Data| of data
+values.  In the absence of further arguments, these results to not imply that
+corresponding results hold for larger values of those parameters would also
+hold --- but they do help to give us confidence that they would, since
+experience shows that must bugs are exhibited by rather small instances.  
+
+The \emph{parameterised model checking problem} seeks to verify a family of
+systems, for all values of certain parameters, such as those identified in the
+previous paragraph.  The problem is undecidable in general~\cite{apt-kozen,
+  tomasz-gavin-CA}.  Nevertheless, a number of approaches have been proposed,
+that work in a number of situations.
+
+The easier parameter to deal with is the type |Data| of data values.  The
+models in this paper are data independent in this type: values are input,
+nondeterministically choosen, stored, and output, but no operations are
+applied to values that constrain the type.  Data independence has been much
+studied previously, e.g.~\cite{Wolper-1986, ranko-thesis}: typically these
+results show that if a correctness result holds for a particular size of a
+type, they also hold for all larger types.  However, these do not give
+useful results for the correctness properties in this paper: the results
+of~\cite[Section~15.2]{awr:TPC}, when applied to the systems of
+Section~\ref{sec:syncchan-timed} with five threads, would require us to use
+\emph{eleven} data values, which is almost certainly infeasible.  In
+Appendix~\ref{sec:di} we take a more direct approach, and prove that, in fact,
+taking |Data| to include just \emph{two} data values is enough to deduce that
+the results also hold for larger types.
+
+There has been much work considering the parameterised model checking problem
+where the parameter is the number of processes in the system,
+e.g.~\cite{Lubachevsky:1984, Clarke:1987, wolper-lovinfosse89,
+  sistla-german92, EN1995, Pnueli:2002, tomasz-gavin-CA, AHH16, gavin:VA22}.
+A particular difficulty in applying these techniques to the work in this
+paper is that the model of a monitor is parameterised by the set of identities
+of threads that are currently waiting: to our knowledge, none of the
+techniques can be applied in such a setting.
+
+
+
+\bibliographystyle{alpha}
+\bibliography{SCL-CSP}

@@ -113,10 +113,10 @@ channels~|c|.  We assume a single alt-thread, |AltThread|, and a collection
 |ChanThreads| of channel-threads.
 
 The idealised alt is constructed from several components, as depicted in
-Figure~\ref{fig:idealised-alt}.  The component |ChanState| keeps track of
+Figure~\ref{fig:idealised-alt}.  The component |RegTracker| keeps track of
 registrations of the alt at ports, or whether those ports are closed.  Each
 component |Lin(t)| linearises callbacks by channel-thread~|t|.  The component
-|RegLin| linearises the main call of the alt by the alt-thread.  We describe
+|AltLin| linearises the main call of the alt by the alt-thread.  We describe
 these in more detail below.
 
 %%%%%%%%%%
@@ -148,12 +148,12 @@ LinPortClosed(t, index) =
 
 \paragraph{The {\scalastyle Lin} processes.}
 
-The |Lin(t)| processes are defined in Figure~\ref{fig:alt-lin}.  Each accepts
-the |begin| event of a callback function, which is handled by a different
-subsidiary process.  Each callback may be either linearised correctly, or with
-an error event if it breaks the alt protocol: the |RegTracker| process selects
-the appropriate event, based on whether the alt is currently registered at the
-relevant port.
+The |Lin(t)| processes, which linearise callbacks by channel-threads, are
+defined in Figure~\ref{fig:alt-lin}.  Each accepts the |begin| event of a
+callback function, which is handled by a different subsidiary process.  Each
+callback may be either linearised correctly, or with an error event if it
+breaks the alt protocol: the |RegTracker| process selects the appropriate
+event, based on whether the alt is currently registered at the relevant port.
 
 %%%%%%%%%%
 
@@ -204,10 +204,11 @@ Waiting =
 The |AltLin| process, which linearises the main calls of the alt, is defined
 in Figure~\ref{fig:AltLin}. It initially signals to the |RegTracker| that it
 is beginning registration, via event |beginRegistration|.  It then iterates
-through |branches|, trying to register at each branch in turn (the expression
-|nth(branches, i)| gives the branch at index~|i|).  The |RegTracker| keeps
-track of the results of the registration attempts.  If a registration is
-successful, |AltLin| moves to the deregistration phase.  
+through |branches|, trying to register at each branch in turn, as described by
+process |Register1| (the expression |nth(branches, i)| gives the branch at
+index~|i|).  The |RegTracker| keeps track of the results of the registration
+attempts.  If a registration is successful, |AltLin| moves to the
+deregistration phase.
 
 If it gets to the end of |branches| without a successful registration, it
 synchronises with |RegTracker| on channel |endRegistration| to indicates to
@@ -340,8 +341,9 @@ If a registration attempt is successful, the process moves to state
 |RegTracker2|, corresponding to the deregistration phase, described below.  If
 the |AltLin| synchronises on |endRegistration|, indicating the end of the
 registration phase, the |RegTracker| sends a value indicating whether all the
-ports have been closed; if so, it returns to its initial state; otherwise it
-moves to state |RegTracker3|, corresponding to the waiting phase.
+ports have been closed (calculated using the helper function |allClosed|); if
+so, it returns to its initial state; otherwise it moves to state
+|RegTracker3|, corresponding to the waiting phase.
 %
 Note that during the registration phase, |RegTracker| blocks all callbacks,
 reflecting the behaviour of the implementation. 
@@ -404,10 +406,10 @@ The process |RegTracker2(reg)| deals with deregistration.  The names |inRegs|,
 |outRegs| and |allRegs| are set to the indices of registered inports,
 registered outports, and all registered ports, respectively.  It can send to
 |AltLin| information about a port that can be deregistered (channels
-|getToDeregisterIn| and |getToDeregisterOut|), or an indication that there are
-no such (channel |deregisterDone|).  It synchronises on the |end| events of
-deregistrations, and updates its state to map the relevant index to |NoReg|
-(via the subsidiary process |RecordDereg|, omitted for brevity).
+|getToDeregisterIn| and |getToDeregisterOut|), or an indication that there is
+no such port (channel |deregisterDone|).  It synchronises on the |end| events of
+deregistrations, and updates its state to map the relevant index to |NoReg|.
+%% (via the subsidiary process |RecordDereg|, omitted for brevity).
 
 |RegTracker2| can synchronise with |Lin(t)| on the linearisation point of a
 \SCALA{maybeReceive} operation corresponding to a registered inport; at this
@@ -426,7 +428,7 @@ the alt protocol, so an error is signalled.
 RegTracker3(reg) = 
   let inRegs = getInRegs(reg) 
       outRegs = getOutRegs(reg)
-      allRegs = union(inRegs,outRegs) within
+      allRegs = inRegs £$\union$£ outRegs within
   maybeReceive?t?index:inRegs?x!true -> 
     endWait.AltReceive.index.x -> RegTracker2(reg£%
     $\null\oplus \set{\CSPMMR{index} \mapsto \CSPMMR{NoReg}}$£)
@@ -462,7 +464,9 @@ of a |close| operation; if all ports are now closed, it indicates this to
 suitably registered port would be outside of the alt protocol, so an error is
 signalled.
 
-%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\paragraph{Testing the idealised alt.}
 
 The components are combined together, as illustrated in
 Figure~\ref{fig:idealised-alt}, to produce a process |IdealisedAlt|.  We
@@ -477,10 +481,11 @@ AltSpec£$_D$£ = (IdealisedAlt [|Errors£$_A$£|> DIV ) \ Errors£$_A$£
 
 We can then compare the CSP model of an alt implementation to the idealised
 model.  We can verify that the implementation model refines |AltSpec|$_F$ and
-|AltSpec|$_D$ in the relevant models.
+|AltSpec|$_D$ in the relevant semantic models.
 
 \begin{window}[2,r,{
 %
+\vspace{0.5ex}
 \begin{tabular}{\|cccc\|}
 Model & Threads & States  & Time\\
 F & 4 & 33.1M & 21s \\
@@ -523,4 +528,4 @@ Further, for the check in the stable-failures model, we normalised
 subsequent normalisation of |AltSpec|$_F$ faster.  (However, the same
 technique in the failures-divergences model made the check slower.)
 
-\framebox{In idealised chan model also?}
+% In idealised chan model also? -- doesn't seem to help

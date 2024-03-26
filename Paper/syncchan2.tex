@@ -52,7 +52,7 @@ go wrong if a receiving thread has received the sending thread's value.
 \inlineCSP
 
 Adapting the CSP model to model closing of channels is straightforward.  The
-|endSend| and |endReceive| channels are extended to pass a value |Closed|
+|endSend| and |endReceive| channels are extended to allow a result |Closed|,
 corresponding to the \SCALA{Closed} exception.  The \SCALA{close} operation is
 modelled as for earlier operations, framed by events on channels |beginClose|
 and |endClosed|.
@@ -62,11 +62,11 @@ and |endClosed|.
 To analyse this extended model, we adapt the |System| process from earlier to
 also allow threads to close channels.  
 
-The previous model of the channel was (in the terminology
-of~\cite{LL:synchronisation}) \emph{stateless}: no state is carried forward
-from one synchronisation to another.  However, when we consider closing of the
-channel, it becomes \emph{stateful}, with two states, open or closed.  (Other
-synchronisation objects have more interesting states.)  
+The channel specification in Section~\ref{sec:syncchan-analysis-1} is (in the
+terminology of~\cite{LL:synchronisation}) \emph{stateless}: no state is
+carried forward from one synchronisation to another.  However, when we
+consider closing of the channel, it becomes \emph{stateful}, with two states,
+open or closed.  (Other synchronisation objects have more interesting states.)
 
 Our specification will treat \SCALA{close} as a linearisable operation: it
 will appear to take place atomically, at some point, called the
@@ -132,19 +132,20 @@ Thus |Spec| allows all traces, containing the |begin| and |end| events, that
 are synchronisation linearisable.  So testing \CSPM{Spec [T= System}
 %] bracket match hack
 verifies synchronisation linearisability for this system.  Performing the
-corresponding test in the stable failures model also verifies the
-corresponding progress property.  Finally, performing the test in the
-failures-divergences model also verifies that all assertions in the code pass,
-and that threads cannot perform an infinite amount of internal activity
-without a thread returning. 
+corresponding test in the stable failures model also verifies synchronisation
+progressibility.  Finally, performing the test in the failures-divergences
+model also verifies that all assertions in the code pass, and that threads
+cannot perform an infinite amount of internal activity without a thread
+returning.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \subsection{Timed operations}
+\label{sec:syncchan-timed}
 
 \inlineScala
 
-We now consider the timed send and receive operations.  
+We now consider the timed send and receive operations on channels.  
 
 The SCL conditions described earlier provide a timed wait operation: the
 thread waits until either it receives a signal, or the time is elapsed; the
@@ -156,9 +157,9 @@ either |status| holds |Empty| or the channel is closed (which it rechecks when
 it receives a signal), or the deadline is reached.  If the channel is closed,
 it throws a |Closed| exception.  If it timedout, it returns |false|.
 Otherwise, it continues as in the untimed operation, except it waits on
-|continue| until at most |duration| after the initial call.  If it finds that
-|status| is |Read|, then the send has been successful; it continues as in the
-untimed operation, and returns |true|.  Otherwise |status| must still hold
+|continue| until at most |duration| after the initial call.  If it then finds
+that |status| is |Read|, then the send has been successful; it continues as in
+the untimed operation, and returns |true|.  Otherwise |status| must still hold
 |Filled| and |value| must stll hold~|x| (the implementation asserts this, and
 the analysis below checks this).  If the channel is closed, it continues as in
 the untimed operation.  Otherwise, it must have timedout, so it sets |status|
@@ -167,7 +168,7 @@ and returns |false|.
 
 The |receiveWithin(duration)| operation acts much as the untimed version,
 except it waits on |slotFull| until at most |duration| after the initial
-call.  If it finds that |status| holds |Filled|, it continues as in the
+call.  If it then finds that |status| holds |Filled|, it continues as in the
 untimed case, returning a suitable |Some| value.  If the channel is closed, it
 throws a |Closed| exception.  Otherwise it must have timedout, so returns
 |None|.  
@@ -198,7 +199,7 @@ We adapt the specification of synchronisation linearisability as follows.  We
 introduce events |timeout.t| to represent the linearisation point of a
 \SCALA{sendWithin} or \SCALA{receiveWithin} operation by thread~|t| that times
 out.  We then adapt the definition of the lineariser processes for these
-operations as follows, adding the possibility of such a timeout to the
+operations as follows, adding the possibility of such a time out to the
 possibilities of the untimed operations.
 %
 \begin{cspm}
@@ -222,17 +223,20 @@ before.
 
 \begin{window}[2,r,{
 %
-\begin{tabular}{\|cccc\|}
+\vspace{0.5ex}
+\begin{tabular}[b]{\|cccc\|}
 Model & Threads & States  & Time\\
 FD & 3  & 1.23M & 3.6s\\
 FD & 4 & 92.5M  & 43s \\
 F & 5 & 7.22B & 34min 
 \end{tabular}
+%\vspace{1ex}
 },]
 %
 The table to the right gives statistics about the number of states explored
 and the times taken to perform these checks, in different models, and for
-different numbers of threads (in each case, using two data values).  All
+different numbers of threads.  Each test used two data values (and this is the
+case for all later checks reported in this paper).  All
 experiments in this paper were performed on a 32-core server (two 2.1GHz
 Intel(R) Xeon(R) Gold 6130 CPUs with hyperthreading enabled, with 512GB of
 RAM).  The check with 5 threads in the failures-divergences model was beyond

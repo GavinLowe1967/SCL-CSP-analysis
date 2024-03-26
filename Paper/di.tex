@@ -1,0 +1,316 @@
+\section{On the number of data values}
+\label{sec:di}
+
+In this section we show that for each of the checks we have considered in this
+paper (with a particular choice of threads), if the check succeeds when we use
+a type |Data| of data values of size~2, then the check would also succeed for
+a larger choice of~|Data|.  We consider |Data| a type parameter that can be
+instantiated in different ways.
+%% , and will
+%% write $System[\CSPMM{Data}]$ to indicate that the family of $System$ processes
+%% depend on this parameter. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Data independence}
+
+Our approach makes use of techniques from data independence
+\cite{Wolper-1986}\linebreak[1]\cite{ranko-thesis}\linebreak[1]%
+\cite[Section~15.2]{awr:TPC}.  Consider a family $P[t]$ of processes,
+parameterised by a type variable~$t$ that can be instantiated with different
+non-empty types.  We say that the processes are \emph{data independent} in~$t$
+if they can input, nondeterministically choose, store, and output values
+from~$t$, but can't perform any other operations on such values, including
+equality tests, and don't use any constants from~$t$.
+
+The processes we have used in this paper are nearly data independent
+in~|Data|, but with one exception. The implementation of |sendWithin(d)(x)|,
+in the case of a time out, checks, via an assertion, that the |value| variable
+still holds the value~|x| that the operation wrote there previously.  This
+assertion plays no role in the functionality of the channel: it is merely a
+sanity check.  But this assertion contains an equality test, so means the
+process isn't data independent.  We could adapt the models, to make them data
+independent, by simply removing this assertion from the model (and, indeed,
+from the implementation).  For the moment, we consider these adapted models.
+In Section~\ref{sec:di-extensions}, we argue that, in fact, this change isn't
+necessary.
+
+Previous versions of the models were not data independent for another reason.
+The implementations of channels include a variable~|value| that stores the
+current (or previous) value being sent; this variable is initialised
+arbitrarily (to |null|).  This variable is modelled by a CSP process;
+previously that process was initialised to a constant value~|A| from~|Data|.
+Similarly, the model of an alt contains a process that models a variable that
+holds the current (or previous) value received; this was also initialised to a
+constant value.  This usage of constants from |Data| took the models outside
+the realm of the data independence assumptions.  We therefore adapted the
+models so that the initial values are chosen nondeterministically, so as to
+make them data independent.  (This change made negligible difference to the
+checks in Section~\ref{sec:syncchan}, but increased the state space of the
+checks in Section~\ref{sec:alt} by 2--3\%.)
+
+Consider a data independent family of processes $P[t]$.  Let $T$ and~$T'$ be
+two concrete types, and let $f: T \fun T'$ be a surjective function.  Lift $f$
+to events by pointwise application; and then lift to traces by pointwise
+application.  The following results link the semantics of $P[T]$
+and~$P[T']$~\cite{gavin:di}. 
+%
+\begin{itemize}
+\item If $tr \in traces(P[T])$ then $f(tr) \in traces(P[T'])$;
+
+\item If $(tr,X) \in failures(P[T])$ then\footnote{The notation
+  $f\inverse\banana{e}$ represents the relational inverse image of~$e$
+  under~$f$, i.e.~$\set{x \| f(x) = e}$.}
+\[
+(f(tr), \set{e \|  f\inverse\banana{e} \subseteq X}) \in failures(P[T']);
+\]
+
+\item If $tr \in divs(P[T])$ then $f(tr) \in divs(P[T'])$. 
+\end{itemize}
+%
+Informally, whenever $P[T]$ has a transition (in the operational semantics)
+labelled with event~$e$,\, $P[T']$ has a corresponding transition labelled
+with~$f(e)$, and vice versa; the above results lift this to the denotational
+models.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Synchronisation progressibility for basic channels}
+
+Let $System[t]$ be one of the families of systems for channels that we
+considered in Section~\ref{sec:syncchan}, where the type parameter~$t$
+represents the type of data.  Let $T$ be an arbitrary type, with $\#T \ge 2$,
+and let $T_2 = \set{A,B}$.  We show that if $System[T]$ fails synchronisation
+progressibility, then so does $System[T_2]$; thus it is enough to verify
+$System[T_2]$.
+
+We start by considering basic channels, with just send and receive
+operations. 
+
+Consider a maximal failure $(tr,X)$ (i.e.~where $X$ contains \emph{all} events
+that would be refused in the relevant state) of a correct implementation.
+Suppose there is a pending \CSPM{send} operation (i.e., that has been called
+but not returned); if that operation has synchronised, then the corresponding
+|endSend| event is not refused (i.e.~is not in~$X$); and if the operation has
+not synchronised, then the corresponding |endSend| event is refused.
+Likewise, suppose there is a pending |receive| operation; if that operation
+has synchronised with an invocation of |send(v)|, then the corresponding
+|endReceive| event with data value~|v| is not refused (but all the other
+corresponding |endReceive| events of that thread are refused); and if the
+operation has not synchronised, then all corresponding |endReceive| events of
+that thread are refused.  Thus by examining this maximal failure, we can
+calculate which operations have synchronised.  This prompts the following
+definition.
+%
+\begin{definition}
+\label{def:synchronised}
+Let $(tr,X)$ be a maximal failure of the system.  We say that an invocation
+has \emph{synchronised} if either there is a corresponding |end| event with
+a |Success| value (i.e.~the invocation returned successfully) or such an
+|end| event is not refused.
+
+The data value of an invocation \CSPM{send}$(v)$ is~$v$.  The data value of a
+synchronised invocation of |receive| is either the data value in the
+|endReceive| event, or (for a pending invocation) the data value in the
+available |endReceive| event.
+\end{definition}
+
+\begin{definition}
+\label{def:project}
+We define the restriction of trace $tr$ to data value~$v$, written $tr
+\project v$, to be the subtrace of $tr$ containing: (1)~events of invocations
+whose data value is~$v$, and (2)~the |beginReceive| events of unsynchronised
+invocations of |receive|.  We define the restriction of $(tr,X)$ to~$v$,
+written $(tr,X) \project v$, to be $(tr \project v, X)$.
+\end{definition}
+
+%%%%%
+
+The following lemma shows that, in deciding synchronisation progressibility,
+we can consider each value in turn.  The contrapositive shows that if a
+behaviour is not synchronisation progressible, there is a particular value
+that's responsible.
+
+\begin{lemma}
+\label{lem:progressibility-specific-value}
+Let $(tr,X)$ be a maximal failure.  Suppose that for every data value~$v$,\,
+the restriction $(tr,X) \project v$ is synchronisation progressible;
+then the whole failure is synchronisation progressible.
+\end{lemma}
+
+%%%%%
+
+\begin{proof}
+Consider a particular value of~$v$.  The fact that $(tr,X) \project v$ is
+synchronisation progressible implies that there is some way of pairing off
+the synchronised invocations for~$v$, corresponding to the synchronisations,
+and such that no further such synchronisations are possible:
+%
+\begin{itemize}
+\item If there is an unsynchronised invocation of $\CSPMM{send}(v)$, then
+  there is no unsynchronised invocation of |receive|;
+
+\item If there is an unsynchronised invocation of |receive|, there is no
+  unsynchronised invocation of $\CSPMM{send}(v)$.
+\end{itemize}
+
+Considering all values of~$v$ together, we deduce that there is some way of
+pairing off all the synchronised invocations, corresponding to the
+synchronisations, and such that no further such synchronisations are possible:
+%
+\begin{itemize}
+\item If there is an unsynchronised invocation of |send|, then
+  there is no unsynchronised invocation of |receive|;
+
+\item If there is an unsynchronised invocation of |receive|, there is no
+  unsynchronised invocation of |send|.
+\end{itemize}
+%
+This implies that the whole failure is synchronisation progressible. 
+\end{proof}
+
+%%%%%
+
+\begin{note}
+The above lemma does not hold when we replace synchronisation progressibility
+by synchronisation linearisability.  Consider the trace:
+\begin{eqnarray*}
+tr &  =  &
+  \trace{ \CSPMMR{beginSend.t1.A}, \CSPMMR{beginSend.t2.B}, 
+    \CSPMMR{beginReceive.t3}, \CSPMMR{endSend.t1}, \CSPMMR{endSend.t2} }.
+\end{eqnarray*}
+This represents a complete invocation of |send(A)|, a complete invocation of
+|send(B)|, and a pending invocation of |receive|, all overlapping.  For each
+value~$v$, the restriction $tr \project v$ is synchronisation linearisable:
+the |send| could synchronise with the pending |receive|.  However, $tr$ itself
+is clearly not synchronisation linearisable, because only one |send| can
+synchronise with the |receive|.
+\end{note}
+
+%%%%%%%%%%
+
+\begin{prop}
+Consider some type $T$ of data values, with $\#T \ge 2$.  Suppose $System[T]$
+is not synchronisation progressible.  Then $System[T_2]$ is not
+synchronisation progressible.
+\end{prop}
+
+\begin{proof}
+By the assumption, there is some maximal failure $(tr,X)$ of $System[T]$ that
+is not synchronisation progressible.  Then, by
+Lemma~\ref{lem:progressibility-specific-value}, there is a value~$v$ such that
+$(tr,X) \project v$ is not synchronisation progressible.
+%
+Consider the function $f: T \fun T_2$ such that $f(v) = A$, and $f(x) = B$ for
+all $x \ne v$.  Then $(f(tr), \set{e \in \Sigma \| f\inverse(e) \subseteq X})
+\in failures(System[T_2])$, by the earlier data-independence result.  That
+failure is not synchronisation progressible for the same reason that $(tr,X)
+\project v$ is not synchronisation progressible.
+\end{proof}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Extensions}
+\label{sec:di-extensions}
+
+We now extend our analysis to consider the closing of channels, the timed
+operations and alts.  We then consider divergence freedom, and remove the
+restriction mentioned earlier.
+
+%%%%%
+
+\paragraph{Closing and timed operations.}
+
+We extend Definition~\ref{def:synchronised} to |sendWithin| and
+|receiveWithin| in the obvious way.  Given a maximal failure, we say that an
+invocation of |send|, |receive|, |sendWithin| or |receiveWithin| \emph{detects
+  closure} if either it returns the |Closed| value, or is pending and the
+return of the |Closed| value is not refused (so all successful returns are
+refused).  We say that a |sendWithin| or |receiveWithin| invocation
+\emph{times out} if either it returns |Timeout|, or such an event is not
+refused.
+
+We extend the definition of the restriction of trace $tr$ to data value~$v$,
+written $tr \project v$, to include: (1)~events of invocations whose data
+value is~$v$; (2)~the |begin| events of unsynchronised invocations of
+|receive| and |receiveWithin|; (3)~|begin| and |end| events of all invocations
+that detect closure; (4)~|begin| and |end| events of all invocations that
+time out; and (5)~all |beginClose| and |endClose| events.
+
+The proof then proceeds much as before.  In the proof of the adaptation of
+Lemma~\ref{lem:progressibility-specific-value}, the fact that $(tr,X) \project
+v$ is synchronisation progressible implies there is some way of choosing the
+first linearisation point of an invocation of |close| (if there is one) such
+that:
+%
+\begin{itemize}
+\item all invocations that synchronise with data value~$v$ can be linearised
+  before the linearisation of |close|;
+
+\item all invocations (for any data value) that time out can be linearised
+  before the linearisation of |close|;
+
+\item all invocations (for any data value) that detect closure can be
+  linearised after the linearisation of |close|.
+\end{itemize}
+%
+Consider all values of~$v$ together.  Let $\hat{v}$ be the value of~$v$ that
+has the latest linearisation point for |close|; we linearise the |close| at
+this point.
+%
+\begin{itemize}
+\item This is necessarily after all linearisations of synchronisations and
+  invocations that time out, by the first two bullet points above;
+
+\item The |begin| and |end| events of all invocations that detect closure are
+  included in $(tr,X) \project \hat{v}$; hence they are before the 
+  linearisation point of |close|, by the third bullet point above.
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\paragraph{Alts.}
+
+We now extend the analysis to alts.  Consider a maximal refusal.  We say that
+an invocation of the alt \emph{synchronises to receive~$x$} if either an
+|endAlt.t.AltReceive.i.|$x$ event occurs, or such an event is not refused.  We
+say that an invocation \emph{synchronises to send~$x$} similarly.  We say that
+an invocation \emph{aborts} if either an |endAlt.t.AltAbort| event occurs, or
+such an event is not refused.
+
+We then extend the restriction of trace~$tr$ to data value~$v$ in the obvious
+way, to also include: (1)~|beginAlt| and |endAlt| events of invocations that
+send or receive~$v$; and (2)~|beginAlt| events of invocations that fail to
+synchronise (so either abort or are blocked).
+
+The proof then proceeds much as before.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\paragraph{Divergence freedom.}
+
+Suppose  for some concrete type $T$, with $\#T \ge 2$, that $System[T]$
+can diverge after trace~$tr$.  Let $f : T \fun T_2$ be an arbitrary
+surjection.  Then by the earlier data-independence result, $f(tr)$ would be a
+divergence for $System[T_2]$.  Thus it is enough to verify that $System[T_2]$
+is divergence-free.  (In fact, we could consider a single data value here; but
+we need two data values for the argument in the following paragraphs.)
+
+Recall that the implementation of |sendWithin| uses an equality test,
+corresponding to an assertion, and so the model is not data independent: if
+the equality test returns false, the process diverges.  We now argue that when
+we include this assertion in the model, verifying there is no such divergence
+when using $T_2 = \set{A, B}$ implies that there is no divergence for larger
+types of data.
+
+Suppose otherwise, and there is a divergence, say when the process compares
+values~$x$ and~$y$, following trace~$tr$.  Consider the function~$f$ that maps
+$x$ to~$A$, and maps all other values to~$B$.  Then the system using~$T_2$
+would compare values~$A$ and~$B$ following trace~$f(tr)$, and so would have a
+divergence.  This is a contradiction.
+
+Thus, the behaviours of the models with and without the assertion have
+identical behaviours.  In particular, the former satisfies synchronisation
+progressibility, because the latter does. 
+

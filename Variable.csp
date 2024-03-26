@@ -1,4 +1,4 @@
--- A process representign a variable. 
+-- A process representing a variable. 
 
 -- A variable with value `value`, which can be read or written on channels get
 -- and set (passing ThreadID and values). 

@@ -70,12 +70,14 @@ function that takes argument~|x| and executes~|println(x)|).  An \emph{outport
   branch} is denoted ``\SCALA{out =!=> e ==> cont}'', where |out| is a channel
 (or outport), |e| is an expression whose value matches the type of~|out|, and
 |c| is a computation, which we again call a continuation (this continuation is
-optional).  The alt waits until there is another thread ready to communicate
-at the other end of the channel corresponding to one of the branches, at which
-point the two threads can synchronise to transmit a value.  In the case of an
-inport branch, the continuation is applied to the value received.  In the case
-of an outport branch, the value of the expression is sent, and the
-continuation (if present) is executed.
+optional).  
+
+The alt waits until there is another thread ready to communicate at the other
+end of the channel corresponding to one of the branches, at which point the
+two threads can synchronise to transmit a value.  In the case of an inport
+branch, the continuation is applied to the value received.  In the case of an
+outport branch, the value of the expression is sent, and the continuation (if
+present) is executed.
 
 A branch may have a boolean \emph{guard}: a branch can be selected only if the
 guard evaluates to true.  As an example, the following code implements a
@@ -97,8 +99,9 @@ evaluated only once the alt commits to communication via that branch.
 
 We say that a branch is \emph{feasible} if the port has not been closed and
 the guard is true.  Above, the inport branch is feasible only if the buffer is
-not full; the outport branch is feasible only if the buffer is not empty.  If
-no branch of an alt is feasible, it throws an |AltAbort| exception. 
+not full and |in| is not closed; the outport branch is feasible only if the
+buffer is not empty and |out| is not closed.  If no branch of an alt is
+feasible, it throws an |AltAbort| exception.
 
 The construct |serve(branches)| is like an |alt(branches)| that is executed
 repeatedly, except any |AltAbort| exception is caught.  Hence it runs
@@ -162,21 +165,28 @@ alts, but abstracting away from details of the implementation: we call this an
 implementation refines this idealised channel.  Likewise, we build an
 idealised model of an alt, and show that it is refined by the model of the
 implementation.  A challenge for this analysis is that each component makes
-assumptions about other components with which it is composed: we describe how
-we capture these assumptions.  Finally, we combine the idealised alt with a
-fixed number of idealised channels, use FDR to analyse the combination, and
-argue that this implies correctness for the corresponding combination of the
+assumptions about other components with which it is composed, namely that they
+follow the protocol that defines interactions between them; we describe how we
+capture these assumptions.  Finally, we combine the idealised alt with a fixed
+number of idealised channels, use FDR to analyse the combination, and argue
+that this implies correctness for the corresponding combination of the
 implementation models.  This approach scales much better than the direct
-analysis.  A challenge of this approach is that the implementations of a
-channel and an alt each assumes that other components act correctly,
-i.e.~follow the protocol that defines interactions between them: we describe
-how to deal with this challenge.
+analysis.
+%% A challenge of this approach is that the implementations of a
+%% channel and an alt each assumes that other components act correctly,
+%% i.e.~follow the protocol that defines interactions between them: we describe
+%% how to deal with this challenge.
 
 We sum up in Section~\ref{sec:conc}.
-%
+
 We employed various techniques in our CSP modelling.  We present some of these
-in an appendix: they are rather orthogonal to the main focus of this paper,
-but we believe they would be useful elsewhere.
+in Appendix~\ref{app:modelling}: they are rather orthogonal to the main focus
+of this paper, but we believe they would be useful elsewhere.  In
+Appendix~\ref{sec:di} we show a technical result: if a model satisfies the
+property of synchronisation progressibility when two data values are used, a
+corresponding model where more data values are used also satisfies the
+property; this implies that analysing the smaller model with two data values
+is enough. 
 
 We consider our main contributions to be the following:
 %
@@ -213,6 +223,9 @@ alt construct.
 %
 In~\cite{gavin:OneOne}, I used CSP to discover the cause of a deadlock in an
 implementation of a synchronous channel. 
+%
+Pedersen and Chalmers~\cite{PC23} analyse communication channels in ProcessJ,
+in the context of cooperative scheduling.
 
 CSP has also been used more widely to analyse concurrent systems. 
 %

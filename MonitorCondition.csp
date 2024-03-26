@@ -29,9 +29,7 @@ module MonitorCondition
   addIfEmpty(t, ts) = if empty(ts) then {t} else ts
 
   -- All threads waiting on any condition. 
-  range(waitingMap) = Union({mapLookup(waitingMap, c) | c <- ConditionID})  
-
--- IMPROVE: allow await/signal by non locking thread, but diverge.
+  range(waitingMap) = Union({mapLookup(waitingMap, c) | c <- ConditionID}) 
 
   -- The monitor in the unlocked state.  waitingMap records those threads
   -- waiting on each Condition.  timedWaitingMap records those threads doing a
@@ -82,6 +80,10 @@ module MonitorCondition
     []
     signalAll.t?c -> 
       Locked(t, mapUpdate(waitingMap, c, {}), mapUpdate(timedWaitingMap, c, {}))
+ 
+
+  -- Note: arguably the model should allow an await or signal by a thread other
+  -- than the one currently holding the lock, but should then diverge.
 
 exports
   channel signal: ThreadID . ConditionID . ThreadID

@@ -13,7 +13,7 @@ include "Types.csp"
 -- Identities of Alts
 datatype AltID = Alt1
 
-include "NewSyncChan.csp"
+include "SyncChan.csp"
 
 -- We'll test a single channel
 instance C = SyncChan(ThreadID, AltID, Data, MaxIndex)

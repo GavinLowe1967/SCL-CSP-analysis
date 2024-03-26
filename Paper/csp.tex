@@ -92,25 +92,25 @@ can perform.  We say that \CSPM{P} is refined by~\CSPM{Q} in the traces model,
 written \CSPM{P [T= Q}, if every trace of~\CSPM{Q} is also a trace
 of~\CSPM{P}\@.  FDR can test such refinements automatically, for finite-state
 processes.  Typically, \CSPM{P} is a specification process, describing what
-traces are acceptable; this test checks whether \CSPM{Q} has only such
+traces are acceptable; this refinement test checks whether \CSPM{Q} has only such
 acceptable traces.  
 
 Traces refinement tests can only ensure that no ``bad'' traces can occur: they
 cannot ensure that anything ``good'' actually happens; for this we need the
 stable failures or failures-divergences models.  A \emph{stable failure} of a
 process~\CSPM{P} is a pair $(tr,X)$, which represents that \CSPM{P} can
-perform the trace~$tr$ to reach a stable state (i.e.~where no internal events
-are possible) where $X$ can be refused, i.e., where none of the events of~$X$
-is available.  We say that \CSPM{P} is refined by~\CSPM{Q} in the stable
-failures model, written \CSPM{P [F= Q}, if every trace of~\CSPM{Q} is also a
+perform the trace~$tr$ to reach a stable state (i.e.,~where no internal
+$\tau$~events are possible) where $X$ can be refused (i.e., where none of the
+events of~$X$ is available).  We say that \CSPM{P} is refined by~\CSPM{Q} in
+the stable failures model, written \CSPM{P [F= Q}, if every trace of~\CSPM{Q}
 % ]
-trace of~\CSPM{P}, and every stable failure of~\CSPM{Q} is also a stable
-failure of~\CSPM{P}.  Again, |P| is typically a specification process,
+is also a trace of~\CSPM{P}, and every stable failure of~\CSPM{Q} is also a
+stable failure of~\CSPM{P}.  Again, |P| is typically a specification process,
 describing both what traces are acceptable, but also what events must be
-available after particular traces. 
+available after particular traces.
 
 We say that a process \emph{diverges} if it can perform an infinite number of
-internal (hidden) events without any intervening visible events.  The
+internal (hidden) $\tau$ events without any intervening visible events.  The
 failures-divergences model describes a process by a set of divergences and a
 set of failures.  The model satisfies two closure properties, in order to
 correctly capture intuitions.  The set of divergences of process~|P| contains

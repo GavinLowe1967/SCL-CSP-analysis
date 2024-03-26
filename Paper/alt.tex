@@ -66,10 +66,9 @@ executes the continuation of the successful branch.
 \def\IP{\emph{IP}}
 \def\OP{\emph{OP}}
 
-Figure~\ref{fig:alt-1}
-gives an example: an alt first registers unsuccessfully with an inport~\IP;
-then it registers successfully with an outport~\OP; and finally deregisters
-from~\IP. 
+Figure~\ref{fig:alt-1} gives an example: an alt first registers unsuccessfully
+with an inport~\IP; then it registers successfully with an outport~\OP; and
+finally it deregisters from~\IP.
 
 %%%%%
 
@@ -79,11 +78,11 @@ from~\IP.
 \def\height{5.5} % height of sequence diagram
 \def\gap{3.5} % gap between columns
 \begin{tikzpicture}[yscale = 0.8, >= angle 60]
-\draw (0,0) node(alt){Alt};
+\draw (0,0) node[draw](alt){Alt};
 \draw (alt) -- ++ (0,-\height);
-\draw (alt)++(\gap,0) node(c1){\IP};
+\draw (alt)++(\gap,0) node[draw](c1){\IP};
 \draw (c1) -- ++(0,-\height);
-\draw (c1)++(\gap,0) node(c2){\OP};
+\draw (c1)++(\gap,0) node[draw](c2){\OP};
 \draw (c2) -- ++(0,-\height);
 % Register with IP
 \draw[->] (alt)++(0,-1) -- node[above]{\scalashape\small registerIn}
@@ -119,9 +118,9 @@ registered, of one of the following forms.
 def maybeReceive(value: A, index: Int, iter: Int): Boolean
 \end{scala}
 %
-where |value| is the value it is trying to send to the alt, and |index| and
-|iter| match the values provided during registration.  This asks the alt
-whether it is still willing to receive from the inport.
+on the alt, where |value| is the value it is trying to send to the alt, and
+|index| and |iter| match the values provided during registration.  This asks
+the alt whether it is still willing to receive from the inport.
 
 \item If the alt is registered at the outport of a channel, and another thread
   tries to receive on the channel, it calls
@@ -156,11 +155,11 @@ Figure~\ref{fig:alt-2} gives an example of a successful callback of
 \def\height{7.5} % height of sequence diagram
 \def\gap{3.5} % gap between columns
 \begin{tikzpicture}[yscale = 0.8, >= angle 60]
-\draw (0,0) node(alt){Alt};
+\draw (0,0) node[draw](alt){Alt};
 \draw (alt) -- ++ (0,-\height);
-\draw (alt)++(\gap,0) node(c1){\IP};
+\draw (alt)++(\gap,0) node[draw](c1){\IP};
 \draw (c1) -- ++(0,-\height);
-\draw (c1)++(\gap,0) node(c2){\OP};
+\draw (c1)++(\gap,0) node[draw](c2){\OP};
 \draw (c2) -- ++(0,-\height);
 % Register with IP
 \draw[->] (alt)++(0,-1) -- node[above]{\scalashape\small registerIn}
@@ -190,8 +189,8 @@ Figure~\ref{fig:alt-2} gives an example of a successful callback of
 %%%%%
 
 If the alt receives multiple callbacks to |maybeReceive| or |maybeSend|
-(including during deregistration), it responds negatively, returning |false|
-or |None|, respectively.
+(including during deregistration), it responds negatively to all except the
+first, returning |false| or |None|, respectively.
 %
 If all the channels with which the alt is registered call |portClosed|, the
 alt throws an |AltAbort|. 
@@ -236,7 +235,7 @@ be received in the case of |maybeSend|, sets |done| to |true|, signals to the
 waiting alt-thread, and returns a positive result.
 
 If the alt-thread fails to communicate during registration, and not all
-ports are closed, it waits to receive a signal.  If |done| is true, it
+ports are closed, it waits to receive a signal.  Then, if |done| is true, it
 deregisters from other branches and runs the continuation of the relevant
 branch.  Otherwise, if all ports are closed, it throws an |AltAbort|. 
 
@@ -245,23 +244,25 @@ branch.  Otherwise, if all ports are closed, it throws an |AltAbort|.
 We now describe how the implementation of channels is extended to deal with
 alts.
 
+Recall from the Introduction that the ports of a channel may not be
+simultaneously feasible in two alts.
 The |registerIn| operation checks whether another alt is currently registered
-(which would be an error), and if so throws an exception.  If the channel is
-closed, it returns |RegisterInClosed|.  If there is a waiting sender
-(corresponding to the variable |status| holding |Filled|), it acts like a
-standard receive, setting status to |Read| and signalling to the sender, and
+with the channel (which would be an error), and if so throws an exception.  If
+the channel is closed, it returns |RegisterInClosed|.  If there is a waiting
+sender (corresponding to the variable |status| holding |Filled|), it acts like
+a standard receive, setting status to |Read| and signalling to the sender, and
 then returns a |RegisterInSuccess| result.  Otherwise it records the
-registration, and returns |RegisterInWaiting|.  
+registration, and returns |RegisterInWaiting|.
 
 The |registerOut| operation is somewhat similar.  If there are waiting
 receivers, it first waits for any current exchange to finish (i.e.~for
 |status| to hold |Empty|).  If there are still waiting receivers, it continues
 as for a standard send: it stores its value, sets |status| to |Filled| and
 signals to a receiver.  It then waits on the |continue| condition for a
-receiver to take the value, and resets |status| to |Empty|.  This latter wait
-is necessary to ensure correct synchronisation: without it, the value could be
-taken by a new receiver that calls |receive| only after the alt-thread has
-returned.  
+receiver to take the value, and then resets |status| to |Empty|.  This latter
+wait is necessary to ensure correct synchronisation: without it, the value
+could be taken by a new receiver that calls |receive| only after the
+alt-thread has returned.
 
 The deregister operations simply clear the registration information.
 
@@ -277,7 +278,7 @@ Finally, if a channel is closed, it calls |portClosed| on any registered alt.
 
 \inlineCSP
 
-We now describe how to model an alt, and its interactions with channels, using
+We now describe how to model an alt and its interactions with channels, using
 CSP\@.  Much of the construction of the model follows a similar form to the
 model of a channel.  We highlight the main differences. 
 
@@ -301,10 +302,11 @@ properties are satisfied, when in fact it is only spurious wakeups that allow
 progress, and without them the system would get stuck.
 
 We choose not to model the guards of alt branches, for we believe that doing
-so would add a lot of complexity to the model, without adding much assurance.
-The part of the implementation concerning guards is rather straightforward: a
-branch whose guard is false is simply ignored.  We think it is best to
-concentrate on the more difficult parts of the implementation.
+so would add a lot of complexity to the model, and cause FDR checks to take
+longer, without adding much assurance.  The part of the implementation
+concerning guards is rather straightforward: a branch whose guard is false is
+simply ignored.  We think it is best to concentrate on the more difficult
+parts of the implementation.
 
 We also don't model the expression that generates the value to be sent in an
 outport branch, but just pick the value nondeterministically.  Likewise, we
@@ -314,8 +316,8 @@ the alt itself.  Instead, the model just records the index of the branch
 selected. 
  
 Finally, we don't model the |iter| parameter in the registration and
-deregistration operations, since it is used only in assertions, and would
-greatly increase the state space of the models. 
+deregistration operations, since it is used only in assertions as sanity
+checks, and would greatly increase the state space of the models.
 
 In the model of a channel, the registration and deregistration operations are
 wrapped in suitable |begin| and |end| events.  In the model of an alt, the
@@ -329,8 +331,8 @@ suitable |begin| and |end| events.  In the model of a channel, the
 channel-thread performs these events, and reacts to the result in the |end|
 event.  
 
-Each use of the alt of alt-thread~|t| is framed with events |beginAlt.t| and
-|endAlt.t.result| where |result| is of one of the following forms.
+Each use of the alt by an alt-thread~|t| is framed with events |beginAlt.t|
+and |endAlt.t.result|, where |result| is of one of the following forms.
 %
 \begin{itemize}
 \item |AltSend.i.x|, representing the sending of value~|x| on the port

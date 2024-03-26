@@ -1,4 +1,5 @@
 \section{Modelling techniques}
+\label{app:modelling}
 
 \inlineCSP
 
@@ -6,8 +7,8 @@ We describe here a few modelling techniques that we found useful during our
 analysis.  These techniques are rather orthogonal to the main ideas of the
 paper, but we think they might be useful elsewhere. 
 
-We model variables using a CSP process as follows.  Here |value| is the
-current value of the variable, and |get| and |set| are channels on which a
+We model each shared variable using a CSP process as follows.  Here |value| is
+the current value of the variable, and |get| and |set| are channels on which a
 thread~|t| can get or set the value.
 %
 \begin{cspm}
@@ -28,6 +29,12 @@ N = card(ThreadID)
 channel getReceiversWaiting, setReceiversWaiting : ThreadID.{0..N}
 ReceiversWaiting = Var(0, getReceiversWaiting, setReceiversWaiting)
 \end{cspm}
+
+By contrast, we normally model each thread-local variable as a parameter of
+the relevant process.  This reduces the number of events performed by
+processes, and so reduces the state-space of the system to be checked;
+however, it does increase the number of states in each individual process, and
+so increases the compilation time. 
 
 The Scala implementation contains a number of assertions.  We model such
 assertions by having the model diverge if the property does not hold; our
@@ -72,8 +79,8 @@ continuation.
 A continuation-passing style can also be used to model computations that are
 passed to other constructs.  For example, the following macro captures an
 \SCALA{if} statement.  The test of the \SCALA{if} is modelled by a process
-|test(k)| that applies its continuation parameter~|k| to an appropriate
-boolean. 
+|test(k)| that applies its continuation parameter~|k :: Bool -> Proc| to an
+appropriate boolean.
 %
 \begin{cspm}
 If:: (((Bool) -> Proc) -> Proc, Proc, Proc) -> Proc
@@ -81,10 +88,11 @@ If(test, P, Q) = test(£$\lambda$£res @ if res then P else Q)
 \end{cspm}
 %
 For example, Scala code \SCALA{if(result == None && status != Filled)\{...\}
-  else \{...\}} can be modelled as follows. 
+  else \{...\}} (where |result| is a parameter of the current process, and
+|status| is a shared variable) can be modelled as follows. 
 %
 \begin{cspm}
-let Test(k) = if result==None then getStatus.me?s -> k(s != Filled) else k(false)
+let Test(k) = if result == None then getStatus.me?s -> k(s != Filled) else k(false)
 within If(Test,£\ldots£,£\ldots£)
 \end{cspm}
 %

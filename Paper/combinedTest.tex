@@ -17,7 +17,7 @@ branches =  <InPortBranch.c1, OutPortBranch.c2>
 In different tests, we can vary whether the branches correspond to inports or
 outports, so test different combinations.  We also create two instances |C1|
 and |C2| of the channel module, corresponding to channels with
-identities~|c1| and |c2|.  We combine these together in parallel,
+identities~|c1| and |c2|.  We combine these together in parallel with |A1|,
 synchronising on the |begin| and |end| events that correspond to the alt
 calling operations on a channel, or vice versa.
 
@@ -67,7 +67,7 @@ thread~|t|$_2$, where one of the threads is the alt-thread.
 We build lineariser processes for the channel-threads.  These are very similar
 to as in Section~\ref{sec:syncchan}, so we elide some parts.  They are
 extended for operations on either |C1| or |C2| (recall that a channel-thread
-may use a port concurrently to an alt-thread).  Further, they allow
+and alt-thread may use a port concurrently).  Further, they allow
 synchronisations with the alt-thread.
 %
 \begin{cspm}
@@ -78,12 +78,12 @@ ChanThreadLin(me) =
   [] ... -- similar for other operations 
 
 LinSending(me, x, c, endChan) = 
-  sync.me?other:others(me)!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
+  sync.me?other!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
   [] altSync.me?altThread!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
   [] isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
 
 LinReceiving(me, c, endChan) = 
-  sync?other:others(me)!me!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
+  sync?other!me!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
   [] altSync?altThread!me.c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
   [] isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
 
@@ -137,8 +137,9 @@ verify that the system refines this specification in both the traces and
 stable-failures models, showing that the system is synchronisation
 linearisable and progressible.
 
-\begin{window}[2,r,{
+\begin{window}[1,r,{
 %
+\vspace{0.5ex}
 \begin{tabular}{\|crr\|}
 Model & Time & States \\
 D & 872s & 854M \\

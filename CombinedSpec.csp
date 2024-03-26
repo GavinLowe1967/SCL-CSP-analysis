@@ -64,9 +64,6 @@ AltLin(me) =
       outPorts = { c | OutPortBranch.c <- set(branches) } 
   within
   beginAlt.me -> (
--- FIXME: why is following |~| x ??
-    -- (|~| x: Data @ altSync?other:ChanThreads!me?c:inPorts!x -> 
-    --   endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me) )
     (altSync?other:ChanThreads!me?c:inPorts?x -> 
       endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me) )
     []

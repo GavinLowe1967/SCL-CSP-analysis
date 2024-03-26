@@ -1,77 +1,74 @@
-Files marked with "*" are top-level files, containing refinement checks.
+Note: the analysis contains a lot of files, so as to keep the different parts
+separate.  This means that most files import othre files, to avoid repeated
+code.  The description below describes each file.  Files marked with "*" are
+top-level files, containing refinement checks.
+
 
 Building blocks
 ---------------
 
-Macros.csp: generic helpful macros.
+Macros.csp: generic helpful macros; some are described in Appendix A.
 
-Types.csp: types returned by various functions.
+Types.csp: defines various types, including values returned by various
+functions.
 
-Variable.csp: model of a variable.
+Variable.csp: model of a variable, as described in Section 3 and Appendix A.
 
-JVMMonitor.csp: model of a JVM monitor.
+MonitorCondition.csp: model of an SCL monitor, as described in Section 3. 
 
-MonitorCondition.csp: model of an SCL monitor.
+JVMMonitor.csp: model of a JVM monitor, as described in Section 4.3.
+
 
 SCL Components
 --------------
 
-ChannelInterface.csp: the interface of a channel.
+ChanInterface.csp: the interface of a channel.
 
 AltInterface.csp: the interface of an alt. 
 
-NewSyncChan.csp
+SyncChan.csp: the model of a synchronous channel, as described in Section 3.
 
-Alt.csp
+Alt.csp: the model of an alt, as described in Section 4.
 
-SyncChanTest.csp: test upon synchronous channel, without alts
+* SyncChanTest.csp: test upon synchronous channel, without alts, as decribed in
+Section 3, with results in Section 3.3.
 
 
 Combined tests
 --------------
 
-These directly test a combination of an alt and channels.
-
-CombinedTestSingle.csp: test of an alt with a single branch.
-
-CombinedTest.csp: test of an alt with two branches.
+These directly test a combination of an alt and channels, as described in
+Section 4.4
 
 CombinedSpec.csp: most of the specification (also used in
 CompositionalTest.csp)
+
+* CombinedTestSingle.csp: test of an alt with a single branch.
+
+* CombinedTest.csp: test of an alt with two branches.  Results reported in
+Section 4.4.
 
 
 Idealised models and tests
 --------------------------
 
-IdealisedAlt.csp: idealised model of an alt.
+These described the compositional verification approach from Section 5. 
 
-IdealisedAltTest.csp: test of an Alt against IdealisedAlt.
+IdealisedChan.csp: idealised model of a channel, as described in Section 5.1.
 
-IdealisedChan.csp: idealised model of a channel 
+* IdealisedChanTest.csp: test of a channel against IdealisedChan, as described
+(with results) in Section 5.1.
 
-IdealisedChanTest.csp: test of a channel against IdealisedChan
+IdealisedAlt.csp: idealised model of an alt, as described in Section 5.2.
 
-CompositionalTest*.csp: test of the combination of an IdealisedAlt and
-IdealisedChans. 
+* IdealisedAltTest.csp: test of an Alt against IdealisedAlt, as described
+(with results) in Section 5.2.
 
-IdealisedChan2.csp: experimental model, trying to detect errors earlier.  Not working. 
+CompositionalTest.csp: framework for testing the combination of an
+IdealisedAlt and some number of IdealisedChans.  Can be imported into other
+files that defined the IDealisedChans themselves.
 
-
-TODO NEXT
-
-Current experiment: have alt hold lock during registration.  Have callbacks
-assert !registering.  **Make these changes in implementation**
-
-Continue checking NewSyncChan, interaction with alts.
-
-Test Scala code.
+* CompositionalTest2.csp: test of the combination of an IdealisedAlt and two
+IdealisedChans, as described (with results) in Section 5.23.
 
 
-Old
----
-
-AltTest*.csp
-
-Bug.csp
-
-SyncChan*.csp

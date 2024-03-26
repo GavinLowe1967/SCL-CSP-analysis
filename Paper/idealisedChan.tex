@@ -164,9 +164,10 @@ RegLinDeregOut(alt, index) =
 
 \paragraph{The {\cspmstyle RegLin} process.}
 
-The |RegLin| process is defined in Figure~\ref{fig:RegLin}; it accepts the
+The |RegLin| process deals with the linearisation of registration and
+deregistrations.  It is defined in Figure~\ref{fig:RegLin}; it accepts the
 relevant |begin| events, with each operation being handled by a different
-subsidiary process. 
+subsidiary process.
 
 The process |RegLinRegIn(alt, index)| models the linearisation of a call of
 \SCALA{registerIn(alt, index)}, which can happen in several ways.
@@ -233,9 +234,10 @@ ReceivingLin(t, endChan, timed) =
 
 \paragraph{The {\cspmstyle Lin} processes.}
 
-The |Lin(t)| processes are defined in Figure~\ref{fig:Lin}.  Each accepts the
-relevant \SCALA{begin} and \SCALA{end} events from channel-thread~|t|, with
-most of the operations modelled by subsidiary processes.
+Each |Lin(t)| process is responsible for linearising operations of
+channel-thread~|t|.  They are defined in Figure~\ref{fig:Lin}.  Each accepts the
+relevant \SCALA{begin} events, with most of the
+operations modelled by subsidiary processes.
 
 The process |SendingLin| models the linearisation of the \SCALA{send} and
 \SCALA{sendWithin} operations; the parameter |timed| indicates the latter case.
@@ -252,8 +254,8 @@ an appropriate one is selected.
 
 \item A synchronisation with an alt performing \SCALA{registerIn} is captured
   by the event |registerInSync.t.x|, described earlier.  Again, the thread~|t|
-  might not be able to return immediately, as modelled here by a
-  synchronisation on |commit.t|.
+  might not be able to return immediately; a synchronisation on |commit.t|
+  captures the point at which it becomes able to return.
 
 \item A decision to call |maybeReceive| on an alt~|alt| registered with
   index~|index| is modelled by the event |callMaybeReceive.t.alt.index.x|;
@@ -328,7 +330,9 @@ ChanState(regStatus) =
 
 \paragraph{The {\cspmstyle ChanState} process.}
 
-The |ChanState| process is in Figure~\ref{fig:ChanState}.  The parameter
+The |ChanState| process keeps track of the state of the channel.  It is
+defined in Figures~\ref{fig:ChanState} (for an open channel)
+and~\ref{fig:ChanStateClosed} (for a closed channel).  The parameter
 |regStatus| records the current registration status, and is taken from the
 following type.
 %
@@ -353,7 +357,8 @@ Several possibilities are available when there is no registered alt.
   with a waiting channel thread.
 
 \item A \SCALA{registerIn} or \SCALA{registerOut} operation may fail to
-  synchronise; the registration status is updated appropriately.
+  synchronise, and so have to wait; the registration status is updated
+  appropriately.
 
 \item A \SCALA{deregisterIn} or \SCALA{deregisterOut} operation may happen;
   which has no effect.  These events can arise if an alt is trying to
@@ -433,16 +438,20 @@ to the channel having been closed.
   |portClosed|. 
 \end{itemize}
 
-The components are combined together as illustrated in
-Figure~\ref{fig:idealised-chan}, hiding all the internal events (those inside
-the box in the figure).  This produces a process |IdealisedChannel|.  Recall
-that we want to allow arbitrary behaviour after one of the events that
-represents that the environment has not followed the alt protocol, on channels
-|registerError|, |deregisterInError| and |deregisterOutError|.  In the
-stable-failures model, the process |CHAOS(Interface)| allows arbitrary
-behaviour over the set |Interface| (the interface of the channel); in the
-failures-divergences model, the process |DIV| allows arbitrary behaviour.  We
-therefore define the following.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\paragraph{Testing the idealised channel.}
+
+The components of the idealised channel are combined together as illustrated
+in Figure~\ref{fig:idealised-chan}, hiding all the internal events (those
+inside the box in the figure).  This produces a process |IdealisedChannel|.
+Recall that we want to allow arbitrary behaviour if the environment has not
+followed the alt protocol, represented by events on channels |registerError|,
+|deregisterInError| and |deregisterOutError|.  In the stable-failures model,
+the process |CHAOS(Interface)| allows arbitrary behaviour over the set
+|Interface| (the interface of the channel); in the failures-divergences model,
+the process |DIV| allows arbitrary behaviour.  We therefore define the
+following.
 %
 \begin{cspm}
 Errors£$_C$£ = {|registerError, deregisterInError, deregisterOutError|}
@@ -456,9 +465,9 @@ implementation, allowing threads to call appropriate operations.  We can then
 verify that this system refines |ChannelSpec|$_F$ and |ChannelSpec|$_D$ in the
 relevant models.
 
-
-\begin{window}[2,r,{
+\begin{window}[1,r,{
 %
+\vspace{0.5ex}
 \begin{tabular}{\|cccc\|}
 Model & Threads & States  & Time\\
 F & 4 & 236M & 569s \\
