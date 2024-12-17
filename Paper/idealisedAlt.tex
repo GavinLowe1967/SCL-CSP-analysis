@@ -2,7 +2,7 @@
 
 %%%%%%%%%%
 
-\begin{figure}[thbp]
+\begin{figure}% [thbp]
 \begin{center}
 \def\height{10mm} % height of boxes
 \def\linW{15mm} % width of "Lin(t)" box
@@ -117,7 +117,7 @@ Figure~\ref{fig:idealised-alt}.  The component |RegTracker| keeps track of
 registrations of the alt at ports, or whether those ports are closed.  Each
 component |Lin(t)| linearises callbacks by channel-thread~|t|.  The component
 |AltLin| linearises the main call of the alt by the alt-thread.  We describe
-these in more detail below.
+these components in more detail below.
 
 %%%%%%%%%%
 
@@ -146,7 +146,7 @@ LinPortClosed(t, index) =
 
 %%%%%%%%%%
 
-\paragraph{The {\scalastyle Lin} processes.}
+\paragraph{The {\scalashape Lin} processes.}
 
 The |Lin(t)| processes, which linearise callbacks by channel-threads, are
 defined in Figure~\ref{fig:alt-lin}.  Each accepts the |begin| event of a
@@ -155,6 +155,19 @@ callback may be either linearised correctly, or with an error event if it
 breaks the alt protocol: the |RegTracker| process selects the appropriate
 event, based on whether the alt is currently registered at the relevant port.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\paragraph{The {\scalashape AltLin} process.}
+
+The |AltLin| process, which linearises the main calls of the alt, is defined
+in Figure~\ref{fig:AltLin}. It initially signals to the |RegTracker| that it
+is beginning registration, via event |beginRegistration|.  It then iterates
+through |branches|, trying to register at each branch in turn, as described by
+process |Register1| (the expression |nth(branches, i)| gives the branch at
+index~|i|).  The |RegTracker| keeps track of the results of the registration
+attempts.  If a registration is successful, |AltLin| moves to the
+deregistration phase.
+
 %%%%%%%%%%
 
 \begin{figure}
@@ -162,8 +175,7 @@ event, based on whether the alt is currently registered at the relevant port.
 AltLin = beginAlt.AltThread -> beginRegistration -> Register(0)
   
 Register(i) = 
-  if i==size then endRegistration?ac -> 
-    if ac then endAlt.AltThread.AltAbort -> AltLin else Waiting
+  if i==size then endRegistration?ac -> (if ac then endAlt.AltThread.AltAbort -> AltLin else Waiting)
   else Register1(i, nth(branches,i))
   
 Register1(i, InPortBranch.c) = 
@@ -181,41 +193,28 @@ Register1(i, OutPortBranch.c) =
   )
   
 Deregister(result) =
-  getToDeregisterIn?c.i -> beginDeregisterIn.AltThread.c.i -> 
+  getToDeregisterIn?c.i -> beginDeregisterIn.AltThread.c.i ->
      endDeregisterIn.AltThread.c -> Deregister(result)
   [] getToDeregisterOut?c.i -> beginDeregisterOut.AltThread.c.i ->
-     endDeregisterOut.AltThread.c -> Deregister(result)
+        endDeregisterOut.AltThread.c -> Deregister(result)
   [] deregisterDone -> endAlt.AltThread.result -> AltLin
   
 Waiting = 
-  endWait?result -> (
-    if result==AltAbort then endAlt.AltThread.result -> AltLin
-    else Deregister(result))
+  endWait?result -> (if result==AltAbort then endAlt.AltThread.result -> AltLin else Deregister(result))
   [] (spuriousWakeup.AltThread -> Waiting |~| STOP)
 \end{cspm}
 \caption{Definition of the {\scalastyle AltLin}
   processes.  \label{fig:AltLin}} 
 \end{figure}
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%
 
-\paragraph{The {\scalashape AltLin} process.}
-
-The |AltLin| process, which linearises the main calls of the alt, is defined
-in Figure~\ref{fig:AltLin}. It initially signals to the |RegTracker| that it
-is beginning registration, via event |beginRegistration|.  It then iterates
-through |branches|, trying to register at each branch in turn, as described by
-process |Register1| (the expression |nth(branches, i)| gives the branch at
-index~|i|).  The |RegTracker| keeps track of the results of the registration
-attempts.  If a registration is successful, |AltLin| moves to the
-deregistration phase.
-
-If it gets to the end of |branches| without a successful registration, it
-synchronises with |RegTracker| on channel |endRegistration| to indicates to
-|RegTracker| that registration is over.  |AltLin| receives from |RegTracker| a
-boolean, denoted~|ac|, that indicates whether all ports have been closed; if
-so, the call on the alt returns with an |AltAbort|; otherwise, the |AltLin|
-moves to the waiting phase.
+If the registration phase gets to the end of |branches| without a successful
+registration, it synchronises with |RegTracker| on channel |endRegistration|
+to indicates to |RegTracker| that registration is over.  |AltLin| receives
+from |RegTracker| a boolean, denoted~|ac|, that indicates whether all ports
+have been closed; if so, the call on the alt returns with an |AltAbort|;
+otherwise, the |AltLin| moves to the waiting phase.
 
 The deregistration phase is defined by the process |Deregister(result)| (where
 |result| will be the result of the call of the alt).  It repeatedly gets from
@@ -245,25 +244,24 @@ RegTracker =
   
 RegTracker1(reg) = 
   endRegisterIn.AltThread?c!RegisterWaiting -> 
-     RegTracker1(reg£%
+    RegTracker1(reg£%
       $\null\oplus \set{\CSPMMR{indexFor(InPortBranch.c)} \mapsto 
          \CSPMMR{InPortReg.c}}$£)
   [] endRegisterOut.AltThread?c!RegisterWaiting -> 
-     RegTracker1(reg£%
+       RegTracker1(reg£%
       $\null\oplus \set{\CSPMMR{indexFor(OutPortBranch.c)} \mapsto 
          \CSPMMR{OutPortReg.c}}$£)
-  [] endRegisterIn.AltThread?c!RegisterClosed ->
-     RegTracker1(reg£%
+  [] endRegisterIn.AltThread?c!RegisterClosed -> 
+       RegTracker1(reg£%
       $\null\oplus \set{\CSPMMR{indexFor(InPortBranch.c)} \mapsto 
          \CSPMMR{Closed}}$£) 
   [] endRegisterOut.AltThread?c!RegisterClosed -> 
-     RegTracker1(reg£%
+       RegTracker1(reg£%
       $\null\oplus \set{\CSPMMR{indexFor(OutPortBranch.c)} \mapsto 
          \CSPMMR{Closed}}$£)
   [] endRegisterIn.AltThread?c!RegisterSuccess?x -> RegTracker2(reg)
   [] endRegisterOut.AltThread?c!RegisterSuccess?x -> RegTracker2(reg)
-  [] let ac = allClosed(reg) within
-     endRegistration!ac -> (if ac then RegTracker else RegTracker3(reg))
+  [] let ac = allClosed(reg) within endRegistration!ac -> (if ac then RegTracker else RegTracker3(reg))
 
 RegTracker2(reg) = 
   let inRegs = getInRegs(reg) 
@@ -272,12 +270,10 @@ RegTracker2(reg) =
   (**[] (i£$\null \mapsto \CSPMMR{InPort.c}$£): reg @ getToDeregisterIn.c.i -> RegTracker2(reg) )
   [] (**[] (i£$\mapsto \CSPMMR{OutPortReg.c}$£): reg @ getToDeregisterOut.c.1 -> RegTracker2(reg) )
   [] allRegs=={} & deregisterDone -> RegTracker
-  [] endDeregisterIn.AltThread?c -> 
-     RegTracker2(reg£%
+  [] endDeregisterIn.AltThread?c -> RegTracker2(reg£%
       $\null\oplus \set{\CSPMMR{indexFor(InPortBranch.c)} \mapsto 
          \CSPMMR{NoReg}}$£)
-  [] endDeregisterOut.AltThread?c -> 
-     RegTracker2(reg£%
+  [] endDeregisterOut.AltThread?c -> RegTracker2(reg£%
       $\null\oplus \set{\CSPMMR{indexFor(OutPortBranch.c)} \mapsto 
          \CSPMMR{NoReg}}$£)
   [] maybeReceive?t?index:inRegs?x!false -> RegTracker2(reg£%
@@ -289,9 +285,27 @@ RegTracker2(reg) =
   [] maybeReceiveError?t?index:Index-inRegs -> STOP
   [] maybeSendError?t?index:Index-outRegs -> STOP
   [] portClosedError?t?index:Index-allRegs -> STOP
+
+RegTracker3(reg) = 
+  let inRegs = getInRegs(reg) 
+      outRegs = getOutRegs(reg)
+      allRegs = inRegs £$\union$£ outRegs within
+  maybeReceive?t?index:inRegs?x!true -> endWait.AltReceive.index.x -> 
+     RegTracker2(reg£%
+    $\null\oplus \set{\CSPMMR{index} \mapsto \CSPMMR{NoReg}}$£)
+  [] (**|~| x : Data @ maybeSend?t?index:outRegs!Some.x -> endWait.AltSend.index.x -> 
+        RegTracker2(reg£$\null\oplus \set{\CSPMMR{index} \mapsto \CSPMMR{NoReg}}$£))
+  [] portClosed?t?index:allRegs -> 
+        (let reg' = reg£%
+      $\null\oplus \set{\CSPMMR{index} \mapsto \CSPMMR{Closed}}$£ within
+         if allClosed(reg') then endWait.AltAbort -> RegTracker else RegTracker3(reg'))
+  [] maybeReceiveError?t?index:Index-inRegs -> STOP
+  [] maybeSendError?t?index:Index-outRegs -> STOP
+  [] portClosedError?t?index:Index-allRegs -> STOP
 \end{cspm}
-\caption{The {\scalastyle RegTracker}, {\scalastyle RegTracker1} and
-  {\scalastyle RegTracker2} processes.  \label{fig:RegTracker}}
+\caption{The {\scalastyle RegTracker} process. 
+%, {\scalastyle RegTracker1} and {\scalastyle RegTracker2} processes.
+\label{fig:RegTracker}}
 \end{figure}
 
 %RecordDereg(reg, OutPortReg.c)
@@ -321,7 +335,7 @@ It waits to receive notification, via event |beginRegistration| that
 registration has started.  However, any callback before this point would be
 outside the alt protocol, in which case it signals an error.
 
-The process |RegTracker1| has a parameter |reg| which is a mapping from
+Each subsidiary process has a parameter |reg|, which is a mapping from
 indices of |branches| to the type |RegInfo|, defined as follows.
 %
 \begin{cspm}
@@ -404,11 +418,12 @@ reflecting the behaviour of the implementation.
 
 The process |RegTracker2(reg)| deals with deregistration.  The names |inRegs|,
 |outRegs| and |allRegs| are set to the indices of registered inports,
-registered outports, and all registered ports, respectively.  It can send to
-|AltLin| information about a port that can be deregistered (channels
+registered outports, and all registered ports, respectively.  The process can
+send to |AltLin| information about a port that can be deregistered (channels
 |getToDeregisterIn| and |getToDeregisterOut|), or an indication that there is
-no such port (channel |deregisterDone|).  It synchronises on the |end| events of
-deregistrations, and updates its state to map the relevant index to |NoReg|.
+no such port (channel |deregisterDone|).  It synchronises on the |end| events
+of deregistrations, and updates its state to map the relevant index to
+|NoReg|.
 %% (via the subsidiary process |RecordDereg|, omitted for brevity).
 
 |RegTracker2| can synchronise with |Lin(t)| on the linearisation point of a
@@ -423,33 +438,30 @@ the alt protocol, so an error is signalled.
 
 %%%%%%%%%%
 
-\begin{figure}
-\begin{cspm}
-RegTracker3(reg) = 
-  let inRegs = getInRegs(reg) 
-      outRegs = getOutRegs(reg)
-      allRegs = inRegs £$\union$£ outRegs within
-  maybeReceive?t?index:inRegs?x!true -> 
-    endWait.AltReceive.index.x -> RegTracker2(reg£%
-    $\null\oplus \set{\CSPMMR{index} \mapsto \CSPMMR{NoReg}}$£)
-  [] (**|~| x : Data @ maybeSend?t?index:outRegs!Some.x -> 
-     endWait.AltSend.index.x -> RegTracker2(reg£%
-    $\null\oplus \set{\CSPMMR{index} \mapsto \CSPMMR{NoReg}}$£) )
-  [] portClosed?t?index:allRegs -> ( 
-    let reg' = reg£%
-      $\null\oplus \set{\CSPMMR{index} \mapsto \CSPMMR{Closed}}$£ within
-    if allClosed(reg') then endWait.AltAbort -> RegTracker else RegTracker3(reg')
-  )
-  [] maybeReceiveError?t?index:Index-inRegs -> STOP
-  [] maybeSendError?t?index:Index-outRegs -> STOP
-  [] portClosedError?t?index:Index-allRegs -> STOP
-\end{cspm}
-\caption{The {\scalastyle RegTracker3} process.  \label{fig:RegTracker3}}
-\end{figure}
+%% \begin{figure}
+%% \begin{cspm}
+%% RegTracker3(reg) = 
+%%   let inRegs = getInRegs(reg) 
+%%       outRegs = getOutRegs(reg)
+%%       allRegs = inRegs £$\union$£ outRegs within
+%%   maybeReceive?t?index:inRegs?x!true -> endWait.AltReceive.index.x -> RegTracker2(reg£%
+%%     $\null\oplus \set{\CSPMMR{index} \mapsto \CSPMMR{NoReg}}$£)
+%%   [] (**|~| x : Data @ maybeSend?t?index:outRegs!Some.x -> endWait.AltSend.index.x -> RegTracker2(reg£%
+%%     $\null\oplus \set{\CSPMMR{index} \mapsto \CSPMMR{NoReg}}$£))
+%%   [] portClosed?t?index:allRegs -> 
+%%        (let reg' = reg£%
+%%       $\null\oplus \set{\CSPMMR{index} \mapsto \CSPMMR{Closed}}$£ within if allClosed(reg') then endWait.AltAbort -> RegTracker else RegTracker3(reg'))
+%%   [] maybeReceiveError?t?index:Index-inRegs -> STOP
+%%   [] maybeSendError?t?index:Index-outRegs -> STOP
+%%   [] portClosedError?t?index:Index-allRegs -> STOP
+%% \end{cspm}
+%% \caption{The {\scalastyle RegTracker3} process.  \label{fig:RegTracker3}}
+%% \end{figure}
 
 %%%%%%%%%%
 
-The |RegTracker3| process (Figure~\ref{fig:RegTracker3}) deals with the
+The |RegTracker3| process %(Figure~\ref{fig:RegTracker3}) 
+deals with the
 waiting phase, waiting for callbacks from registered ports.  If can
 synchronise with |Lin(t)| on the linearisation point of a \SCALA{maybeReceive}
 operation corresponding to a registered inport.  The operation will be
@@ -466,6 +478,7 @@ signalled.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+\begin{mysamepage}
 \paragraph{Testing the idealised alt.}
 
 The components are combined together, as illustrated in
@@ -478,12 +491,13 @@ Errors£$_A$£ = {|maybeReceiveError, maybeSendError, portClosedError|}
 AltSpec£$_F$£ = (IdealisedAlt [|Errors£$_A$£|> CHAOS(Interface) ) \ Errors£$_A$£
 AltSpec£$_D$£ = (IdealisedAlt [|Errors£$_A$£|> DIV ) \ Errors£$_A$£
 \end{cspm}
+\end{mysamepage}
 
 We can then compare the CSP model of an alt implementation to the idealised
 model.  We can verify that the implementation model refines |AltSpec|$_F$ and
 |AltSpec|$_D$ in the relevant semantic models.
 
-\begin{window}[2,r,{
+\begin{window}[1,r,{
 %
 \vspace{0.5ex}
 \begin{tabular}{\|cccc\|}

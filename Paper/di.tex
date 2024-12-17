@@ -49,6 +49,7 @@ make them data independent.  (This change made negligible difference to the
 checks in Section~\ref{sec:syncchan}, but increased the state space of the
 checks in Section~\ref{sec:alt} by 2--3\%.)
 
+We will make use of the following results.
 Consider a data independent family of processes $P[t]$.  Let $T$ and~$T'$ be
 two concrete types, and let $f: T \fun T'$ be a surjective function.  Lift $f$
 to events by pointwise application; and then lift to traces by pointwise
@@ -61,9 +62,8 @@ and~$P[T']$~\cite{gavin:di}.
 \item If $(tr,X) \in failures(P[T])$ then\footnote{The notation
   $f\inverse\banana{e}$ represents the relational inverse image of~$e$
   under~$f$, i.e.~$\set{x \| f(x) = e}$.}
-\[
-(f(tr), \set{e \|  f\inverse\banana{e} \subseteq X}) \in failures(P[T']);
-\]
+$(f(tr), \set{e \|  f\inverse\banana{e} \subseteq X}) \in failures(P[T'])$;
+
 
 \item If $tr \in divs(P[T])$ then $f(tr) \in divs(P[T'])$. 
 \end{itemize}
@@ -173,11 +173,12 @@ This implies that the whole failure is synchronisation progressible.
 
 \begin{note}
 The above lemma does not hold when we replace synchronisation progressibility
-by synchronisation linearisability.  Consider the trace:
+(a property of stable failures) by synchronisation linearisability (a property
+of traces).  Consider the trace:
 \begin{eqnarray*}
 tr &  =  &
-  \trace{ \CSPMMR{beginSend.t1.A}, \CSPMMR{beginSend.t2.B}, 
-    \CSPMMR{beginReceive.t3}, \CSPMMR{endSend.t1}, \CSPMMR{endSend.t2} }.
+  \trace{ \CSPMMR{beginSend.t1.A},\, \CSPMMR{beginSend.t2.B},\, 
+    \CSPMMR{beginReceive.t3},\, \CSPMMR{endSend.t1},\, \CSPMMR{endSend.t2} }.
 \end{eqnarray*}
 This represents a complete invocation of |send(A)|, a complete invocation of
 |send(B)|, and a pending invocation of |receive|, all overlapping.  For each
@@ -202,10 +203,14 @@ Lemma~\ref{lem:progressibility-specific-value}, there is a value~$v$ such that
 $(tr,X) \project v$ is not synchronisation progressible.
 %
 Consider the function $f: T \fun T_2$ such that $f(v) = A$, and $f(x) = B$ for
-all $x \ne v$.  Then $(f(tr), \set{e \in \Sigma \| f\inverse(e) \subseteq X})
-\in failures(System[T_2])$, by the earlier data-independence result.  That
-failure is not synchronisation progressible for the same reason that $(tr,X)
-\project v$ is not synchronisation progressible.
+all $x \ne v$.  Then 
+\begin{eqnarray*}
+(f(tr), \set{e \in \Sigma \| f\inverse(e) \subseteq X}) & \in &
+   failures(System[T_2]),
+\end{eqnarray*}
+by the earlier data-independence result.  But that failure is not
+synchronisation progressible for the same reason that $(tr,X) \project v$ is
+not synchronisation progressible.
 \end{proof}
 
 
@@ -264,7 +269,7 @@ this point.
   invocations that time out, by the first two bullet points above;
 
 \item The |begin| and |end| events of all invocations that detect closure are
-  included in $(tr,X) \project \hat{v}$; hence they are before the 
+  included in $(tr,X) \project \hat{v}$; hence they are after the 
   linearisation point of |close|, by the third bullet point above.
 \end{itemize}
 
@@ -301,14 +306,14 @@ Recall that the implementation of |sendWithin| uses an equality test,
 corresponding to an assertion, and so the model is not data independent: if
 the equality test returns false, the process diverges.  We now argue that when
 we include this assertion in the model, verifying there is no such divergence
-when using $T_2 = \set{A, B}$ implies that there is no divergence for larger
-types of data.
+when using $T_2 = \set{A, B}$ implies that there is no such divergence for
+larger types of data.
 
-Suppose otherwise, and there is a divergence, say when the process compares
-values~$x$ and~$y$, following trace~$tr$.  Consider the function~$f$ that maps
-$x$ to~$A$, and maps all other values to~$B$.  Then the system using~$T_2$
-would compare values~$A$ and~$B$ following trace~$f(tr)$, and so would have a
-divergence.  This is a contradiction.
+Suppose otherwise, and there is a divergence in the system using~$T$, say when
+the process compares values~$x$ and~$y$, following trace~$tr$.  Consider the
+function~$f$ that maps $x$ to~$A$, and maps all other values to~$B$.  Then the
+system using~$T_2$ would compare values~$A$ and~$B$ following trace~$f(tr)$,
+and so would also have a divergence.  This is a contradiction.
 
 Thus, the behaviours of the models with and without the assertion have
 identical behaviours.  In particular, the former satisfies synchronisation

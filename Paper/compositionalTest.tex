@@ -14,8 +14,8 @@ and some channels.
   abstract model, which we call |IdealisedAlt|;
 
 \item We show that the combination of an |IdealisedAlt| and several
-  |Idealised|\-|Channel|s satisfies a property similar to that in the previous
-  section. 
+  |Idealised|\-|Channel|s satisfies the correctness property from the previous
+  section.
 \end{enumerate}
 %
 This allows us to deduce that the combination of an alt and several channels
@@ -43,7 +43,7 @@ Thus testing whether the model of a channel refines this specification is
 equivalent to testing whether it satisfies the specification when the
 environment does follow the protocol.  More precisely, we will produce a
 process |IdealisedChannel| that describes allowed behaviour when the environment
-follows the protocol, but produces an \emph{error event} from a set
+does follow the protocol, but produces an \emph{error event} from a set
 |Errors|$_C$ if the environment breaks the protocol.  We then test whether the
 channel model refines the process
 %
@@ -52,7 +52,7 @@ channel model refines the process
 \end{cspm}
 %
 where |Any| allows arbitrary behaviour (the definition depends upon the
-semantic model we are using).  Thus the combination acts like~|Any| after an
+semantic model we are using).  Thus the above process acts like~|Any| after an
 error event. 
 
 Likewise, we build an idealised model of an alt that allows arbitrary
@@ -63,15 +63,15 @@ form
 (IdealisedAlt [|Errors£$_A$£|> Any) \ Errors£$_A$£
 \end{cspm}
 %
-where |IdealisedAlt| describes allowed behaviour when the environment follows
-the protocol, but performs an event from~|Errors|$_A$ if the environment
-breaks the protocol.
+where |IdealisedAlt| describes allowed behaviour when the environment does
+follow the protocol, but performs an event from~|Errors|$_A$ if the
+environment breaks the protocol.
 
 We can then consider the combination of |IdealisedAlt| and several instances
 of |IdealisedChannel|.  Part of the analysis will show that no events from
 $\CSPMM{Errors}_C \union \CSPMM{Errors}_A$ occur: each component follows the
 alt protocol, provided the other has not previously broken the protocol.  But
-we can also show that this combination satisfies a property similar to that in
+we can also show that this combination satisfies the correctness property from
 the previous section, allowing us to deduce that the corresponding combination
 of an alt and channels satisfies that property.
 

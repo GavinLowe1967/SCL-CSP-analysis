@@ -17,7 +17,7 @@ Var(value, get, set) =
   [] set?t?value' -> Var(value', get, set)
 \end{cspm}
 %
-For example, the implementation of a channel has a variable
+For example, the implementation of an SCL channel has a variable
 \SCALA{receiversWaiting} that stores the current number of threads that are
 waiting to receive on the channel.  In the implementation, this can be an
 arbitrary \SCALA{Int}; however, we would expect the value to be non-negative
@@ -60,9 +60,9 @@ use of |Assert| ensures that the compiler does not try to produce an event on
 |setReceiversWaiting| outside the correct range |{0..N}|.
 %
 \begin{cspm}
-IncReceiversWaiting(me) = 
+IncReceiversWaiting(me) =
   getReceiversWaiting.me?r -> Assert(r < N, setReceiversWaiting.me.r+1 -> SKIP)
-DecReceiversWaiting(me) =
+DecReceiversWaiting(me) = 
   getReceiversWaiting.me?r -> Assert(r > 0, setReceiversWaiting.me.r-1 -> SKIP)
 \end{cspm}
 
@@ -70,17 +70,17 @@ We now discuss the modelling of Scala functions in the implementation, in
 particular how to model the value returned.  CSP has no notion of returning a
 value.  Instead, we adopt a continuation-passing approach.  If the Scala
 function returns a result of type~\SCALA{A}, the corresponding CSP process is
-given a parameter \CSPM{cont :: A -> Proc},  representing a continuation,
-i.e.~what the rest of the program does with the result.  Returns from the
-Scala function are then modelled by applying |cont| to the returned value.  A
-call to the function is modelled by providing a suitable function as the
-continuation.
+given a parameter\footnote{{\cspmstyle Proc} is the type of CSP processes.}
+\CSPM{cont :: A -> Proc}, representing a continuation, i.e.~what the rest of
+the program does with the result.  Returns from the Scala function are then
+modelled by applying |cont| to the returned value.  A call to the function is
+modelled by providing a suitable function as the continuation.
 
 A continuation-passing style can also be used to model computations that are
 passed to other constructs.  For example, the following macro captures an
 \SCALA{if} statement.  The test of the \SCALA{if} is modelled by a process
-|test(k)| that applies its continuation parameter~|k :: Bool -> Proc| to an
-appropriate boolean.
+|test(k)| that applies its continuation parameter~\CSPM{k :: Bool -> Proc} to
+an appropriate boolean.
 %
 \begin{cspm}
 If:: (((Bool) -> Proc) -> Proc, Proc, Proc) -> Proc
@@ -92,8 +92,7 @@ For example, Scala code \SCALA{if(result == None && status != Filled)\{...\}
 |status| is a shared variable) can be modelled as follows. 
 %
 \begin{cspm}
-let Test(k) = if result == None then getStatus.me?s -> k(s != Filled) else k(false)
-within If(Test,£\ldots£,£\ldots£)
+let Test(k) = if result == None then getStatus.me?s -> k(s != Filled) else k(false) within If(Test,£\ldots£,£\ldots£)
 \end{cspm}
 %
 Likewise, a \SCALA{while} loop can be captured using the following macro.

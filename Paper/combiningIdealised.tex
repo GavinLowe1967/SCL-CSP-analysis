@@ -1,14 +1,15 @@
 \subsection{Combining the idealised models}
 
-We now perform the final step in our compositional verification by combining
-an |IdealisedAlt| and corresponding |IdealisedChannel|s.
+We now perform the final step in our compositional verification. 
+%% by combining
+%% an |IdealisedAlt| and corresponding |IdealisedChannel|s.
 %
 Fix a definition of |branches|, defining the branches of an
 alt.  We can then build a system comprising an |IdealisedAlt| (based on
 |branches|) and a corresponding set of |IdealisedChannel|s, synchronising
-appropriately.
+appropriately (keeping the error events visible).
 
-\begin{window}[1,r,{
+\begin{window}[0,r,{
 %
 % \vspace*{1mm}
 \vspace{0.5ex}
@@ -30,8 +31,8 @@ the |spuriousWakeup| events hidden).  The table to the right gives statistics ab
 
 In particular, the above stable-failures test verifies that the system does
 not perform any of the error events from |Errors|$_A \union\null$|Errors|$_C$:
-each component follows the alt protocol assuming the other has not previously
-broken the protocol.
+this confirms that each component follows the alt protocol assuming the other
+has not previously broken the protocol.
 
 Recall that the processes |ChannelSpec| and |AltSpec| behaved like
 |IdealisedChannel| and |IdealisedAlt|, except that they allowed arbitrary

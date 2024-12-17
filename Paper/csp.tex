@@ -65,7 +65,11 @@ The process \CSPM{P [|E|> Q}
   of as exceptions, and |Q| as an exception handler.
 
 The process \CSPM{P [|A|] Q} runs \CSPM{P} and~\CSPM{Q} in parallel,
-synchronising on events from~\CSPM{A}.  The process \CSPM{**|| x:X @ [A(x)]
+synchronising on events from~\CSPM{A}.  The process \CSPM{P [A||B] Q} again
+runs~|P| and~|Q| in parallel: |P| is given alphabet~|A|, and |Q| is given
+alphabet~|B|; they synchronise on events in $\CSPMM{A} \inter \CSPMM{B}$.
+%
+The process \CSPM{**|| x:X @ [A(x)]
   P(x)} represents an indexed parallel composition of processes |P(x)| for
 \CSPM{x} in \CSPM{X}; each \CSPM{P(x)} is given alphabet~\CSPM{A(x)};
 processes synchronize on events in the intersection of their alphabets.
@@ -87,7 +91,7 @@ CSP, as implemented in the model checker FDR, is supported by a functional
 sublanguage, roughly equivalent to Haskell, but without type classes, and
 augmented with sets and mappings. 
  
-A \emph{trace} of a process is a sequence of (visible) events that a process
+A \emph{trace} of a process is a sequence of (visible) events that it
 can perform.  We say that \CSPM{P} is refined by~\CSPM{Q} in the traces model,
 written \CSPM{P [T= Q}, if every trace of~\CSPM{Q} is also a trace
 of~\CSPM{P}\@.  FDR can test such refinements automatically, for finite-state
@@ -113,13 +117,13 @@ We say that a process \emph{diverges} if it can perform an infinite number of
 internal (hidden) $\tau$ events without any intervening visible events.  The
 failures-divergences model describes a process by a set of divergences and a
 set of failures.  The model satisfies two closure properties, in order to
-correctly capture intuitions.  The set of divergences of process~|P| contains
-all traces after which |P| can diverge, and also all extensions of those
-traces.  The failures of process~|P| contains all its stable failures, and all
-failures using a trace from its divergences set.  Thus the immediately
-divergent process~|DIV| has all divergences and all failures.  We say that
-\CSPM{P} is refined by~\CSPM{Q} in the failures-divergences model, written
-\CSPM{P [FD= Q}
+correctly capture intuitions: (1)~the divergences of process~|P|
+contains all traces after which |P| can diverge, and also all extensions of
+those traces; and (2)~the failures of process~|P| contains all its stable
+failures, and all failures using a trace from its divergences set.  Thus the
+immediately divergent process~|DIV| has all divergences and all failures.  We
+say that \CSPM{P} is refined by~\CSPM{Q} in the failures-divergences model,
+written \CSPM{P [FD= Q}
 % ]
 if every divergence of~|Q| is a divergence of~|P|, and every failure of~|Q| is
 a failure of~|P|.  Thus |DIV| is refined by every other process in this model,

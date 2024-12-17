@@ -69,9 +69,8 @@ to as in Section~\ref{sec:syncchan}, so we elide some parts.  They are
 extended for operations on either |C1| or |C2| (recall that a channel-thread
 and alt-thread may use a port concurrently).  Further, they allow
 synchronisations with the alt-thread.
-%
+%-- Lineariser for a channel thread.
 \begin{cspm}
--- Lineariser for a channel thread.
 ChanThreadLin(me) = 
   C1::beginSend.me?x -> LinSending(me, x, c1, C1::endSend.me)
   [] C2::beginSend.me?x -> LinSending(me, x, c2, C2::endSend.me)
@@ -110,9 +109,9 @@ returning an |AltAbort|, it must detect that all the channels are closed.
 AltLin(me) = 
   A1::beginAlt.me -> (
     altSync?other:ChanThreads!me?c:inPorts?x -> 
-      A1::endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me)
-    [] altSync.me?other:ChanThreads?c:outPorts?x ->
-        A1::endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
+       A1::endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me)
+    [] altSync.me?other:ChanThreads?c:outPorts?x -> 
+          A1::endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
     [] allClosed -> A1::endAlt.me.AltAbort -> AltLin(me)
   )
 \end{cspm}
@@ -128,8 +127,7 @@ ChanSpec(c) =
   sync?t1?t2!c?x -> ChanSpec(c) [] altSync?t1?t2!c?x -> ChanSpec(c) 
   [] timeout?t!c -> ChanSpec(c)   [] close?t!c -> ChanSpecClosed(c)
 ChanSpecClosed(c) =
-  isClosed?t!c -> ChanSpecClosed(c) [] allClosed -> ChanSpecClosed(c)
-  [] close?t!c -> ChanSpecClosed(c)
+  isClosed?t!c -> ChanSpecClosed(c) [] allClosed -> ChanSpecClosed(c) [] close?t!c -> ChanSpecClosed(c)
 \end{cspm}
 
 We combine the different processes together, much as before.  We can then

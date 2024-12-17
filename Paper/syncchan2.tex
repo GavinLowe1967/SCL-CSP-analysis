@@ -2,7 +2,9 @@
 
 \inlineScala
 
-We now consider the closing of channels.  
+We now consider the closing of channels.  Recall that, after the channel has
+been closed, a |send| or |receive| invocation fails and throws a |Closed|
+exception.
 
 Implementing the |close| operation correctly proved harder than expected.  An
 earlier version of the implementation suffered from a bug involving three
@@ -42,10 +44,15 @@ implementation asserts this, and the analysis below checks this).  However, if
 there is a receiver waiting (as recorded by |receiversWaiting|), then that
 receiver will eventually return the value being sent, so the sending thread
 should also return successfully.  If there is no waiting receiver, the sending
-thread throws a |Closed| exception.  The precise order of checks is thus
-rather subtle; this is where the earlier implementation went wrong: when the
-waiting thread received a signal, it first checked |isChanClosed|, which can
-go wrong if a receiving thread has received the sending thread's value. 
+thread throws a |Closed| exception.  
+
+The precise order of checks in the previous paragraph is rather subtle.  This
+is where the earlier implementation went wrong.  Previously, when the waiting
+thread received a signal, it first checked |isChanClosed|, and if it was set,
+threw a |Closed| exception.  This could be wrong, as a receiving thread might
+have read the sending thread's value, and returned that value, indicating that
+it had correctly synchronised.  The correct version of the code was found with
+the help of the model checking described below. 
 
 %%%%%%%%%% Model
 
@@ -81,7 +88,7 @@ the linearisation point of the close; and sends and receives that return
 We use a CSP event |close.t| to represent the linearisation point of a
 \SCALA{close} operation by thread~|t|.  Further, we use an event |closed.t| to
 represent the linearisation point of a send or receive operation by thread~|t|
-that returns |Closed|, because it finds the channel is closed.
+that returns |Closed| because it finds the channel is closed.
 
 Within the specification, the state of the channel is recorded by the process
 |ChanSpec|.  When the channel is open, it allows threads to synchronise, or
@@ -104,6 +111,8 @@ channel, to facilitate extension to the timed operations later.)  Receiving is
 treated similarly.  Further, the linearisation point for a \SCALA{close}
 operation can take place between |beginClose| and |endClose| events.
 %
+%\pagebreak[1]
+%\begin{mysamepage}
 \begin{cspm}
 Lin(t) = 
   C::beginSend.t?x -> SendingLin(t, x, C::endSend.t)
@@ -118,6 +127,7 @@ ReceivingLin(t, endChan) =
   sync?other!t?x -> endChan.ReceiveSuccess.x -> Lin(t)
   [] isClosed.t -> endChan.Closed -> Lin(t)
 \end{cspm}
+%\end{mysamepage}
 
 We combine the linearisers as before (with suitably extended alphabets).  We
 then synchronise them with |ChanSpec| on the relevant events, and hide those
@@ -182,10 +192,9 @@ synchronisations right, rather than the length of the delay.
 
 The CSP model of an SCL monitor also models timed waits.  It records which
 threads are doing timed waits on which conditions.  Such threads can receive a
-signal, as for untimed waits.  In addition, they can time out and acquire the
-lock on the monitor, assuming no other thread holds the lock.  Thus we model
-that such threads can eventually time out, but don't model the length of the
-delay. 
+signal, as for untimed waits.  In addition, they can time out, and
+subsequently acquire the lock on the monitor.  Thus we model that such threads
+can eventually time out, but don't model the length of the delay.
 
 The |sendWithin| and |receiveWithin| operations can then be modelled in CSP
 much as before, using these timed waits.
@@ -243,3 +252,18 @@ RAM).  The check with 5 threads in the failures-divergences model was beyond
 the limits of this machine.  As is normally the case, the state space, and
 hence the checking time, grows rapidly with the number of threads.   
 \end{window}
+
+
+It is worth mentioning an alternative approach, which turns out not to work in
+this case.  For standard concurrent datatypes, linearisability is often
+verified by identifying \emph{linearisation points}: specific points in the
+program code where an invocation appears to take place.  By analogy, can we
+identify \emph{synchronisation points} in the program code for each operation,
+where the thread is aware of the result of the invocation, and then capture
+the correctness condition in terms of these synchronisation points?  This idea
+won't work in this case, for the following reason.  The synchronisation point
+for the sending thread would have to be after it receives the signal on
+\SCALA{continue} and regains the lock, because it doesn't know the result of
+the synchronisation before this; but this might be too late, because the
+channel might have been closed before it obtained the lock, and so the
+synchronisation would appear incorrect.

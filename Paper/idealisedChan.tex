@@ -119,10 +119,10 @@ Figure~\ref{fig:idealised-chan}.  The component |ChanState| keeps track of the
 state of the channel: whether an alt is registered at a port, and whether the
 channel is closed.  The component |RegLin| is responsible for linearising
 registrations and deregistrations.  Each component |Lin(t)| is responsible for
-linearising the operation calls of channel-thread~|t|.  We describe these in
-more detail below.  Some details of the definitions are unobvious, and were
-found by trial and error: their correctness is evidenced by the subsequent
-successful refinement checks.
+linearising the operation calls of channel-thread~|t|.  We describe these
+components in more detail below.  Some details of the definitions are
+unobvious, and were found by trial and error: their correctness is evidenced
+by the subsequent successful refinement checks.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% RegLin
 
@@ -210,9 +210,8 @@ SendingLin(t, x, endChan, timed) =
   let Success = endChan.SendSuccess -> Lin(t) within
   sync.t?t':ChanThread-{t}!x -> commit.t -> Success
   [] registerInSync.t.x -> commit.t -> Success
-  [] callMaybeReceive.t?alt?index!x -> beginMaybeReceive.t.alt.index.x -> 
-    endMaybeReceive.t.alt?res -> 
-    (if res then Success else SendingLin(t, x, endChan, timed))
+  [] callMaybeReceive.t?alt?index!x -> beginMaybeReceive.t.alt.index.x -> endMaybeReceive.t.alt?res -> 
+       (if res then Success else SendingLin(t, x, endChan, timed))
   [] isClosed.t -> endChan.Closed -> Lin(t)
   [] timed & timeout.t -> endChan.Timeout -> Lin(t)
   
@@ -221,8 +220,8 @@ ReceivingLin(t, endChan, timed) =
   sync?t':ChanThread-{t}!t?x -> Success(x) 
   [] registerOutSync.t?x -> Success(x) 
   [] callMaybeSend.t?alt?index -> beginMaybeSend.t.alt.index -> (
-    endMaybeSend.t.alt.Some?x -> Success(x) 
-    [] endMaybeSend.t.alt.None -> ReceivingLin(t, endChan, timed) )
+       endMaybeSend.t.alt.Some?x -> Success(x) 
+       [] endMaybeSend.t.alt.None -> ReceivingLin(t, endChan, timed) )
   [] isClosed.t -> endChan.Closed -> Lin(t)
   [] timed & timeout.t -> endChan.Timeout -> Lin(t)
 \end{cspm}
@@ -302,8 +301,8 @@ ChanState(regStatus) =
     registerError -> STOP
     [] deregisterIn?(alt.index):regIns ->  ChanState(NoReg)
     [] deregisterOut?(alt.index):regOuts -> ChanState(NoReg)
-    [] deregisterInError?(alt.index):AltIndex-regIns -> STOP
-    [] deregisterOutError?(alt.index):AltIndex-regOuts -> STOP
+    [] deregisterInError?(alt.index):(AltIndex-regIns) -> STOP
+    [] deregisterOutError?(alt.index):(AltIndex-regOuts) -> STOP
     [] callMaybeReceive?t?(alt.index):regIns?x -> beginMaybeReceive.t.alt.index.x -> 
          endMaybeReceive.t.alt?res -> ChanState(NoReg)
     [] callMaybeSend?t?(alt.index):regOuts -> beginMaybeSend.t.alt.index -> 
@@ -318,10 +317,15 @@ ChanState(regStatus) =
   []
   close?t -> (
     if regStatus == NoReg then ChanStateClosed
-    else    
-      beginPortClosed.t?(alt.index):regIns£$\union$£regOuts ->
-      endPortClosed.t.alt -> ChanStateClosed
+    else beginPortClosed.t?(alt.index):regIns£$\union$£regOuts -> endPortClosed.t.alt -> ChanStateClosed
   )
+
+ChanStateClosed = 
+  isClosed?t -> ChanStateClosed
+  [] close?t -> ChanStateClosed
+  [] commit?t -> ChanStateClosed
+  [] deregisterIn?alt?index -> ChanStateClosed
+  [] deregisterOut?alt?index -> ChanStateClosed
 \end{cspm}
 \caption{The {\scalashape ChanState} process.  \label{fig:ChanState}}
 \end{figure}
@@ -331,10 +335,11 @@ ChanState(regStatus) =
 \paragraph{The {\cspmstyle ChanState} process.}
 
 The |ChanState| process keeps track of the state of the channel.  It is
-defined in Figures~\ref{fig:ChanState} (for an open channel)
-and~\ref{fig:ChanStateClosed} (for a closed channel).  The parameter
-|regStatus| records the current registration status, and is taken from the
-following type.
+defined in Figure~\ref{fig:ChanState}.
+%%  (for an open channel)
+%% and~\ref{fig:ChanStateClosed} (for a closed channel).
+The parameter |regStatus| records the current registration status, and is
+taken from the following type.
 %
 \begin{cspm}
 datatype RegStatus = NoReg | InReg.AltID.Index | OutReg.AltID.Index
@@ -405,23 +410,24 @@ Other possibilities are available regardless of the registration status.
 
 %%%%%
 
-\begin{figure}
-\begin{cspm}
-ChanStateClosed = 
-  isClosed?t -> ChanStateClosed
-  [] close?t -> ChanStateClosed
-  [] commit?t -> ChanStateClosed
-  [] deregisterIn?alt?index -> ChanStateClosed
-  [] deregisterOut?alt?index -> ChanStateClosed
-\end{cspm}
-\caption{The {\scalashape ChanStateClosed}
-  process.  \label{fig:ChanStateClosed}}
-\end{figure}
+%% \begin{figure}
+%% \begin{cspm}
+%% ChanStateClosed = 
+%%   isClosed?t -> ChanStateClosed
+%%   [] close?t -> ChanStateClosed
+%%   [] commit?t -> ChanStateClosed
+%%   [] deregisterIn?alt?index -> ChanStateClosed
+%%   [] deregisterOut?alt?index -> ChanStateClosed
+%% \end{cspm}
+%% \caption{The {\scalashape ChanStateClosed}
+%%   process.  \label{fig:ChanStateClosed}}
+%% \end{figure}
 
 %%%%%
 
-The process~|ChanStateClosed| in Figure~\ref{fig:ChanStateClosed} corresponds
-to the channel having been closed.  
+The process~|ChanStateClosed| 
+%in Figure~\ref{fig:ChanStateClosed} 
+corresponds to the channel having been closed.
 %
 \begin{itemize}
 \item This process can perform |inClosed.t|, synchronising with either
@@ -482,25 +488,39 @@ and the times taken to perform these checks, in different models; in each
 case, one thread was an alt-thread and the remainder where channel-threads.
 With five threads, the checks fail to complete on the available architecture.
 \end{window}
+
+The bottleneck in these checks is the time taken to normalise the
+specification: this accounts for about 90\% of the total in the
+stable-failures model; checks with more than four threads get stuck at this
+point.  This step builds an automaton equivalent to the specification, but
+with the property that after each trace (of visible events), a unique state is
+reached; if, after trace~$tr$, the specification can reach
+states~$st_1,\ldots,st_k$, then the normalised automaton contains a
+corresponding state equivalent to $st_1 \mathbin{\CSPMM{\|~\|}} \ldots
+\mathbin{\CSPMM{\|~\|}} st_k$.  The idealised channel is a complex process,
+with much internal nondeterminism, so normalising it is slow.
+
+
  
 Interestingly, the failures-divergences check is faster than the
-stable-failures model: normally, it is the other way round.  The difference in
-time is because of the time taken to normalise the specification, which
-accounted for about 90\% of the total in the stable-failures model.  This step
-builds an automaton equivalent to the specification, but with the property
-that after each trace (of visible events), a unique state is reached; if,
-after trace~$tr$, the specification can reach states~$st_1,\ldots,st_k$, then
-the normalised automaton contains a corresponding state equivalent to $st_1
-\mathbin{\CSPMM{\|~\|}} \ldots \mathbin{\CSPMM{\|~\|}} st_k$.  Consider the
-case where the trace~$tr$ might have included a (hidden) error event.  In the
-failures-divergences model, the resulting normalised state includes |DIV|, and
-so is equal to~|DIV|: the normalisation algorithm identifies this, and so does
-not need to expand its successor states.  However, in the stable-failures
-model, the algorithm does not identify that the corresponding state is
-equivalent to |CHAOS(Interface)|: it does construct the successor states,
-making normalisation much slower than in the failures-divergences model.  It
-is straightforward to show that the failures-divergences check implies the
-corresponding stable-failures check, because |IdealisedChan| is
-divergence-free.
+stable-failures model: normally, it is the other way round.  The difference is
+due to the time taken to normalise the specification.
+%% , which accounted for about 90\% of the total in the stable-failures model.
+%% This step builds an automaton equivalent to the specification, but with the
+%% property that after each trace (of visible events), a unique state is
+%% reached; if, after trace~$tr$, the specification can reach
+%% states~$st_1,\ldots,st_k$, then the normalised automaton contains a
+%% corresponding state equivalent to $st_1 \mathbin{\CSPMM{\|~\|}} \ldots
+%% \mathbin{\CSPMM{\|~\|}} st_k$.
+Consider the case where a trace~$tr$ might have included a (hidden) error
+event.  In the failures-divergences model, the resulting normalised state
+after~$tr$ includes |DIV|, and so is equal to~|DIV|: the normalisation
+algorithm identifies this, and so does not need to expand its successor
+states.  However, in the stable-failures model, the algorithm does not
+identify that the corresponding state is equivalent to |CHAOS(Interface)|: it
+does construct the successor states, making normalisation much slower than in
+the failures-divergences model.  It is straightforward to show that the
+failures-divergences check implies the corresponding stable-failures check,
+because |IdealisedChan| is divergence-free.
 
 

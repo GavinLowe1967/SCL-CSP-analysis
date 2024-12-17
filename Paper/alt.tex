@@ -30,7 +30,7 @@ result of type |RegisterInResult[A]|, where |A| is the type of data passed by
 the port, of one of the following forms.
 %
 \begin{description}
-\item[\rm{\scalastyle RegisterInSuccess(x)}:] the port was willing to
+\item[\rm{\scalastyle RegisterInSuccess(x)}:] the port is willing to
   communicate, and the alt has received~|x| from it;
 
 \item[\rm{\scalastyle RegisterInWaiting}:] the port is not currently willing to
@@ -50,7 +50,7 @@ value to be sent.  The operation returns a result of one of the following
 forms.
 %
 \begin{description}
-\item[\rm{\scalastyle RegisterOutSuccess}:] the port was willing to
+\item[\rm{\scalastyle RegisterOutSuccess}:] the port is willing to
   communicate, and the alt has sent it a value;
 
 \item[\rm{\scalastyle RegisterOutWaiting}:] the port is not currently willing to
@@ -287,19 +287,20 @@ A process records which thread, if any, currently holds the lock, and which
 threads are currently waiting for a signal.  One difference, however, concerns
 a bug in the implementation of JVM monitors: a thread that is waiting for a
 signal may resume, even though it has received no signal!  This is known as a
-\emph{spurious wakeup}.  The implementation of an alt guards against spurious
-wakeups by performing suitable checks when resuming after a wait, and waiting
+\emph{spurious wakeup}.  The alt implementation guards against spurious
+wakeups by performing a suitable check when resuming after a wait, and waiting
 again if appropriate.
 
 Our CSP model of a monitor reflects the possibility of spurious wakeups,
 allowing a waiting thread~|t| to resume either as the result of a signal, or a
 spurious wakeup, modelled by the event |spuriousWakeup.t|.  We run this
-monitor process in parallel with a \emph{regulator process} that
-nondeterministically chooses whether or not to allow a spurious wakeup.  This
-last point is important: if we allowed unrestricted spurious wakeups, there is
-a danger that our analysis would seem to show that suitable progress
-properties are satisfied, when in fact it is only spurious wakeups that allow
-progress, and without them the system would get stuck.
+monitor process in parallel with a \emph{regulator process} \CSPM{Reg =
+  CHAOS(\{\|spuriousWakeup\|\})} that nondeterministically chooses whether or not
+to allow a spurious wakeup.  This last point is important: if we allowed
+unrestricted spurious wakeups, there is a danger that our analysis would seem
+to show that suitable progress properties are satisfied, when in fact it is
+only spurious wakeups that allow progress, and without them the system would
+get stuck.
 
 We choose not to model the guards of alt branches, for we believe that doing
 so would add a lot of complexity to the model, and cause FDR checks to take

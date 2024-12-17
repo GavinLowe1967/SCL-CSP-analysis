@@ -2,12 +2,16 @@
 We carry out an analysis of message-passing concurrency primitives, namely a
 synchronous channel and an alt (alternation) construct.  We model these
 primitives using the process algebra CSP, and analyse them using the model
-checker FDR.  We consider the correctness conditions of synchronisation
-linearisation and progressibility: we show how these can be captured in CSP\@.
-Our analysis discovered an error in a previous implementation.  A direct
-analysis of the composition of an alt and corresponding channels scales quite
-poorly.  To overcome this, we perform a compositional analysis: we show that a
-channel and an alt each satisfy a more abstract description; and show that the
+checker FDR.  We consider the correctness properties of \emph{synchronisation
+  linearisation} (informally, that each completed operation invocation
+corresponds to a correct synchronisation) and \emph{progressibility}
+(informally, that invocations don't get stuck unnecessarily): we show how
+these properties can be captured in CSP\@.  Our initial analysis discovered an
+error in a previous implementation; our subsequent analysis helped us to
+produce a correct implementation.  It turns out that a direct analysis of the
+composition of an alt and corresponding channels scales quite poorly.  To
+overcome this, we perform a compositional analysis: we show that a channel and
+an alt each satisfies a more abstract description; and show that the
 composition of these abstract descriptions satisfies synchronisation
 linearisation and progressibility.
 \end{abstract}
@@ -122,10 +126,11 @@ of operation, and can be used concurrently by multiple threads.  These factors
 also provide a challenge to the analysis.
 %
 We do not include the Scala implementation here, because there is so much
-code; but it can be obtained via the paper's web page~\framebox{???}.
+code; but it can be obtained via the paper's web
+page\footnote{\url{https://www.cs.ox.ac.uk/people/gavin.lowe/SCL-CSP.html}.}. 
 Likewise, we do not include the CSP model of the implementation, but instead
 concentrate on the specification, which we consider more interesting; all the
-CSP can be obtained from the paper's web page.
+CSP can likewise be obtained from the paper's web page.
 
 The rest of the paper is structured as follows.  In Section~\ref{sec:csp} we
 give a brief overview of the syntax and semantics of CSP\@.  In
@@ -134,23 +139,26 @@ different aspects of channels incrementally, in the interests of clarity.  We
 start by considering just the (untimed) send and receive operations: we give
 an overview of the implementation, and of the corresponding part of the CSP
 model.  We then describe the correctness condition for these operations,
-namely \emph{synchronisation linearisation}~\cite{LL:synchronisation}.  We
-also describe a related progress property, \emph{synchronisation
-  progressibility}.  We present the corresponding CSP specification and
+namely \emph{synchronisation linearisation}~\cite{LL:synchronisation},
+informally, that each completed operation invocation corresponds to a correct
+synchronisation.  We also describe a related progress property,
+\emph{synchronisation progressibility}, informally, that invocations don't get
+stuck unnecessarily.  We present the corresponding CSP specification and
 refinement check for each property.  We then extend our analysis to consider
 the closing of channels: this is of particular interest, because the analysis
 revealed an error in an earlier implementation.  Fixing this error, required
 fairly substantial changes to the implementation.  Performing the analysis in
 this paper helped to clarify what the correctness condition should be, and so
-helped to focus on the critical point.  We then extend the analysis to the
-timed send and receive operations (but ignoring the interactions with alts at
-this point).
+helped to focus on the critical point; the correct implementation was found
+with the help of the model checking described in this paper.  We then extend
+the analysis to the timed send and receive operations (but ignoring the
+interactions with alts at this point).
 
 In Section~\ref{sec:alt} we consider alts.  We describe the high-level design
 in terms of the interactions (via operation calls) between alts and channels;
 we  sketch some implementation details, and describe aspects of the CSP
 model.  We then describe a direct analysis: we consider a system constructed
-from an alt with a fixed number of branches, and associated channels; we
+from an alt with a fixed number of branches, and associated channels, and
 construct a corresponding CSP specification for synchronisation
 linearisability and progressibility.  This analysis was useful in helping to
 develop a correct implementation: it revealed various flaws with earlier
@@ -221,7 +229,7 @@ concurrency API\@.
 I~\cite{gavin:alt} use CSP to derive and verify a generalisation of the
 alt construct.  
 %
-In~\cite{gavin:OneOne}, I used CSP to discover the cause of a deadlock in an
+In~\cite{gavin:OneOne}, I use CSP to discover the cause of a deadlock in an
 implementation of a synchronous channel. 
 %
 Pedersen and Chalmers~\cite{PC23} analyse communication channels in ProcessJ,

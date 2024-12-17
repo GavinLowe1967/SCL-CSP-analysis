@@ -1,11 +1,19 @@
-\documentclass[12pt,a4paper]{article}
+%\documentclass[12pt,a4paper]{article}
+\documentclass{fac}
+%\documentclass{acmart}
+%\acmJournal{FAC}
 
 \usepackage{mathsx,tech,url}
 \usepackage{tikz}
 \usetikzlibrary{arrows}
 \usepackage{scalalistings}
+\def\scalaInlineSize{\relax}
+\def\scalasize{\relax}
 % \unScalaMid  % We need "|" to have standard meaning when cspm.sty is read
 \usepackage[slashRename]{cspm}
+\def\cspmInlineSize{\relax}
+\def\cspmsize{\relax}
+
 \usepackage{picinpar}
 
 \def\X{node {$\cross$}}
@@ -39,14 +47,47 @@
 \newtheorem{note}[theorem]{Note}
 \newtheorem{prop}[theorem]{Proposition}
 
+%%% Strict same-page environment
+\newenvironment{mysamepage}
+  {\par\nobreak\vfil\penalty0\vfilneg\vtop\bgroup}
+  {\par\xdef\tpd{\the\prevdepth}\egroup \prevdepth=\tpd}
+
 \def\topfraction{0.85}
 \renewcommand{\floatpagefraction}{0.75}
 \sloppy
 
-\title{Analysing a Library of Concurrency Primitives using CSP}
-\author{Gavin Lowe}
+\title{Analysing a Library of Concurrency Primitives using CSP} 
+\author[Gavin Lowe]{Gavin Lowe\thanks{%
+  Author's address: St Catherine's College, University of Oxford, UK\@.
+    E-mail: \texttt{gavin.lowe@cs.ox.ac.uk}.}}
+%\address{XXX}
+%% \email{gavin.lowe@cs.ox.ac.uk}
+%% \affiliation{%
+%%   \institution{St Catherine's College}
+%%   \city{Oxford}
+%%   \country{UK}
+%% }
+
+%% \correspond{Gavin Lowe, St Catherine's College, University of Oxford,
+%%   UK.  Email \texttt{gavin.lowe@cs.ox.ac.uk}.}
+
 
 \begin{document}
+%% \begin{abstract}
+%% We carry out an analysis of message-passing concurrency primitives, namely a
+%% synchronous channel and an alt (alternation) construct.  We model these
+%% primitives using the process algebra CSP, and analyse them using the model
+%% checker FDR.  We consider the correctness conditions of synchronisation
+%% linearisation and progressibility: we show how these can be captured in CSP\@.
+%% Our analysis discovered an error in a previous implementation.  A direct
+%% analysis of the composition of an alt and corresponding channels scales quite
+%% poorly.  To overcome this, we perform a compositional analysis: we show that a
+%% channel and an alt each satisfy a more abstract description; and show that the
+%% composition of these abstract descriptions satisfies synchronisation
+%% linearisation and progressibility.
+%% \end{abstract}
+
+
 \maketitle
 
 \input{introduction}
