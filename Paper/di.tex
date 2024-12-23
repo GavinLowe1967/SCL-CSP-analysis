@@ -89,39 +89,39 @@ operations.
 
 Consider a maximal failure $(tr,X)$ (i.e.~where $X$ contains \emph{all} events
 that would be refused in the relevant state) of a correct implementation.
-Suppose there is a pending \CSPM{send} operation (i.e., that has been called
-but not returned); if that operation has synchronised, then the corresponding
-|endSend| event is not refused (i.e.~is not in~$X$); and if the operation has
+Suppose there is a pending \CSPM{send} execution (i.e., that has been called
+but not returned); if that execution has synchronised, then the corresponding
+|endSend| event is not refused (i.e.~is not in~$X$); and if the execution has
 not synchronised, then the corresponding |endSend| event is refused.
-Likewise, suppose there is a pending |receive| operation; if that operation
-has synchronised with an invocation of |send(v)|, then the corresponding
+Likewise, suppose there is a pending |receive| execution; if that execution
+has synchronised with an execution of |send(v)|, then the corresponding
 |endReceive| event with data value~|v| is not refused (but all the other
 corresponding |endReceive| events of that thread are refused); and if the
-operation has not synchronised, then all corresponding |endReceive| events of
+execution has not synchronised, then all corresponding |endReceive| events of
 that thread are refused.  Thus by examining this maximal failure, we can
-calculate which operations have synchronised.  This prompts the following
+calculate which executions have synchronised.  This prompts the following
 definition.
 %
 \begin{definition}
 \label{def:synchronised}
-Let $(tr,X)$ be a maximal failure of the system.  We say that an invocation
-has \emph{synchronised} if either there is a corresponding |end| event with
-a |Success| value (i.e.~the invocation returned successfully) or such an
-|end| event is not refused.
+Let $(tr,X)$ be a maximal failure of the system.  We say that an operation
+execution has \emph{synchronised} if either there is a corresponding |end|
+event with a |Success| value (i.e.~the execution returned successfully) or
+such an |end| event is not refused.
 
-The data value of an invocation \CSPM{send}$(v)$ is~$v$.  The data value of a
-synchronised invocation of |receive| is either the data value in the
-|endReceive| event, or (for a pending invocation) the data value in the
+The data value of an execution \CSPM{send}$(v)$ is~$v$.  The data value of a
+synchronised execution of |receive| is either the data value in the
+|endReceive| event, or (for a pending execution) the data value in the
 available |endReceive| event.
 \end{definition}
 
 \begin{definition}
 \label{def:project}
 We define the restriction of trace $tr$ to data value~$v$, written $tr
-\project v$, to be the subtrace of $tr$ containing: (1)~events of invocations
-whose data value is~$v$, and (2)~the |beginReceive| events of unsynchronised
-invocations of |receive|.  We define the restriction of $(tr,X)$ to~$v$,
-written $(tr,X) \project v$, to be $(tr \project v, X)$.
+\project v$, to be the subtrace of $tr$ containing: (1)~events of operation
+executions whose data value is~$v$, and (2)~the |beginReceive| events of
+unsynchronised executions of |receive|.  We define the restriction of
+$(tr,X)$ to~$v$, written $(tr,X) \project v$, to be $(tr \project v, X)$.
 \end{definition}
 
 %%%%%
@@ -142,28 +142,28 @@ then the whole failure is synchronisation progressible.
 
 \begin{proof}
 Consider a particular value of~$v$.  The fact that $(tr,X) \project v$ is
-synchronisation progressible implies that there is some way of pairing off
-the synchronised invocations for~$v$, corresponding to the synchronisations,
-and such that no further such synchronisations are possible:
-%
-\begin{itemize}
-\item If there is an unsynchronised invocation of $\CSPMM{send}(v)$, then
-  there is no unsynchronised invocation of |receive|;
-
-\item If there is an unsynchronised invocation of |receive|, there is no
-  unsynchronised invocation of $\CSPMM{send}(v)$.
-\end{itemize}
-
-Considering all values of~$v$ together, we deduce that there is some way of
-pairing off all the synchronised invocations, corresponding to the
+synchronisation progressible implies that there is some way of pairing up the
+synchronised operation executions for~$v$, corresponding to the
 synchronisations, and such that no further such synchronisations are possible:
 %
 \begin{itemize}
-\item If there is an unsynchronised invocation of |send|, then
-  there is no unsynchronised invocation of |receive|;
+\item If there is an unsynchronised execution of $\CSPMM{send}(v)$, then
+  there is no unsynchronised execution of |receive|;
 
-\item If there is an unsynchronised invocation of |receive|, there is no
-  unsynchronised invocation of |send|.
+\item If there is an unsynchronised execution of |receive|, there is no
+  unsynchronised execution of $\CSPMM{send}(v)$.
+\end{itemize}
+
+Considering all values of~$v$ together, we deduce that there is some way of
+pairing up all the synchronised executions, corresponding to the
+synchronisations, and such that no further such synchronisations are possible:
+%
+\begin{itemize}
+\item If there is an unsynchronised execution of |send|, then
+  there is no unsynchronised execution of |receive|;
+
+\item If there is an unsynchronised execution of |receive|, there is no
+  unsynchronised execution of |send|.
 \end{itemize}
 %
 This implies that the whole failure is synchronisation progressible. 
@@ -180,8 +180,8 @@ tr &  =  &
   \trace{ \CSPMMR{beginSend.t1.A},\, \CSPMMR{beginSend.t2.B},\, 
     \CSPMMR{beginReceive.t3},\, \CSPMMR{endSend.t1},\, \CSPMMR{endSend.t2} }.
 \end{eqnarray*}
-This represents a complete invocation of |send(A)|, a complete invocation of
-|send(B)|, and a pending invocation of |receive|, all overlapping.  For each
+This represents a complete execution of |send(A)|, a complete execution of
+|send(B)|, and a pending execution of |receive|, all overlapping.  For each
 value~$v$, the restriction $tr \project v$ is synchronisation linearisable:
 the |send| could synchronise with the pending |receive|.  However, $tr$ itself
 is clearly not synchronisation linearisable, because only one |send| can
@@ -229,34 +229,34 @@ restriction mentioned earlier.
 
 We extend Definition~\ref{def:synchronised} to |sendWithin| and
 |receiveWithin| in the obvious way.  Given a maximal failure, we say that an
-invocation of |send|, |receive|, |sendWithin| or |receiveWithin| \emph{detects
+execution of |send|, |receive|, |sendWithin| or |receiveWithin| \emph{detects
   closure} if either it returns the |Closed| value, or is pending and the
 return of the |Closed| value is not refused (so all successful returns are
-refused).  We say that a |sendWithin| or |receiveWithin| invocation
+refused).  We say that a |sendWithin| or |receiveWithin| execution
 \emph{times out} if either it returns |Timeout|, or such an event is not
 refused.
 
 We extend the definition of the restriction of trace $tr$ to data value~$v$,
-written $tr \project v$, to include: (1)~events of invocations whose data
-value is~$v$; (2)~the |begin| events of unsynchronised invocations of
-|receive| and |receiveWithin|; (3)~|begin| and |end| events of all invocations
-that detect closure; (4)~|begin| and |end| events of all invocations that
-time out; and (5)~all |beginClose| and |endClose| events.
+written $tr \project v$, to include: (1)~events of operation executions whose
+data value is~$v$; (2)~the |begin| events of unsynchronised executions of
+|receive| and |receiveWithin|; (3)~|begin| and |end| events of all executions
+that detect closure; (4)~|begin| and |end| events of all executions that time
+out; and (5)~all |beginClose| and |endClose| events.
 
 The proof then proceeds much as before.  In the proof of the adaptation of
 Lemma~\ref{lem:progressibility-specific-value}, the fact that $(tr,X) \project
 v$ is synchronisation progressible implies there is some way of choosing the
-first linearisation point of an invocation of |close| (if there is one) such
+first linearisation point of an execution of |close| (if there is one) such
 that:
 %
 \begin{itemize}
-\item all invocations that synchronise with data value~$v$ can be linearised
+\item all operation executions that synchronise with data value~$v$ can be
+  linearised before the linearisation of |close|;
+
+\item all executions (for any data value) that time out can be linearised
   before the linearisation of |close|;
 
-\item all invocations (for any data value) that time out can be linearised
-  before the linearisation of |close|;
-
-\item all invocations (for any data value) that detect closure can be
+\item all executions (for any data value) that detect closure can be
   linearised after the linearisation of |close|.
 \end{itemize}
 %
@@ -266,9 +266,9 @@ this point.
 %
 \begin{itemize}
 \item This is necessarily after all linearisations of synchronisations and
-  invocations that time out, by the first two bullet points above;
+  executions that time out, by the first two bullet points above;
 
-\item The |begin| and |end| events of all invocations that detect closure are
+\item The |begin| and |end| events of all executions that detect closure are
   included in $(tr,X) \project \hat{v}$; hence they are after the 
   linearisation point of |close|, by the third bullet point above.
 \end{itemize}
@@ -278,15 +278,15 @@ this point.
 \paragraph{Alts.}
 
 We now extend the analysis to alts.  Consider a maximal refusal.  We say that
-an invocation of the alt \emph{synchronises to receive~$x$} if either an
+an execution of the alt \emph{synchronises to receive~$x$} if either an
 |endAlt.t.AltReceive.i.|$x$ event occurs, or such an event is not refused.  We
-say that an invocation \emph{synchronises to send~$x$} similarly.  We say that
-an invocation \emph{aborts} if either an |endAlt.t.AltAbort| event occurs, or
+say that an execution \emph{synchronises to send~$x$} similarly.  We say that
+an execution \emph{aborts} if either an |endAlt.t.AltAbort| event occurs, or
 such an event is not refused.
 
 We then extend the restriction of trace~$tr$ to data value~$v$ in the obvious
-way, to also include: (1)~|beginAlt| and |endAlt| events of invocations that
-send or receive~$v$; and (2)~|beginAlt| events of invocations that fail to
+way, to also include: (1)~|beginAlt| and |endAlt| events of executions that
+send or receive~$v$; and (2)~|beginAlt| events of executions that fail to
 synchronise (so either abort or are blocked).
 
 The proof then proceeds much as before.

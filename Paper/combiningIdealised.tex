@@ -1,4 +1,5 @@
 \subsection{Combining the idealised models}
+\label{sec:combiningIdealised}
 
 We now perform the final step in our compositional verification. 
 %% by combining
@@ -25,7 +26,8 @@ D & 5 & 227M & 1710s \\
 We can then use FDR to verify that this system is divergence-free (when the
 |spuriousWakeup| events are kept visible), and that it refines (in the
 stable-failures model) the specification from Section~\ref{sec:combined} (with
-the |spuriousWakeup| events hidden).  The table to the right gives statistics about these checks, where
+the |spuriousWakeup| events hidden).  The table to the right gives statistics
+about these checks, where 
 |branches| contains one inport branch and one output branch.
 \end{window}
 
@@ -46,8 +48,8 @@ the checks would take slightly longer).
 Further, we earlier showed that the models of the implementations refine
 |ChannelSpec| and |AltSpec|.  This then implies that the same combination of
 the implementations would also pass the tests described above (although the
-checks might be infeasible in practice): formally, this is because all CSP
-operators are monotonic with respect to refinement.
+checks might be infeasible in practice): formally, this is because refinement
+is compositional with respect to all CSP operators.
 
 %% \framebox{Type sizes, timing}
 

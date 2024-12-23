@@ -19,9 +19,18 @@ and some channels.
 \end{enumerate}
 %
 This allows us to deduce that the combination of an alt and several channels
-satisfies the same property. This approach scales better than that in the
-previous section, so will allow us to deduce correctness for a larger number
-of threads.
+satisfies the same property.  
+
+The fundamental reason why such an approach works is that CSP refinement is
+compositional: if $P \refinedby Q$ then $C(P) \refinedby C(Q)$ for any
+context~$C$ defined using CSP operators~\cite{awr:UCS}.  This means that if we
+refine one component of a system, we also refine the whole system.
+Alternatively, if we show that a component refines some specification, we can
+replace that component by its specification in the analysis of the whole
+system. 
+
+This approach scales better than that in the previous section, so allows us to
+deduce correctness for a larger number of threads.
 
 The analysis is complicated by the following issue.  A channel works correctly
 under the assumption that any alt that interacts with it follows the alt
@@ -42,10 +51,11 @@ its environment breaks the alt protocol, and if so allow arbitrary behaviour.
 Thus testing whether the model of a channel refines this specification is
 equivalent to testing whether it satisfies the specification when the
 environment does follow the protocol.  More precisely, we will produce a
-process |IdealisedChannel| that describes allowed behaviour when the environment
-does follow the protocol, but produces an \emph{error event} from a set
-|Errors|$_C$ if the environment breaks the protocol.  We then test whether the
-channel model refines the process
+process |IdealisedChannel| that describes allowed behaviour when the
+environment does follow the protocol, but produces an \emph{error event} from
+a set |Errors|$_C$ if the environment breaks the protocol.  We then test
+(Section~\ref{sec:idealisedChan}) whether the channel model refines the
+process
 %
 \begin{cspm}
 (IdealisedChannel [|Errors£$_C$£|> Any) \ Errors£$_C$£
@@ -56,8 +66,8 @@ semantic model we are using).  Thus the above process acts like~|Any| after an
 error event. 
 
 Likewise, we build an idealised model of an alt that allows arbitrary
-behaviour if its environment breaks the protocol.  The model will be of the
-form 
+behaviour if its environment breaks the protocol
+(Section~\ref{sec:idealisedAlt}).  The model will be of the form
 %
 \begin{cspm}
 (IdealisedAlt [|Errors£$_A$£|> Any) \ Errors£$_A$£
@@ -68,7 +78,8 @@ follow the protocol, but performs an event from~|Errors|$_A$ if the
 environment breaks the protocol.
 
 We can then consider the combination of |IdealisedAlt| and several instances
-of |IdealisedChannel|.  Part of the analysis will show that no events from
+of |IdealisedChannel|.  Part of the analysis
+(Section~\ref{sec:combiningIdealised}) will show that no events from
 $\CSPMM{Errors}_C \union \CSPMM{Errors}_A$ occur: each component follows the
 alt protocol, provided the other has not previously broken the protocol.  But
 we can also show that this combination satisfies the correctness property from

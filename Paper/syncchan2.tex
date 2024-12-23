@@ -1,9 +1,10 @@
 \subsection{Closing channels}
+\label{sec:syncchan-closing}
 
 \inlineScala
 
 We now consider the closing of channels.  Recall that, after the channel has
-been closed, a |send| or |receive| invocation fails and throws a |Closed|
+been closed, a |send| or |receive| execution fails and throws a |Closed|
 exception.
 
 Implementing the |close| operation correctly proved harder than expected.  An
@@ -74,6 +75,8 @@ terminology of~\cite{LL:synchronisation}) \emph{stateless}: no state is
 carried forward from one synchronisation to another.  However, when we
 consider closing of the channel, it becomes \emph{stateful}, with two states,
 open or closed.  (Other synchronisation objects have more interesting states.)
+The definition of synchronisation linearisation requires the synchronisation
+history to be consistent with the state. 
 
 Our specification will treat \SCALA{close} as a linearisable operation: it
 will appear to take place atomically, at some point, called the
@@ -165,14 +168,14 @@ timed send and receive operations are based around this.
 The |sendWithin(duration)(x)| operation initially waits on |slotEmptied| until
 either |status| holds |Empty| or the channel is closed (which it rechecks when
 it receives a signal), or the deadline is reached.  If the channel is closed,
-it throws a |Closed| exception.  If it timedout, it returns |false|.
+it throws a |Closed| exception.  If it timed out, it returns |false|.
 Otherwise, it continues as in the untimed operation, except it waits on
 |continue| until at most |duration| after the initial call.  If it then finds
 that |status| is |Read|, then the send has been successful; it continues as in
 the untimed operation, and returns |true|.  Otherwise |status| must still hold
 |Filled| and |value| must stll hold~|x| (the implementation asserts this, and
 the analysis below checks this).  If the channel is closed, it continues as in
-the untimed operation.  Otherwise, it must have timedout, so it sets |status|
+the untimed operation.  Otherwise, it must have timed out, so it sets |status|
 to |Empty| to clear its value, signals to any thread waiting on |slotEmptied|,
 and returns |false|.
 
@@ -180,7 +183,7 @@ The |receiveWithin(duration)| operation acts much as the untimed version,
 except it waits on |slotFull| until at most |duration| after the initial
 call.  If it then finds that |status| holds |Filled|, it continues as in the
 untimed case, returning a suitable |Some| value.  If the channel is closed, it
-throws a |Closed| exception.  Otherwise it must have timedout, so returns
+throws a |Closed| exception.  Otherwise it must have timed out, so returns
 |None|.  
 
 %%%%% Modelling
@@ -253,17 +256,21 @@ the limits of this machine.  As is normally the case, the state space, and
 hence the checking time, grows rapidly with the number of threads.   
 \end{window}
 
+%% It is worth mentioning an alternative approach, which turns out not to work
+%% in this case.  For standard concurrent datatypes, linearisability is often
+%% verified by identifying \emph{linearisation points}: specific points in the
+%% program code where an operation execution appears to take place.  By
+%% analogy, can we identify \emph{synchronisation points} in the program code
+%% for each operation, where the thread is aware of the result of the
+%% execution, and then capture the correctness condition in terms of these
+%% synchronisation points?  More precisely, we would like identify particular
+%% events in the thread processes that represent the linearisation points.
 
-It is worth mentioning an alternative approach, which turns out not to work in
-this case.  For standard concurrent datatypes, linearisability is often
-verified by identifying \emph{linearisation points}: specific points in the
-program code where an invocation appears to take place.  By analogy, can we
-identify \emph{synchronisation points} in the program code for each operation,
-where the thread is aware of the result of the invocation, and then capture
-the correctness condition in terms of these synchronisation points?  This idea
-won't work in this case, for the following reason.  The synchronisation point
-for the sending thread would have to be after it receives the signal on
-\SCALA{continue} and regains the lock, because it doesn't know the result of
-the synchronisation before this; but this might be too late, because the
-channel might have been closed before it obtained the lock, and so the
-synchronisation would appear incorrect.
+%% This idea won't work in this case, essentially because the synchronisation
+%% point for one thread might depend upon what happens in other threads, whereas
+%% this idea requires \emph{fixed} synchronisation points.  The synchronisation
+%% point for the sending thread would have to be after it receives the signal on
+%% \SCALA{continue} and regains the lock, because it doesn't know the result of
+%% the synchronisation before this; but this might be too late, because the
+%% channel might have been closed before it obtained the lock, and so the
+%% synchronisation would appear incorrect.

@@ -3,16 +3,16 @@ We carry out an analysis of message-passing concurrency primitives, namely a
 synchronous channel and an alt (alternation) construct.  We model these
 primitives using the process algebra CSP, and analyse them using the model
 checker FDR.  We consider the correctness properties of \emph{synchronisation
-  linearisation} (informally, that each completed operation invocation
+  linearisation} (informally, that each completed operation execution
 corresponds to a correct synchronisation) and \emph{progressibility}
-(informally, that invocations don't get stuck unnecessarily): we show how
-these properties can be captured in CSP\@.  Our initial analysis discovered an
-error in a previous implementation; our subsequent analysis helped us to
-produce a correct implementation.  It turns out that a direct analysis of the
-composition of an alt and corresponding channels scales quite poorly.  To
-overcome this, we perform a compositional analysis: we show that a channel and
-an alt each satisfies a more abstract description; and show that the
-composition of these abstract descriptions satisfies synchronisation
+(informally, that executions don't get stuck if they could synchronise): we
+show how these properties can be captured in CSP\@.  Our initial analysis
+discovered an error in a previous implementation; our subsequent analysis
+helped us to produce a correct implementation.  It turns out that a direct
+analysis of the composition of an alt and corresponding channels scales quite
+poorly.  To overcome this, we perform a compositional analysis: we show that a
+channel and an alt each satisfies a more abstract description; and show that
+the composition of these abstract descriptions satisfies synchronisation
 linearisation and progressibility.
 \end{abstract}
 
@@ -25,31 +25,31 @@ Scala programming language.  It was developed for teaching concurrent
 programming to students, and includes support for message-passing concurrency,
 monitors and semaphores.  In this paper we analyse the message-passing
 primitives: we build CSP models of them, and then use the model checker FDR to
-test for correctness.  To our surprise, the analysis revealed a bug in the
-implementation.
+test for correctness.  To our surprise, the analysis revealed a (fairly minor)
+bug in the implementation.
 
 We start by describing relevant aspects of SCL\@.  Program threads can send
 and receive messages using \emph{channels}.  If |c| is a channel, then the
 command |c.send(x)| (also written as |c!x|) sends the value~|x| on~|c|; the
-expression |c.receive()| (also written as~|c?()|) receives and
-returns a value.  We consider just \emph{synchronous} channels in this paper:
-the sending thread much wait until there is a thread willing to receive, so
-that the two invocations synchronise.  Channels are typed: the type
+expression |c.receive()| (also written as~|c?()|) receives and returns a
+value.  We consider just \emph{synchronous} channels in this paper: the
+sending thread must wait until there is a thread willing to receive, so that
+the two operation executions synchronise.  Channels are typed: the type
 |SyncChan[A]| represents synchronous channels that send data of type~|A|.  A
 channel is composed of an \emph{outport}, where values are sent, and an
 \emph{inport}, where values are received.
 
-Channels also have timed operations.  The operation |sendWithin(delay)(x)|
-attempts to send |x|, but if it is unable to synchronise with a receiving
-thread within |delay|\,ms, it times out; it returns a boolean to indicate
-whether sending was successful.  Similarly, the operation
-|receiveWithin(delay)| attempts to receive, but if it is unable to synchronise
-with a sending thread within |delay|\,ms, it times out; it returns a value
-|Some(x)| to indicate that it successfully received~|x|, or |None| to indicate
-that it timed out.
+Channels in SCL also have timed operations.  The operation
+|sendWithin(delay)(x)| attempts to send |x|, but if it is unable to
+synchronise with a receiving thread within |delay|\,ms, it times out; it
+returns a boolean to indicate whether sending was successful.  Similarly, the
+operation |receiveWithin(delay)| attempts to receive, but if it is unable to
+synchronise with a sending thread within |delay|\,ms, it times out; it returns
+a value |Some(x)| to indicate that it successfully received~|x|, or |None| to
+indicate that it timed out.
 
 Ports may be shared: multiple threads may try to send or receive on the same
-port concurrently; the channel is responsible for pairing off a sender with a
+port concurrently; the channel is responsible for pairing up a sender with a
 receiver. 
 
 A channel can be closed (by the |close| operation): subsequently, an attempt
@@ -73,7 +73,7 @@ call~|f| a \emph{continuation} (above, ``\SCALA{x => println(x)}'' denotes the
 function that takes argument~|x| and executes~|println(x)|).  An \emph{outport
   branch} is denoted ``\SCALA{out =!=> e ==> cont}'', where |out| is a channel
 (or outport), |e| is an expression whose value matches the type of~|out|, and
-|c| is a computation, which we again call a continuation (this continuation is
+|cont| is a computation, which we again call a continuation (this continuation is
 optional).  
 
 The alt waits until there is another thread ready to communicate at the other
@@ -98,14 +98,15 @@ while(true){
 \end{scala}
 %
 This example also illustrates that the calculation of the value sent in an
-outport branch might have side effects; therefore the relevant expression is
-evaluated only once the alt commits to communication via that branch.
+outport branch might have side effects; therefore the expression that produces
+the value is evaluated only once the alt commits to communication via that
+branch.
 
 We say that a branch is \emph{feasible} if the port has not been closed and
 the guard is true.  Above, the inport branch is feasible only if the buffer is
 not full and |in| is not closed; the outport branch is feasible only if the
 buffer is not empty and |out| is not closed.  If no branch of an alt is
-feasible, it throws an |AltAbort| exception.
+feasible, the alt throws an |AltAbort| exception.
 
 The construct |serve(branches)| is like an |alt(branches)| that is executed
 repeatedly, except any |AltAbort| exception is caught.  Hence it runs
@@ -140,30 +141,31 @@ start by considering just the (untimed) send and receive operations: we give
 an overview of the implementation, and of the corresponding part of the CSP
 model.  We then describe the correctness condition for these operations,
 namely \emph{synchronisation linearisation}~\cite{LL:synchronisation},
-informally, that each completed operation invocation corresponds to a correct
+informally, that each completed operation execution corresponds to a correct
 synchronisation.  We also describe a related progress property,
-\emph{synchronisation progressibility}, informally, that invocations don't get
-stuck unnecessarily.  We present the corresponding CSP specification and
-refinement check for each property.  We then extend our analysis to consider
-the closing of channels: this is of particular interest, because the analysis
-revealed an error in an earlier implementation.  Fixing this error, required
-fairly substantial changes to the implementation.  Performing the analysis in
-this paper helped to clarify what the correctness condition should be, and so
-helped to focus on the critical point; the correct implementation was found
-with the help of the model checking described in this paper.  We then extend
-the analysis to the timed send and receive operations (but ignoring the
-interactions with alts at this point).
+\emph{synchronisation progressibility}, informally, that operation executions
+don't get stuck when they could synchronise.  We present the corresponding CSP
+specification and refinement check for each property.  We then extend our
+analysis to consider the closing of channels: this is of particular interest,
+because the analysis revealed an error in an earlier implementation.  Fixing
+this error, required fairly substantial changes to the implementation.
+Performing the analysis in this paper helped to clarify what the correctness
+condition should be, and so helped to focus on the critical point; the correct
+implementation was found with the help of the model checking described in this
+paper.  We then extend the analysis to the timed send and receive operations
+(but ignoring the interactions with alts at this point).
 
 In Section~\ref{sec:alt} we consider alts.  We describe the high-level design
 in terms of the interactions (via operation calls) between alts and channels;
-we  sketch some implementation details, and describe aspects of the CSP
-model.  We then describe a direct analysis: we consider a system constructed
-from an alt with a fixed number of branches, and associated channels, and
-construct a corresponding CSP specification for synchronisation
-linearisability and progressibility.  This analysis was useful in helping to
-develop a correct implementation: it revealed various flaws with earlier
-versions.  However, the analysis suffers from a state-space explosion, and so
-it's possible to analyse only rather small systems.
+we sketch some implementation details, and describe aspects of the CSP model.
+We then describe a direct analysis: we consider a system constructed from an
+alt with a fixed number of branches, and associated channels, and construct a
+corresponding CSP specification for synchronisation linearisability and
+progressibility.  This analysis was again useful in helping to develop a
+correct implementation: it revealed various flaws with earlier versions.
+However, the analysis suffers from a state-space explosion, and so it's
+possible to analyse only rather small systems (an alt with two branches and
+channels, used by three threads).
 
 In Section~\ref{sec:compositional}, we perform an alternative, compositional,
 verification.  We build a more abstract CSP description of a synchronous
@@ -226,14 +228,19 @@ Welch and Martin~\cite{welch-martin} present a model of Java multi-threading
 (in particular, monitors), including a model of a channel within their own
 concurrency API\@.
 %
-I~\cite{gavin:alt} use CSP to derive and verify a generalisation of the
-alt construct.  
+I~\cite{gavin:alt} derive and verify a generalisation of the
+alt construct, by building CSP models and analysing them using FDR.  
 %
 In~\cite{gavin:OneOne}, I use CSP to discover the cause of a deadlock in an
 implementation of a synchronous channel. 
 %
 Pedersen and Chalmers~\cite{PC23} analyse communication channels in ProcessJ,
 in the context of cooperative scheduling.
+
+I~\cite{gavin:lock-free-queue} use CSP and FDR to show that a lock-free queue
+is linearisable, a property on which synchronisation linearisation is based.
+Dongol and Le-Papin~\cite{DlP:opacity} use a similar technique to verify
+opacity in a software transactions memory. 
 
 CSP has also been used more widely to analyse concurrent systems. 
 %

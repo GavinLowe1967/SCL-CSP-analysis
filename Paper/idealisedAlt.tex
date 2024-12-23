@@ -1,4 +1,5 @@
 \subsection{Idealised model of an alt}
+\label{sec:idealisedAlt}
 
 %%%%%%%%%%
 
@@ -462,7 +463,7 @@ the alt protocol, so an error is signalled.
 
 The |RegTracker3| process %(Figure~\ref{fig:RegTracker3}) 
 deals with the
-waiting phase, waiting for callbacks from registered ports.  If can
+waiting phase, waiting for callbacks from registered ports.  It can
 synchronise with |Lin(t)| on the linearisation point of a \SCALA{maybeReceive}
 operation corresponding to a registered inport.  The operation will be
 successful, as captured by the final |true| field in the event.  It informs

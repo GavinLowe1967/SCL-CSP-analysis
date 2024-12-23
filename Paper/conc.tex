@@ -18,12 +18,12 @@ The compositional verification proved more difficult that we had expected.
 One reason for this is that the concrete components have complex behaviours
 which the idealised versions have to reflect.  Further, there is a decoupling
 between the eternal interface ---in terms of |begin| and |end| events--- and
-where those invocations have an effect: the use of lineariser components
-within the idealised models proved useful in capturing this decoupling.  The
-other main source of difficulty was the necessity of capturing environmental
-assumptions upon the components: we used error events to signal a violation of
-an environmental assumption, which led to subsequent arbitrary behaviour; we
-believe this technique works well.
+where those operation executions have an effect: the use of lineariser
+components within the idealised models proved useful in capturing this
+decoupling.  The other main source of difficulty was the necessity of
+capturing environmental assumptions upon the components: we used error events
+to signal a violation of an environmental assumption, which led to subsequent
+arbitrary behaviour; we believe this technique works well.
 
 We should be clear about what we have shown.  We have analysed particular
 models, with particular numbers of channel-threads, particular choices for the
@@ -31,7 +31,7 @@ branches of an alt, and a particular choice of the type |Data| of data values.
 In the absence of further arguments, these results to not imply that
 corresponding results hold for larger values of those parameters would also
 hold --- but they do help to give us confidence that they would, since
-experience shows that must bugs are exhibited by rather small instances.
+experience shows that most bugs are exhibited by rather small instances.
 
 The \emph{parameterised model checking problem} seeks to verify a family of
 systems, for all values of certain parameters, such as those identified in the

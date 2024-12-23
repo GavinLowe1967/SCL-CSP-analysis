@@ -188,6 +188,7 @@ Figure~\ref{fig:alt-2} gives an example of a successful callback of
 
 %%%%%
 
+Callbacks are blocked during the registration phase.
 If the alt receives multiple callbacks to |maybeReceive| or |maybeSend|
 (including during deregistration), it responds negatively to all except the
 first, returning |false| or |None|, respectively.
