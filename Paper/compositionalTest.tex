@@ -46,6 +46,13 @@ When we analyse a channel in isolation, we cannot assume that its environment
 cannot assume that its environment (channels) follows the environment: to make
 these assumptions would be circular reasoning. 
 
+The issue of components of a system making assumptions about other components
+has been widely considered before, for example using the techniques of
+rely-guarantee~\cite{jones-83} and
+assumption-commitment~\cite{misra-chandy-81,PJ-91}.  Our approach shows how to
+use CSP model checking in such a situation. 
+
+
 Our approach is as follows.  Our idealised model of a channel will detect if
 its environment breaks the alt protocol, and if so allow arbitrary behaviour.
 Thus testing whether the model of a channel refines this specification is

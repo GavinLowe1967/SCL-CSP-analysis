@@ -25,7 +25,8 @@ def registerIn(alt: AltT, index: Int, iter: Int): RegisterInResult[A]
 %
 on each of its inports, where |alt| is a reference to the calling alt, |index|
 is the index of the branch within the alt, and |iter| is an iteration number
-within a |serve| construct (used only for assertions).  The operation returns a
+within a |serve| construct (used only for assertions).  
+The operation returns a
 result of type |RegisterInResult[A]|, where |A| is the type of data passed by
 the port, of one of the following forms.
 %
@@ -34,7 +35,7 @@ the port, of one of the following forms.
   communicate, and the alt has received~|x| from it;
 
 \item[\rm{\scalastyle RegisterInWaiting}:] the port is not currently willing to
-  communicate (but the registration has been recorded); 
+  communicate (the port stores the details of the registration); 
 
 \item[\rm{\scalastyle RegisterInClosed}:] the port has been closed.
 \end{description}
@@ -245,6 +246,10 @@ branch.  Otherwise, if all ports are closed, it throws an |AltAbort|.
 We now describe how the implementation of channels is extended to deal with
 alts.
 
+Each channel has variables to store information about alts currently
+registered there.  These are set by the |registerIn| and |registerOut|
+operations. 
+
 Recall from the Introduction that the ports of a channel may not be
 simultaneously feasible in two alts.
 The |registerIn| operation checks whether another alt is currently registered
@@ -265,7 +270,8 @@ wait is necessary to ensure correct synchronisation: without it, the value
 could be taken by a new receiver that calls |receive| only after the
 alt-thread has returned.
 
-The deregister operations simply clear the registration information.
+The deregister operations simply clear the information stored during the
+earlier registration.
 
 If a call of |send| or |sendWithin| finds that there is an alt registered at
 the inport, it calls |maybeReceive| on that alt, and reacts accordingly.
@@ -286,11 +292,12 @@ model of a channel.  We highlight the main differences.
 A JVM monitor is modelled by a CSP module, in a similar way to an SCL monitor.
 A process records which thread, if any, currently holds the lock, and which
 threads are currently waiting for a signal.  One difference, however, concerns
-a bug in the implementation of JVM monitors: a thread that is waiting for a
-signal may resume, even though it has received no signal!  This is known as a
-\emph{spurious wakeup}.  The alt implementation guards against spurious
-wakeups by performing a suitable check when resuming after a wait, and waiting
-again if appropriate.
+a bug in the implementation of JVM monitors\footnote{%
+  \url{https://docs.oracle.com/javase/8/docs/api/java/lang/Object.html#wait-long-}.}:
+a thread that is waiting for a signal may resume, even though it has received
+no signal!  This is known as a \emph{spurious wakeup}.  The alt implementation
+guards against spurious wakeups by performing a suitable check when resuming
+after a wait, and waiting again if appropriate.
 
 Our CSP model of a monitor reflects the possibility of spurious wakeups,
 allowing a waiting thread~|t| to resume either as the result of a signal, or a

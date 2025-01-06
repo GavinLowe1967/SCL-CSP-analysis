@@ -14,7 +14,7 @@ elide details related to those operations or to the use of alts.  Recall that
 channels are shared: multiple senders and receivers can compete to use the
 channel.
 
-The implementation is based on a monitor (more precisely, using an
+The SCL implementation is based on a monitor (more precisely, using an
 implementation of monitors within the SCL library).  All operations are
 carried out while holding the monitor's lock.  In addition, the implementation
 uses a number of \emph{conditions}: one thread can wait on a condition until
@@ -77,44 +77,185 @@ A receiver waits (on |slotFull|) until the status is |Filled| (updating
 signals to the sender (on |continue|), and returns the value stored in
 |value|.
 
-We now outline the CSP model.  The model uses small fixed types representing
-the type of data communicated by the channel, and the type of thread
-identities.  (We discuss the choices for these types in
-Section~\ref{sec:conc}.)  
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-The monitor is modelled by a CSP module, encapsulating a process that
-maintains the state of the monitor, specifically: (1)~which thread, if any,
-holds the lock on the monitor; and (2)~which threads are waiting on which
-conditions.  When no thread holds the lock, the monitor process allows a
-thread, other than any of the waiting threads, to acquire the lock.  The
-thread that currently holds the lock can:
+\subsection{Basic CSP model}
+
+We now outline the CSP model; Figure~\ref{fig:basic-CSP-model} gives an
+overview.  The model uses small fixed types |Data| representing the type of
+data communicated by the channel, and |ThreadID| representing the type of
+thread identities.  (We discuss the choices for these types in
+Section~\ref{sec:conc}.)
+
+%%%%%
+
+\begin{figure}
+\begin{center}
+\def\gap{0.1}
+\def\threadW{15mm}
+\def\height{8mm}
+\begin{tikzpicture}[> = triangle 90]
+%%%%% Variables
+\draw (0,0) node[draw, minimum height = \height] (status){\cspmstyle Status};
+\draw (0,-1) node[draw, minimum height = \height] (value){\cspmstyle Value};
+%%%%% Monitor
+\draw (0,-3) node[draw] (monitor){%
+  \cspmstyle
+  \begin{tabular}{c}
+  Monitor \\ \cline{1-1}
+  Lock \\
+  Unlock \\
+  Await \\
+  Signal
+  \end{tabular}};
+%%%%% Threads
+\draw (6,-1) node[draw, minimum width = \threadW, minimum height = \height]
+  (thread){\cspmstyle Thread};
+\draw (thread.north west) ++ (\gap, 0.0) |- ++ (\threadW, \gap) |- 
+  ++ (-\gap, -\height);
+%%%%% Channels
+\draw (thread.north) ++ (0,\gap) -- (6,0) -- 
+  node[above]{\cspmstyle getStatus, setStatus} (status); 
+\draw (thread) -- node[above]{\cspmstyle getValue, setValue} (value); 
+\draw[->] (thread) -- (6,-3) -- (monitor);
+\draw (thread.east) ++ (\gap,0.0) -- node[above, near end]{\cspmstyle
+  \begin{tabular}{c}
+  beginSend, endSend, \\ beginReceive, endReceive
+  \end{tabular}} ++ (3.5,0);
+%
+\draw (-1.4,1) -- (7.3,1) -- (7.3,-4.5) -- (-1.4,-4.5) -- (-1.4,1);
+\end{tikzpicture}
+\end{center}
+\caption{Representation of the CSP model of a basic channel.  Channel
+  communications are represented by lines labelled with the channel names;
+  calls of functions provided by the {\cspmstyle Monitor} module are
+  represented by a line with a triangular arrowhead.}
+\label{fig:basic-CSP-model}
+\end{figure}
+
+%%%%%
+
+We model each shared variable using a CSP process as follows.  Here |value| is
+the current value of the variable, and |get| and |set| are channels on which a
+thread~|t| can get or set the value.
+%
+\begin{cspm}
+Var(value, get, set) = 
+  get?t!value -> Var(value, get, set)
+  [] set?t?value' -> Var(value', get, set)
+\end{cspm}
+%
+We can then model the |value| and |status| variables is follows.
+(We initialise |value| to a particular value~|A|.)
+\begin{cspm}
+channel getValue, setValue: ThreadID.Data
+Value = Var(A, getValue, setValue) 
+datatype StatusT = Empty | Filled | Read
+channel getStatus, setStatus : ThreadID . StatusT
+Status = Var(Empty, getStatus, setStatus)
+\end{cspm}
+
+%%%%%
+
+The monitor is modelled by a CSP module.  This encapsulates a process that
+maintains the state of the monitor, defined recursively in terms of the
+following two families of processes:\footnote{%
+%
+The type \CSPM{(|ConditionID => \{ThreadID\}|)} represents maps from condition
+identities to sets of thread identities.  The type \CSPM{ConditionID} contains
+an identity for each of the conditions described earlier.}
+%
+\begin{cspm}
+Unlocked :: ((|ConditionID => {ThreadID}|)) -> Proc 
+Locked :: (ThreadID, (|ConditionID =>{ThreadID}|)) -> Proc 
+\end{cspm}
+%
+(We omit here some details, which we will need to model timed operations in
+Section~\ref{sec:syncchan-timed}.)  The process |Unlocked(waiting)| represents
+that the monitor is currently unlocked; the map |waiting| records, for each
+condition~$c$, the set of threads currently waiting on~$c$.  The process
+|Locked(t, waiting)| represents that the monitor is currently locked by
+thread~|t|; |waiting| again records which threads are waiting on conditions.
+In the |Unlocked| states, a thread~|t| can acquire the lock, via event
+|acquire.t| (which moves the monitor process into a |Locked| state).  In the
+|Locked| states, the current thread~|t| can
 \begin{itemize}
-\item Release the lock;
-\item Wait on a condition, at which point it also releases the lock;
-\item Signal on a condition, at which point a thread that is waiting on that
-  condition is recorded as no longer waiting (but needs to reacquire the lock
-  before it can continue).
+\item Release the lock, via event |release.t| (which moves the monitor process
+  into an |Unlocked| state);
+\item Wait on a condition~|c|, via event |await.t.c| (which moves the monitor
+  process into an |Unlocked| state, updating the |waiting| map appropriately);
+\item Signal on a condition~|c|, via event |signal.t.c.t'|, to a thread |t'|
+  currently waiting on~|c|, if there is one (|waiting| is updated
+  appropriately); the thread~|t'| needs to reacquire the lock before it can
+  continue.
 \end{itemize}
 %
-The monitor module provides an interface to client processes corresponding to
-the different monitor operations.
+However, for convenience, the CSP module exports four functions which can be
+called by a thread~|t|:
+%
+\begin{itemize}
+\item |Lock(t)|: acquire the lock, blocking until it is available;
+\item |Unlock(t)|: release the lock;
+\item |Await(t,c)|: wait on condition~|c|; when a signal is received, wait to
+  reacquire the lock;
+\item |Signal(t,c)|: signal to a thread on condition~|c| (if there is a
+  waiting thread). 
+\end{itemize}
 
-The model of a channel includes a monitor, and various other processes.
-Each variable in the implementation of the channel is modelled by a CSP
-process, with CSP channels to allow the variable's value to be read or
-written (see Appendix~\ref{app:modelling}).
+%% %
+%% Threads can synchronise with this process on channels |acquire|, |release|,
+%% |await| and |signal| (with obvious meanings).  However, for convenience, the
+%% CSP module exports the following functions
+
+%% \begin{itemize}
+%% \item \CSPM{Lock(t)}: Release the lock;
+%% \item \CSPM{Unlock(t)}: 
+
+%% Wait on a condition, at which point it also releases the lock;
+%% \item Signal on a condition, at which point a thread that is waiting on that
+%%   condition is recorded as no longer waiting (but needs to reacquire the lock
+%%   before it can continue).
+%% \end{itemize}
+
+%% , encapsulating a process that
+%% maintains the state of the monitor, specifically: (1)~which thread, if any,
+%% holds the lock on the monitor; and (2)~which threads are waiting on which
+%% conditions.  When no thread holds the lock, the monitor process allows a
+%% thread, other than any of the waiting threads, to acquire the lock.  The
+%% thread that currently holds the lock can:
+%% \begin{itemize}
+%% \item Release the lock;
+%% \item Wait on a condition, at which point it also releases the lock;
+%% \item Signal on a condition, at which point a thread that is waiting on that
+%%   condition is recorded as no longer waiting (but needs to reacquire the lock
+%%   before it can continue).
+%% \end{itemize}
+%% %
+%% The monitor module provides an interface to client processes corresponding to
+%% the different monitor operations.
+
+%% The model of a channel includes a monitor, and various other processes.
+%% Each variable in the implementation of the channel is modelled by a CSP
+%% process, with CSP channels to allow the variable's value to be read or
+%% written (see Appendix~\ref{app:modelling}).
 
 Each of the send and receive operations can then be straightforwardly
 translated into a CSP process: this process performs the operations on the
 monitor and variables, following the Scala code.
 (Appendix~\ref{app:modelling} describes various techniques that we found
-useful in this modelling.)
-%
+useful in this modelling.)  
+
+Unlike shared variables, each thread-local variable is modelled as a parameter
+of the relevant process: this reduces the number of events performed by
+processes, and so reduces the state-space of the system to be checked;
+however, it does increase the number of states in each individual process, and
+so increases the compilation time.
+
 The Scala code uses several assertions: we model these by having the CSP
 process diverge if the property does not hold; in
 Section~\ref{sec:syncchan-analysis-1}, we use FDR to verify that such
 divergences do not occur.
-%
+
 Each operation is framed by \CSPM{begin} and \CSPM{end} events:
 %
 \begin{itemize}
@@ -130,15 +271,20 @@ Each operation is framed by \CSPM{begin} and \CSPM{end} events:
   receives the value~\CSPM{x}.
 \end{itemize}
 %
+%% Each thread is modelled by a process |Thread| that accepts a |begin| event,
+%% performs the relevant operation, and then signals its completion via an |end|
+%% event. 
 
-We encapsulate the model of a channel inside a CSP module, so that only the
-|begin| and |end| events are visible outside the module.  We achieve this
-encapsulation by including inside the module a process corresponding to each
-thread, which accepts the \CSPM{begin} events, simulates the operation, and
-then performs the appropriate \CSPM{end} event; this then allows us to hide
-the internal events.  A process outside the module can simulate calling the
-operation by synchronising on the |begin| and |end| events; below, we capture
-correctness properties in terms of those events.
+We then construct the model of a channel, as in
+Figure~\ref{fig:basic-CSP-model}.  This model is encapsulated inside a CSP
+module, so that only the |begin| and |end| events are visible outside the
+module.  We achieve this encapsulation by including inside the module a
+process |Thread(t)| corresponding to each thread~|t|; this process accepts the
+\CSPM{begin} events, simulates the operation, and then performs the
+appropriate \CSPM{end} event.  This technique allows us to hide the internal
+events.  A process outside the module can simulate calling the operation by
+synchronising on the |begin| and |end| events; below, we capture correctness
+properties in terms of those events.
 
 %% Inside the channel module is a process corresponding to each thread, which
 %% accepts the \CSPM{begin} events, simulates the operation, and then performs
@@ -146,442 +292,3 @@ correctness properties in terms of those events.
 %% \CSPM{begin} and \CSPM{end} events are visible.  A process outside the module
 %% can simulate calling the operation by synchronising on those events.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\inlineCSP
-
-\subsection{Analysing the basic channel}
-\label{sec:syncchan-analysis-1}
-
-We now analyse the basic model of the channel.  We start by describing
-abstractly the property that we expect to hold, and then describe how to
-capture it using CSP and FDR.
-
-Each successful execution of the |send| operation should synchronise with a
-corresponding execution of |receive|: the two executions should overlap in
-time, and the |receive| should return the value of the |send|'s parameter.
-In~\cite{LL:synchronisation}, we introduced a correctness condition,
-\emph{synchronisation linearisation}, corresponding to synchronisation objects
-like this.  Below, we specialise this definition to the case of a channel.
-
-A \emph{history} (or trace) of a channel is a sequence of |begin| and |end|
-events, as in the previous subsection, corresponding to threads using the
-channel.  It is convenient to label each event with an \emph{instance
-  identifier}, with the same identifier on corresponding |begin| and |end|
-events, for example
-\[
-\trace{\CSPMM{beginSend}^1.t_1.3, \CSPMM{beginReceive}^2.t_2,
-  \CSPMM{endReceive}^2.t_2.\CSPMM{ReceiveSuccess}.3, 
-  \CSPMM{endSend}^1.t_1.\CSPMM{SendSuccess} }.
-\]
-We consider only valid histories, where each identifier appears on at most one
-|begin| event and at most one |end| event, and where the identifier on each
-|end| event matches that on an earlier |begin| event.  We say that a history
-is \emph{complete} if for every |begin| event, there is a corresponding |end|
-event, i.e.~there are no pending operation executions.
-
-The idea is that each synchronisation should appear to take place between the
-beginning and end of the two corresponding operation executions; different
-synchronisations should occur in a one-at-a-time order.  We call the points at
-which the synchronisations appear to take place \emph{synchronisation points}.
-%
-We use events of the form $\CSPMM{sync}^{i,j}.s.r.x$ to represent a
-synchronisation between an execution of~|send| with instance identifier~$i$ by
-thread~$s$, and an execution of~|receive| with instance identifier~$j$ by
-thread~$r$, passing data value~$x$.
-%
-%\begin{definition}
-A~\emph{synchronisation history} is a sequence of such \CSPM{sync} events.
-Each instance identifier must appear at most once in the history. 
-%\end{definition}
-
-In the case of a basic synchronous channel, every such sequence of \CSPM{sync}
-events is legal.  However, for some synchronisation objects, only certain
-histories are legal.  For example, when we consider closing of channels, we
-will require that all successful synchronisations precede the closing of the
-channel.  In general, we identify a particular (prefix-closed) set of
-histories as being \emph{legal}, based on the informal specification of the
-synchronisation object.
-
-The following definition describes when a history and synchronisation history
-use the same instance identifiers.
-\begin{definition}
-We say that a complete history~$h$ of the channel, and a legal synchronisation
-history~$h_s$ \emph{correspond} if:
-%
-\begin{itemize}
-\item For every \CSPM{sync} event with identifier~$(i,j)$ in~$h_s$,\, $h$
-  contains an execution of \CSPM{send} with identifier~$i$, and an execution
-  of \CSPM{receive} with identifier~$j$;
-
-\item For every execution of~\CSPM{send} with identifier~$i$ in~$h$,\, $h_s$
-  contains a \CSPM{sync} event with identifier~$(i,j)$, for some~$j$;
-
-\item For every execution of~\CSPM{receive} with identifier~$j$ in~$h$,\,
-  $h_s$ contains a \CSPM{sync} event with identifier~$(i,j)$, for some~$i$.
-\end{itemize}
-\end{definition}
-
-%% The definition below specialises the definition from~\cite{LL:synchronisation}
-%% to an SCL channel.
-\begin{definition}
-\label{def:sync-lin}
-Let $h$ be a complete history of the channel, and $h_s$ a legal
-synchronisation history.  We say that $h_s$ is a \emph{synchronisation
-  linearisation} of~$h$ if there is some way of interleaving $h$ and~$h_s$
-such that each $\CSPMM{sync}^{i,j}.s.r.x$ event is between events
-$\CSPMM{beginSend}^i.s.x$ and $\CSPMM{endSend}^i.s.\CSPMM{sendSuccess}$, and
-between events $\CSPMM{beginReceive}^j.r$ and
-$\CSPMM{endReceive}^j.r.\CSPMM{ReceiveSuccess}.x$. 
-\end{definition}
-
-%% \begin{itemize}
-%% \item Between each |beginSend.s.x| and |endSend.s.SendSuccess|, there is a
-%%   unique event \CSPM{sync.s.r.x};
-
-%% \item Between each |beginReceive.r| and |endReceive.r.ReceiveSuccess.x|, there
-%%   is a unique event \CSPM{sync.s.r.x};
-
-%% \item And vice versa, each |sync| event is between corresponding |beginSend|
-%%   and |endSend| events, and also between corresponding |beginReceive| and
-%%   |endReceive| events. 
-%% \end{itemize}
-%\end{definition}
-
-The diagram below illustrates the idea; it illustrates a particular history
-of a channel (or a trace of the CSP model) and a synchronisation linearisation.
-%
-%\begin{figure}
-\begin{center}
-\unScalaMid
-\begin{tikzpicture}[xscale = 0.9]
-\draw[|-|] (0,0) -- node[above] {$\sm{send}^1.s_1\sm{.A}$} (4,0);
-\draw[|-|] (4.5,0) -- node[above] {$\sm{send}^2.s_1\sm{.B}$} (8.5,0);
-\draw[|-|] (0.5,-1) -- node[above] {$\sm{send}^3.s_2\sm{.A}$} (8,-1);
-\draw[|-|] (1,-2) -- node[above] {$\sm{receive}^4.r.A$} (3,-2);
-\draw[|-|] (3.5,-2) -- node[above] {$\sm{receive}^5.r.B$} (6.5,-2);
-\draw[|-|] (7,-2) -- node[above] {$\sm{receive}^6.r.A$} (9,-2);
-\draw (1.9,0) \X; \draw (1.9,-2) \X; 
-\draw[dashed] (1.9,0) -- (1.9,-2); % sync 1 and 3
-\draw (1.9,-2.3) node {\small $\sm{sync}^{1,4}.s_1.r.\sm{A}$};
-\draw (5.4,0) \X; \draw (5.4,-2) \X; 
-\draw[dashed] (5.4,0) -- (5.4,-2); % sync 4 and 5
-\draw (5.4,-2.3) node {\small $\sm{sync}^{2,5}.s_1.r.\sm{B}$};
-\draw (7.6,-1) \X; \draw (7.6,-2) \X; 
-\draw (7.6,-2.3) node {\small $\sm{sync}^{3,6}.s_2.r.\sm{A}$};
-\draw[dashed] (7.6,-1) -- (7.6,-2); % sync 2 and 6 
-\end{tikzpicture}
-\scalaMid
-\end{center}
-%% \caption{Timeline representing the synchronisation example.}
-%% \label{fig:sync-timeline}
-%% \end{figure}
-%
-Time goes from left to right in the diagram.  Each horizontal line represents
-an operation execution, with the end points representing the \CSPM{begin} and
-\CSPM{end} events.  A corresponding synchronisation history is written at the
-bottom, where each pair of ``$\cross$''s, linked by a dashed vertical line,
-illustrates a possible synchronisation point of the corresponding executions.
-
-We considered only complete histories above.  We now generalise.  An
-\emph{extension} of a (not necessarily complete) history~$h$ is formed by
-adding zero or more |end| events corresponding to pending executions.  We
-write $complete(h)$ for the subsequence of~$h$ formed by removing all |begin|
-events of pending operation executions.
-%
-\begin{definition}
-Let $h$ be a (not necessarily complete) history of the channel, and $h_s$ a
-legal synchronisation history.  We say that $h_s$ is a \emph{synchronisation
-  linearisation} of~$h$ if there is an extension~$h'$ such that $h_s$ is a
-synchronisation linearisation of $complete(h')$.  We say that $h$ is
-synchronisation linearisable in this case.
-%
-We say that a synchronous channel is synchronisation linearisable if all of
-its histories are synchronisation linearisable.
-\end{definition}
-%
-Informally, the |end| events in~$h'$ but not in~$h$ correspond to executions
-that have synchronised but not yet returned. 
-
-%% Thus a history (or trace) is synchronisation linearisable if it is possible
-%% to identify synchronisation points with the desired properties.  This
-%% corresponds to identifying which operation executions synchronise with one
-%% another.
-
-%% A more general definition is in~\cite{LL:synchronisation}.  In particular,
-%% this includes the case where the synchronisation object maintains some state
-%% between synchronisations, as we will require in
-%% Section~\ref{sec:syncchan-closing}.
-
-The definition is based on \emph{linearisation}~\cite{herlihy-wing}, the
-standard correctness property for concurrent datatypes, where executions of
-operations should appear to take place in a one-at-a-time order, each between
-the beginning and end of that execution.  However, the two notions are
-distinct: informally, synchronisation linearisation requires that operation
-executions appear to take place in a two-at-a-time order.  More precisely,
-synchronisation linearisation requires corresponding executions to overlap in
-time.  A history where, say, a |send| returns before the corresponding
-|receive| is invoked would not represent a correct synchronisation.  This
-overlapping property cannot be captured directly with standard
-linearisation~\cite{LL:synchronisation}.
-
-%% The current model of the channel is (in the terminology
-%% of~\cite{LL:synchronisation}) \emph{stateless}: no state is carried forward
-%% from one synchronisation to another.  However, when we consider closing of the
-%% channel, it will become \emph{stateful}, with two states, open or closed.
-%% Other synchronisation objects have more interesting states.  \framebox{later?}
-
-We now describe how we use model checking to test synchronisation
-linearisability of the channel.  (We drop the execution identifiers from
-events: they were just convenient in defining synchronisation linearisation.)
-We create an instance |C| of the channel module.  Below, expressions of the
-form |C::v| represent a value~|v| from this instance.  We create a process
-|System| that combines the channel and a number of threads (with identities
-from a set |ThreadID|): each thread repeatedly calls the send and receive
-operations (represented by events on CSP channels |C::beginSend| and
-|C::beginReceive|), and waits for them to return (on CSP channels |C::endSend|
-and |C::endReceive|).
-
-We build a CSP specification process that allows precisely the traces that are
-synchronisation linearisable.  As above, we use events of the form
-\CSPM{sync.t}$_1$\CSPM{.t}$_2$\CSPM{.x} to represent a synchronisation point
-between sender~$\CSPMM{t}_1$ and receiver~$\CSPMM{t}_2$, passing data
-value~|x|.  We build a \emph{lineariser} process for each thread as follows,
-which ensures that the |sync| events occur between the corresponding |begin|
-and |end| events (the approach is based on that for standard
-linearisation~\cite{gavin:lock-free-queue}).
-%
-\begin{cspm}
-Lin(t) = 
-  C::beginSend.t?x -> sync.t?other!x -> C::endSend.t.SendSuccess -> Lin(t)
-  [] C::beginReceive.t -> sync?other!t?x -> C::endReceive.t.ReceiveSuccess.x -> Lin(t)
-\end{cspm}
-%
-When sending, the thread can synchronise with any other thread~|other|,
-passing its value~|x|.  When receiving, the thread can synchronise with any
-other thread, accepting that thread's value~|x|; this |x| is subsequently
-returned by the operation execution.
-
-We combine the |Lin| processes in parallel, with their natural
-alphabets, so the linearisers for threads $\CSPMM{t}_1$ and $\CSPMM{t}_2$
-synchronise on events of \CSPM{sync.t}$_1$\CSPM{.t}$_2$ and
-\CSPM{sync.t}$_2$\CSPM{.t}$_1$.  
-%
-\begin{cspm}
-alphaLin(t) =
-  {|C::beginSend.t, C::endSend.t, C::beginReceive.t, C::endReceive.t|} £$\union$£
-  {|sync.t.other, sync.other.t | other <- ThreadID-{t}|}
-Spec£$_0$£ = **|| t <- ThreadID @ [alphaLin(t)] Lin(t)
-\end{cspm} % £$\union$£
-%
-Thus each trace of |Spec|$_0$ represents an interleaving of a history of the
-channel with a synchronisation history, as required by
-definition~\ref{def:sync-lin}.  By hiding the synchronisation points, we
-obtain a process whose traces represent precisely those histories that are
-synchronisation linearisable.  We can then use FDR to check that the system is
-synchronisation linearisable.
-%
-\begin{cspm}
-Spec = Spec£$_0$£ \ {|sync|}
-assert Spec [T= System
-\end{cspm}
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%% \framebox{TO DO} re-write below here.
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-We now consider our progress property, \emph{synchronisation
-  progressibility}~\cite{LL:synchronisation}.  This property assumes that the
-system scheduler is fair, in the sense that if a thread is continuously
-runnable, it will eventually be scheduled.  However, the assumption allows for
-unfortunate scheduling, or for a thread to be repeatedly preempted, for
-example when competing with other threads to acquire a lock.  Most modern
-schedulers are fair in this sense.
-The following definition captures our fairness assumption.
-%
-\begin{definition}
-Given an execution, we say that an operation execution is \emph{pending} if it
-has been called but not yet returned.  We say that an operation execution is
-\emph{blocked} in a particular state if it is unable to perform a step, for
-example because it is trying to acquire a lock held by another thread, or
-waiting to receive a signal from another thread.
-
-We say that an infinite execution is \emph{fair} if each pending operation
-execution either (a)~eventually returns, (b)~is blocked in infinitely many
-states, or (c)~performs infinitely many steps.  We consider a system execution
-that reaches a deadlocked state (where every pending operation is permanently
-blocked) to be infinite (it is infinite in time), and hence fair (under~(b)).
-\end{definition}
-
-%%%%%
-
-Synchronisation progressibility requires that, under this fairness assumption,
-if a synchronisation is possible, some such synchronisation will happen, and
-the threads become able to return.  If several alternative synchronisations
-are possible, then synchronisation progressibility allows any to happen.
-Informally, threads do not get stuck if there are synchronisations that could
-occur.  For example, if three threads call, respectively, |send(4)|, |send(5)|
-and |receive| on the channel, then synchronisation progressibility requires
-that the receiver synchronises with one of the senders, and those two threads
-return.
-
-%%%%%
-
-The following definition captures a maximal sequence of synchronisations that
-might occur, given a particular history of the channel.
-%
-\begin{definition}
-Given a history~$h$ of a channel, and a legal synchronisation history~$h_s$,
-we say that $h_s$ is a \emph{maximal synchronisation linearisation} of~$h$ if:
-(a)~$h_s$ is a synchronisation linearisation of~$h$; and (b)~no proper
-extension $h_s \cat \seq{e}$ is a synchronisation linearisation of~$h$.
-\end{definition}
-%
-For example, the history 
-\begin{eqnarray*}
-h & = &\seq{\beginSend^1.s_1.4,\, \beginSend^2.s_2.5,\, \beginReceive^3.r }
-\end{eqnarray*}
-has two maximal synchronisation linearisations
-\[
-h_s^1  =   \seq{\sync^{1,3}.s_1.r.4}, \qquad\mbox{and}\qquad
-h_s^2  =  \seq{\sync^{2,3}.s_2.r.5},
-\]
-corresponding to the two possible synchronisations.  Each describes one
-possibility for all the synchronisations that might happen. 
-
-%%%%%
-
-The following definition captures the $\End$ events that we would expect to
-happen given a particular sequence of synchronisations.
-%
-\begin{definition}
-Given a history~$h$ of the synchronisation object and a maximal
-synchronisation linearisation~$h_s$, we say that an $\End$ event is
-\emph{anticipated} if it does not appear in~$h$, but the corresponding $\sync$
-event appears in~$h_s$.
-\end{definition}
-%
-For the above histories~$h$ and~$h_s^1$, the events
-$\endSend^1.s_1.\SendSuccess$ and $\endReceive^3.r.\ReceiveSuccess.4$  are
-anticipated: assuming $h_s^1$ describes the synchronisations that happen, we
-would expect those $\End$ events to occur; if they do not, that is a failure
-of progress.
-
-%%%%%
-
-\begin{definition}
-Let $h$ be a history of a channel.  We say that $h$ is \emph{synchronisation
-  progressible} if, from the state reached after~$h$, for every fair infinite
-execution with no new $\Begin$ events, there is a maximal synchronisation
-  linearisation~$h_s$ of~$h$ such that every anticipated $\End$ event~$e$
-  eventually happens.
-
-We say that a channel is synchronisation progressible if all of its histories
-are synchronisation progressible.
-\end{definition}
-
-For the earlier history~$h$, synchronisation progressibility requires that
-either $\endSend^1.s_1.\SendSuccess$ and $\endReceive^3.r.\ReceiveSuccess.4$
-eventually happen (corresponding to~$h_s^1$), or $\endSend^2.s_2.\SendSuccess$
-and $\endReceive^3.r.\ReceiveSuccess.5$ eventually happen (corresponding
-to~$h_s^2$): one of the synchronisations should happen, and then the relevant
-operations should return.
-
-On the other hand, for the history $\trace{\beginSend^1.s.4}$, the only
-maximal synchronisation linearisation is $\trace{}$, for which there are no
-anticipated returns, and so synchronisation progressibility is satisfied: it
-is fine for the |send| to get stuck in this case, since there is no
-|receive| with which it could synchronise.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%% We now consider how to test for synchronisation progressibility using CSP and
-%% FDR.  We need to check that anticipated $\End$ events are available, i.e.~not
-%% refused.  To do this, we require that the system model is divergence-free,
-%% since FDR models do not accurately capture refusal information in divergent
-%% states.  However, as we will see, this is the case.   
-
-
-
-We can test our CSP model for synchronisation progressibility by repeating the
-earlier refinement test, except in the failures-divergences model (which
-implies the refinement in the traces model):
-%
-\begin{cspm}
-assert Spec [FD= System
-\end{cspm}
-%
-Note that this test requires that the system cannot diverge, and so must
-eventually reach a stable state.  The failures-divergences model records
-refusal information only in stable states.  This reflects our assumption about
-scheduling: unstable states are transient, because there must be some internal
-step by a thread that is possible and that will be scheduled.  If a
-synchronisation is possible, then the specification will reach a state where
-relevant |end| events are available (i.e.~not refused).  The test, then,
-requires that in stable states, the system also makes those |end| events
-available.  If, in fact, there are two or more possible synchronisations, the
-specification will choose nondeterministically which to perform, and so the
-system may likewise perform any such synchronisations.
-
-The property of \emph{lock freedom}~\cite{Herlihy-Shavit} requires that
-eventually some thread returns, assuming the scheduler repeatedly schedules
-threads.  Synchronisation progressibility is not the same as lock freedom,
-because lock freedom does not assume that the scheduler is fair.  Indeed, SCL
-channels are not lock-free, because of the use of a lock: if one thread
-obtains the lock, and then the scheduler only schedules other threads, those
-other threads would be blocked trying to obtain the lock, and so no thread
-would return.  However, under our assumption of fair scheduling, the thread
-holding the lock would eventually be scheduled and so release the lock.
-
-The property of \emph{wait freedom} requires that if a particular thread is
-repeatedly scheduled, it eventually returns.  The property of
-\emph{obstruction freedom} requires that if a thread executes in isolation
-(i.e.~no other thread is scheduled), then it eventually returns.  SCL channels
-are neither wait-free not obstruction-free, for the same reason as above.
-Hence synchronisation progressibility is also distinct from these two
-properties.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%% We can also test the same refinement in the stable failures model (which
-%% implies the refinement in the traces model).
-%% %
-%% \begin{cspm}
-%% assert Spec [F= System
-%% \end{cspm}
-%% %
-%% This captures a useful progress property, which says that if a synchronisation
-%% is possible (i.e.~there is at least one |send| and one |receive| operation
-%% that have been called but not yet returned), then some such synchronisation
-%% must happen (since an internal |sync| event is available), and so the relevant
-%% threads reach a state where they can return.  (If several different
-%% synchronisations are possible, then the refinement test allows any to happen.)
-%% Informally, threads don't get stuck unnecessarily.  We call this property
-%% \emph{synchronisation progressiblity}~\cite{LL:synchronisation}.  This
-%% property corresponds to an assumption that the scheduler is fair in the sense
-%% that if a thread is continuously runnable, it will eventually be scheduled and
-%% so able to make progress; however, this doesn't prevent the thread being
-%% repeatedly preempted, for example when competing with other threads to acquire
-%% a lock. 
-
-Finally, note that the fact that |System| does not diverge verifies that no
-thread in the implementation throws an exception. 
-
-%% Finally, as discussed above, we can test that |System| does not diverge, to
-%% verify that no thread in the implementation throws an exception.  Further,
-%% this verifies that threads cannot perform an infinite amount of internal
-%% activity without any thread returning.  This test can be combined with the
-%% previous by testing for refinement in the failures-divergences model.
-%% %
-%% \begin{cspm}
-%% assert Spec [FD= System
-%% \end{cspm}
-
-It turns out that our specification is equivalent to that of Welch and
-Martin~\cite{welch-martin} when restricted to non-shared channels (which they
-consider).  However, we consider our specification to be an instance of a more
-general pattern, for synchronisation objects, rather than a single-purpose
-specification.

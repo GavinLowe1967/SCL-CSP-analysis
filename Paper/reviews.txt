@@ -75,8 +75,8 @@ Cite lock-free queue paper and compare
 > useful in the body of the paper as part of the explanation of the model. 
 > 
 
-
-*** Consider this
+I've described the basic model in more detail, moving some text from Appendix
+A, as you suggest.
 
 > 
 > There are a few smaller points that should also be corrected to aid in
@@ -176,8 +176,10 @@ All corrected.
 > exchanger-like mechanism as an abstract specification. 
 
 This is somewhat intruding on the subject of the companion paper [LL25], so
-I'm reluctant to duplicate material from that paper.  However, I've tried to
-explain the difference better (and referred to [LL25] for details).
+I'm reluctant to duplicate material from that paper.  However, I've now given
+a more complete definition for synchronisation linearisation.  And I've tried
+to explain the difference with standard linearisation better (and referred to
+[LL25] for details).
 
 I don't consider the elimination stack and queue to be synchronisation
 objects.  Their correctness is described using standard linearisation.  In the
@@ -236,6 +238,12 @@ fixed and within the relevant process -- but that's not the case here.
 > to make the locking discipline more explicit. E.g., Fig. 3 could describe
 > where the locks are taken / released within the diagram.    
 
+I'm reluctant to give Scala code or pseudocode in the paper: there's just too
+much of it.  Interested readers can read the web version.  However, I have
+expanded the description of the basic CSP model, in particular sketching the
+model of the monitor.
+
+**** Section 4.2??? 
 
 > 6) It's good that links to the CSP code are provided via the project
 > webpage, but the gold standard is to upload the mechanisation / artifact to
@@ -243,6 +251,7 @@ fixed and within the relevant process -- but that's not the case here.
 > be included in the paper. Similarly, LL24 is unpublished. At minimum, this
 > should be uploaded to Arxiv, or similar to enable proper referencing.  
 
+****
 
 > 
 > 
@@ -322,11 +331,24 @@ different people seem to use different terminology.  Anyway, I'm now saying
 hope that's unambiguous. 
 
 > L52 - This definition is also too informal.
+
+I've defined synchronisation progressibility in more detail.
+
 > 
 > Pg 8
 > L22 - Please clarify whether you mean CSP or SCL channels.
-> Throughout Sect. 3.2, the term implementation is confusing, as I wasn't sure if you meant CSP or SCL. Please clarify which you are referring to and where.
+> Throughout Sect. 3.2, the term implementation is confusing, as I wasn't sure
+> if you meant CSP or SCL. Please clarify which you are referring to and
+> where. 
+
+"Implementation" means SCL: CSP is a modelling and analysis language, not an
+implementation language.  I've tried to clarify.  
+
 > L35 - seems necessary --> is necessary?
+
+I wouldn't want to assert that.  I couldn't find an implementation that
+doesn't do this -- but that's not a proof that none exists.
+
 > L42 - previous *paragraphs*
 > 
 > Pg 9
@@ -336,24 +358,75 @@ hope that's unambiguous.
 > 
 > Pg 10
 > L14 and L18 - both discuss the same issue regarding time
+
+The former is more general than the latter: it was intended to cover both the
+model and the subsequent analysis.  I've tried to make hat clearer.
+
 > L41 - what about the bounds on x ? I think these are unbounded, right?
+
+The text states "Each test used two data values".  There has to be a finite
+bound, since FDR does finite-state model checking.  (But Appendix B shows this
+is enough to imply the result for larger bounds.)
+
 > L51 - what does "invocation appears to take place" mean?
-> L50 - citation is needed for linearisation points. Perhaps one of the earliest mentions is from [K]?
->     - The discussion in the paragraph also needs to be tightened up to explain why backward simulation cannot work [E, F, G].
-> 
+> L50 - citation is needed for linearisation points. Perhaps one of the
+> earliest mentions is from [K]? 
+>     - The discussion in the paragraph also needs to be tightened up to
+> explain why backward simulation cannot work [E, F, G]. 
+
+See above: this paragraph has been removed. 
+
 > Pg 12
 > L57 - As in (5) above, I found the discussion of locking unclear.
+
+*** 
+
+
 > 
 > Pg 13
-> L32 - What does it mean to "clear the registration information"? Which variables are cleared?
+> L32 - What does it mean to "clear the registration information"? Which
+> variables are cleared? 
 > L43 - Need a citation to the JVM monitors bug. Where has this been reported?
-> 
+
+It's pretty much common knowledge, and described in the Java API
+documentation.  I've added a reference to the API
+documentation as a footnote. 
+
+The API documentation doesn't use the word "bug", but I consider it to be one.
+At best, it's a dreadful design decision, since the "wait" operation doesn't
+work how most people would expect.  This causes lots of bugs in user programs:
+I'm aware of two previous message-passing concurrency libraries (JCSP and CSO)
+that fell foul of this bug, and have seen several instances in student
+programs.
+
 > Pg 14
-> L42 - What is "tiny effect" in this context? Need a citation to make this statement more precise.
+> L42 - What is "tiny effect" in this context? Need a citation to make this
+> statement more precise.
+
+I'm not aware of any precise statement.  The API documentation says "While
+this will rarely occur in practice [...]".  I think it is probably very
+dependent upon the program in question, and how frequently threads do waits
+and notifies.  When I've tried to measure this in the past, spurious wakeups
+have happened at most once every few minutes.  I think "tiny effect" is as
+precise as is possible.  
+
 > 
 > Pg 16
-> Sect 5 - Is there any relationship to frameworks such as rely/guarantee, assumption/commitment? 
->        - Do you rely on a compositionality / locality property for synchronisation linearizability (see (1) above).
+> Sect 5 - Is there any relationship to frameworks such as rely/guarantee,
+> assumption/commitment?  
+
+Yes, in the sense that they can be seen to be tackling similar questions; but
+no, in the sense that the technique is quite different.
+
+*****
+
+
+>        - Do you rely on a compositionality / locality property for
+> synchronisation linearizability (see (1) above).
+
+***
+
+
 > 
 > Pg 17
 > L38 - unobvious --> not obvious
@@ -402,10 +475,9 @@ hope that's unambiguous.
 > Most ACM journal papers are researcher-oriented. Is this paper of potential interest to developers and engineers?: Yes
 > 
 > Reasons to accept, revise, or reject (Provide 1-3 concise bullet-list items): See review
-> 
-> 
-> =======================================================
-> 
+ 
+=======================================================
+ 
 > Reviewer: 3
 > 
 > Recommendation: Reject and Resubmit

@@ -51,6 +51,66 @@ the implementations would also pass the tests described above (although the
 checks might be infeasible in practice): formally, this is because refinement
 is compositional with respect to all CSP operators.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\framebox{Move}
+
+\def\Idealised{\CSPMM{Idealised}}
+\def\Spec{\CSPMM{Spec}}
+
+\begin{prop}
+Let $M$ be a CSP model, either {\it F} (stable failures) or {\it FD}
+(failures-divergences).  Let $P_i$, for $i \in I$, be a collection of
+processes, with alphabets~$\alpha_i$.  For each $i$, let $Err_i$ be a set of
+fresh ``error'' events, let $\Idealised_i$ be a process with alphabet
+$\alpha_i \union Err_i$, and let
+\begin{eqnarray*}
+\Spec_i & = & (\Idealised_i \throw{Err_i} \CSPMM{Any}_M) \hide Err_i.
+\end{eqnarray*} 
+where $\CSPMM{Any}_F = \CSPMM{CHAOS}(\alpha_i)$ and $\CSPMM{Any}_{\it FD} =
+\CSPMM{DIV}$.
+%
+Let $\Spec$ be a process with alphabet $\Union_{i \in I} \alpha_i$ (so without
+any error events).  Suppose
+\begin{enumerate}
+\item\label{rg-1} $\Spec_i \refinedby_M P_i$, for each~$i \in I$;
+
+\item\label{rg-2} $\Spec \refinedby_M 
+ \Parallel i:I \spot [\alpha_i \union Err_i] \, \Idealised_i$. 
+\end{enumerate}
+Then
+\begin{eqnarray*}
+\Spec & \refinedby_M & \Parallel i:I \spot [\alpha_i \union Err_i] \, P_i.
+\end{eqnarray*}
+\end{prop}
+%
+The idea is that $\Idealised_i$ is an idealised model of~$P_i$, which
+describes $P_i$'s behaviour under the assumption that its environment
+satisfies certain assumptions, but performs an error event otherwise; so
+$\Spec_i$ allows arbitrary behaviour when the environment does not follow the
+assumptions.
+%
+\begin{proof}
+From condition~\ref{rg-2}, and the assumption about the alphabet of~$\Spec$,
+we can deduce that $\Parallel i:I \spot [\alpha_i \union Err_i] \,
+\Idealised_i$ performs no error event from $\Union_{i \in I} Err_i$.  But this
+implies that $\Parallel i:I \spot [\alpha_i] \, \Spec_i$ likewise
+performs no (hidden) error event, since the two processes behave up to the
+first error event.  So, in fact,
+\begin{eqnarray*}
+\Parallel i:I \spot [\alpha_i \union Err_i] \, \Idealised_i & = & 
+  \Parallel i:I \spot [\alpha_i] \, \Spec_i,
+\end{eqnarray*}
+since the ``throws'' operator in each $\Spec_i$ is never triggered.  Thus
+\[
+\Spec  \;\refinedby_M\;    \Parallel i:I \spot [\alpha_i] \, \Spec_i 
+  \;\refinedby\;  \Parallel i:I \spot [\alpha_i] \, P_i,
+\]
+from condition~\ref{rg-1}, and the fact that CSP operators are compositional
+with respect to refinement.
+\end{proof}
+
+
 %% \framebox{Type sizes, timing}
 
 %% However, we can make the analysis more efficient.  The idealised model of a

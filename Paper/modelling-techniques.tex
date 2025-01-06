@@ -7,34 +7,34 @@ We describe here a few modelling techniques that we found useful during our
 analysis.  These techniques are rather orthogonal to the main ideas of the
 paper, but we think they might be useful elsewhere. 
 
-We model each shared variable using a CSP process as follows.  Here |value| is
-the current value of the variable, and |get| and |set| are channels on which a
-thread~|t| can get or set the value.
-%
-\begin{cspm}
-Var(value, get, set) = 
-  get?t!value -> Var(value, get, set)
-  [] set?t?value' -> Var(value', get, set)
-\end{cspm}
-%
-For example, the implementation of an SCL channel has a variable
-\SCALA{receiversWaiting} that stores the current number of threads that are
-waiting to receive on the channel.  In the implementation, this can be an
-arbitrary \SCALA{Int}; however, we would expect the value to be non-negative
-and at most the number of threads in the CSP model (and the subsequent
-analysis confirms this).  The variable can therefore be modelled as follows. 
-%
-\begin{cspm}
-N = card(ThreadID)
-channel getReceiversWaiting, setReceiversWaiting : ThreadID.{0..N}
-ReceiversWaiting = Var(0, getReceiversWaiting, setReceiversWaiting)
-\end{cspm}
+%% We model each shared variable using a CSP process as follows.  Here |value| is
+%% the current value of the variable, and |get| and |set| are channels on which a
+%% thread~|t| can get or set the value.
+%% %
+%% \begin{cspm}
+%% Var(value, get, set) = 
+%%   get?t!value -> Var(value, get, set)
+%%   [] set?t?value' -> Var(value', get, set)
+%% \end{cspm}
+%% %
+%% For example, the implementation of an SCL channel has a variable
+%% \SCALA{receiversWaiting} that stores the current number of threads that are
+%% waiting to receive on the channel.  In the implementation, this can be an
+%% arbitrary \SCALA{Int}; however, we would expect the value to be non-negative
+%% and at most the number of threads in the CSP model (and the subsequent
+%% analysis confirms this).  The variable can therefore be modelled as follows. 
+%% %
+%% \begin{cspm}
+%% N = card(ThreadID)
+%% channel getReceiversWaiting, setReceiversWaiting : ThreadID.{0..N}
+%% ReceiversWaiting = Var(0, getReceiversWaiting, setReceiversWaiting)
+%% \end{cspm}
 
-By contrast, we normally model each thread-local variable as a parameter of
-the relevant process.  This reduces the number of events performed by
-processes, and so reduces the state-space of the system to be checked;
-however, it does increase the number of states in each individual process, and
-so increases the compilation time. 
+%% By contrast, we normally model each thread-local variable as a parameter of
+%% the relevant process.  This reduces the number of events performed by
+%% processes, and so reduces the state-space of the system to be checked;
+%% however, it does increase the number of states in each individual process, and
+%% so increases the compilation time. 
 
 The Scala implementation contains a number of assertions.  We model such
 assertions by having the model diverge if the property does not hold; our
@@ -54,10 +54,25 @@ can be used with sequential composition.  The two processes \CSPM{Assert(b,
   P)} and \CSPM{Assert1(b); P} are CSP-equivalent; but the FDR compiler treats
 them differently.  In the former, |P| is compiled only if~|b| is true, but in
 the latter, |P| is compiled regardless.  This can make a difference if
-compilation would fail when |b| is false.  The following macros, to increment
-or decrement the \SCALA{receiversWaiting} variable, illustrate this point; the
-use of |Assert| ensures that the compiler does not try to produce an event on
-|setReceiversWaiting| outside the correct range |{0..N}|.
+compilation would fail when |b| is false.  
+
+For example, the implementation of an SCL channel has a variable
+\SCALA{receiversWaiting} that stores the current number of threads that are
+waiting to receive on the channel.  In the implementation, this can be an
+arbitrary \SCALA{Int}; however, we would expect the value to be non-negative
+and at most the number of threads in the CSP model (and the subsequent
+analysis confirms this).  The variable can therefore be modelled as follows.
+%
+\begin{cspm}
+N = card(ThreadID)
+channel getReceiversWaiting, setReceiversWaiting : ThreadID.{0..N}
+ReceiversWaiting = Var(0, getReceiversWaiting, setReceiversWaiting)
+\end{cspm}
+%
+The following macros, to increment or decrement the \SCALA{receiversWaiting}
+variable, illustrate the above point: the use of |Assert| ensures that the
+compiler does not try to produce an event on |setReceiversWaiting| outside the
+correct range |{0..N}|.
 %
 \begin{cspm}
 IncReceiversWaiting(me) =
