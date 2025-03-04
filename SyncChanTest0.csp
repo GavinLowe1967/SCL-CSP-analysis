@@ -1,0 +1,82 @@
+-- Test upon SyncChan (without alts).  This file is really a stepping stone 
+-- towards more sophisticated tests.
+
+datatype ThreadID = T1 | T2  | T3 -- | T4 -- | T5 -- | T6
+
+-- The following are needed in Types.csp, but aren't otherwise used here. 
+datatype ChanID = Chan1
+MaxIndex = 1
+Index = {0}
+
+include "Types.csp"
+
+-- Identities of Alts
+datatype AltID = Alt1
+
+include "SyncChan0.csp"
+
+-- We'll test a single channel
+instance C = SyncChan(ThreadID, Data)
+
+-- Client interface events that we allow to be performed.  The flags can be
+-- used to restrict to particular operations.
+AllowedEvents = {| C::beginSend, C::endSend, C::beginReceive, C::endReceive |}
+
+Thread(me) = 
+  C::beginSend.me?x -> C::endSend.me?res -> Thread(me)
+  [] 
+  C::beginReceive.me -> C::endReceive.me?res -> Thread(me)
+
+Threads = ||| t : ThreadID @ Thread(t)
+
+System = C::runWithAndHide(Threads)
+
+-- System where synchronisation points are visible
+--SystemSP = C::runWithSP(Threads)
+
+assert System  :[divergence free]
+
+-- Specification of synchronisation linearisation.
+
+-- sync.t1.t2.x represents sender t1 and receiver t2 synchronising on the
+-- sending of x.
+channel sync : ThreadID . ThreadID . Data
+
+-- channel closing linearization point.
+channel close: ThreadID 
+
+-- Test of whether the channel is closed. 
+channel isClosed: ThreadID 
+
+-- A thread timing out in a sendWithin or receiveWithin.
+channel timeout: ThreadID
+
+-- A linearizer for thread t
+Linearizer(me) = 
+  C::beginSend.me?x -> SendingLin(me, x, C::endSend.me)
+  []
+  C::beginReceive.me -> ReceivingLin(me, C::endReceive.me)
+
+-- States of the linearizer when the thread is within various operations.
+SendingLin(me, x, endChan) = 
+  sync.me?other!x -> endChan.SendSuccess -> Linearizer(me)
+
+ReceivingLin(me, endChan) =  
+  sync?other!me?x -> endChan.ReceiveSuccess.x -> Linearizer(me)
+
+-- Alphabet of Linearizer(t)
+alphaLin(t) = Union({
+  C::clientInterface(t),
+  {| sync.t.other, sync.other.t | other <- diff(ThreadID,{t}) |}-- ,
+  -- {| close.t, isClosed.t, timeout.t |}
+})
+
+
+-- Specification of synchronisation linearisation.
+Spec0 = (|| t <- ThreadID @ [alphaLin(t)] Linearizer(t)) 
+
+Spec = Spec0 \ {| sync |} 
+
+assert Spec [T= System
+assert Spec [F= System
+assert Spec [FD= System

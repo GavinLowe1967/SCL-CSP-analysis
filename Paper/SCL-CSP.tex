@@ -23,6 +23,11 @@
 \def\tick{
   \tikz\fill[scale=0.4](0,.35) -- (.25,0) -- (0.75,.7) -- (.25,.15) -- cycle;
 } 
+% Draw a loop from node (#1) with label #2
+\def\drawloop(#1)#2{
+  \draw[->] (#1) .. controls ++(-0.5,0.6) and ++(-0.5,-0.6) ..
+    node[left]{#2}  (#1);
+}
 
 \def\project{\mathord{\|}}
 \def\throw#1{\mathbin{\CSPMM{[|}#1\CSPMM{|>}}}

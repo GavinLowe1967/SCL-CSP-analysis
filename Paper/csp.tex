@@ -50,12 +50,16 @@ only if \CSPM{b} is true; it is equivalent to \CSPM{if b then P else STOP}.
 
 The process |P; Q| represents a sequential composition of~|P| and~|Q|:
 initially, |P| is run, but when it terminates (as indicated by event~$\tick$),
-|Q| is run. 
+|Q| is run (but the $\tick$ is hidden). 
 
 The process \CSPM{CHAOS(A)} can perform any events from the set~|A|, or can
-refuse any of those events; however, it cannot diverge.  Thus it allows
-arbitrary non-divergent behaviours over~|A|.  By contrast, \CSPM{DIV} is a
-divergent process that performs an unbounded number of internal $\tau$~events.
+refuse any of those events; however, it cannot diverge.  It is defined by:
+\begin{eqnarray*}
+\CSPMM{CHAOS(A)} & = & \CSPMM{(**[] a:A @ a -> CHAOS(A)) |~| STOP}.
+\end{eqnarray*}
+Thus it allows arbitrary non-divergent behaviours over~|A|.  By contrast,
+\CSPM{DIV} is a divergent process that performs an unbounded number of
+internal $\tau$~events.
 
 The process \CSPM{P [|E|> Q} 
 % {]}
@@ -67,11 +71,11 @@ The process \CSPM{P [|E|> Q}
 The process \CSPM{P [|A|] Q} runs \CSPM{P} and~\CSPM{Q} in parallel,
 synchronising on events from~\CSPM{A}.  The process \CSPM{P [A||B] Q} again
 runs~|P| and~|Q| in parallel: |P| is given alphabet~|A|, and |Q| is given
-alphabet~|B|; they synchronise on events in $\CSPMM{A} \inter \CSPMM{B}$.
+alphabet~|B|; they synchronise on events from $\CSPMM{A} \inter \CSPMM{B}$.
 %
 The process \CSPM{**|| x:X @ [A(x)]
   P(x)} represents an indexed parallel composition of processes |P(x)| for
-\CSPM{x} in \CSPM{X}; each \CSPM{P(x)} is given alphabet~\CSPM{A(x)};
+\CSPM{x} in~\CSPM{X}; each \CSPM{P(x)} is given alphabet~\CSPM{A(x)};
 processes synchronize on events in the intersection of their alphabets.
 % By contrast, in
 % the process \CSPM{[|A|] x:X @ P(x)}, all processes \CSPM{P(x)} synchronize on

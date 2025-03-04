@@ -348,12 +348,12 @@ datatype RegStatus = NoReg | InReg.AltID.Index | OutReg.AltID.Index
 %
 where |AltID| is the type of alt identities, and |Index| is the type of
 indices of branches.  The subtypes of |RegStatus| represent that no alt is
-currently registered, or that an alt is registered at the inport or outport
+currently registered, or that an alt is registered at the in-port or out-port
 corresponding to a particular index.  
 
 In the definition of |ChanState|, the values |regIns| and |regOuts| store the
 (empty or singleton) sets of |AltID.Index| pairs corresponding to
-registrations at the inport or outport, respectively (these are calculated
+registrations at the in-port or out-port, respectively (these are calculated
 using straightforward helper functions).
 
 Several possibilities are available when there is no registered alt.

@@ -1,0 +1,119 @@
+-- A module representing a synchronous channel. 
+
+module SyncChan(ThreadID, Data)
+  include "Variable.csp"
+  include "Macros.csp"
+
+  -- Do we initialise Value to a specific value, arguing by symmetry?
+  useSymmetry = false
+
+  -- The "value" variable: the current or previous value.
+  channel getValue, setValue: ThreadID.Data
+  Value = 
+    if useSymmetry then Var(head(seq(Data)), getValue, setValue)  
+    else |~| x:Data @ Var(x, getValue, setValue) 
+
+  -- The "status" variable: the current status of an exchange.
+  datatype StatusT = Empty | Filled | Read
+  channel getStatus, setStatus : ThreadID . StatusT
+  Status = Var(Empty, getStatus, setStatus)
+
+  -- All variables
+
+  Variables = Status ||| Value
+
+  varEvents = {| getStatus, setStatus, getValue, setValue |}
+
+  -- Monitor and conditions
+  datatype ConditionID = SlotFull | Continue | SlotEmptied
+
+  include "MonitorCondition.csp"
+
+  -------- Sending
+
+  -- Thread me sends x.  The continuation expects a SendResult.
+  Send :: (ThreadID, Data, (Result) -> Proc) -> Proc
+  Send(me, x, cont) = MonitorCondition::MutexC(me, Send1(me, x), cont)
+
+  -- slotEmptied.await(status == Empty || isClosed)
+  Send1 :: (ThreadID, Data) -> ((Result) -> Proc) -> Proc
+  Send1(me, x)(cont) = 
+    let Test(k) = getStatus.me?s -> k(s == Empty)
+    within MonitorCondition::AwaitTest(me, SlotEmptied, Test); Send2(me, x, cont)
+
+  Send2 :: (ThreadID, Data, ((Result) -> Proc)) -> Proc
+  Send2(me, x, cont) = 
+    -- value = x; status = Filled
+    setValue.me.x -> setStatus.me.Filled -> 
+    -- slotFull.signal(); continue.await()
+    MonitorCondition::Signal(me, SlotFull);	
+    MonitorCondition::Await(me, Continue);
+    -- assert(status == Read)
+    getStatus.me?s -> Assert1(s == Read); 
+    -- status = Empty; slotEmptied.signal()
+    setStatus.me.Empty -> MonitorCondition::Signal(me, SlotEmptied);
+    cont(SendSuccess)
+
+  -------- Receiving
+
+  -- Thread me receives value.  The continuation expects to be given a
+  -- ReceiveResult.
+  Receive :: (ThreadID, (Result) -> Proc) -> Proc
+  Receive(me, cont) = 
+    MonitorCondition::MutexC(me, Receive1(me), cont) -- Receive1(me), cont)
+
+  -- while(status != Filled) slotFull.await() 
+  Receive1 :: (ThreadID) -> ((Result) -> Proc) -> Proc
+  Receive1(me)(cont) =
+    getStatus.me?s -> 
+    if s != Filled 
+    then MonitorCondition::Await(me, SlotFull); Receive1(me)(cont) 
+    else Receive2(me)(cont)
+
+  Receive2(me)(cont) = 
+    -- status = Read; continue.signal(); value
+    setStatus.me!Read -> MonitorCondition::Signal(me, Continue); 
+    -- return value
+    getValue.me?v -> cont(ReceiveSuccess.v) 
+
+  ---------- Threads
+
+  -- A thread that performs operations, wrapping them in begin/end events
+  Thread(me) = 
+    beginSend.me?x -> Send(me, x, \ res @ endSend.me.res -> Thread(me))
+    []
+    beginReceive.me -> Receive(me, \ x @ endReceive.me.x -> Thread(me))
+
+  Threads0 = ||| t : ThreadID @ Thread(t)
+  Threads = if useSymmetry then Threads0 else  getValue?t?x -> Threads0
+  -- Note: we have a dummy read of value here, to force the value to be chosen
+  -- initially, as a state-space reduction trick.
+
+  --------  All internal processes and events
+
+  -- Internal processes and their events
+  Internals = MonitorCondition::runWith(Threads [| varEvents |] Variables)
+
+  internals = union(varEvents, MonitorCondition::events)
+
+  -- Hide internals and compress.  Compression is a serious bottleneck. 
+  transparent normal, sbisim, diamond
+  compress(P) = P -- sbisim(diamond(P))
+  Internals10 = compress(MonitorCondition::runWithAndHide(Threads))
+  Internals1 = (Internals10 [| varEvents |] Variables) \ varEvents
+
+exports
+  -- Definition of the interface of the channel.  Shared with ChanInterface.
+  include "ChanInterface.csp"
+
+  channel assertionError 
+
+  ------ Administrative functions
+
+  -- Run P with this channel
+  runWith(P) = P [| Interface |] Internals
+
+  -- Run P with this channel, and hide internals
+  runWithAndHide(P) = runWith(P) \ internals
+
+endmodule

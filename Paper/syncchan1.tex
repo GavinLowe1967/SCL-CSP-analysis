@@ -14,8 +14,8 @@ In~\cite{LL:synchronisation}, we introduced a correctness condition,
 \emph{synchronisation linearisation}, corresponding to synchronisation objects
 like this.  (The definition is based upon that for
 \emph{linearisation}~\cite{herlihy-wing}, the standard correctness condition
-for concurrent datetypes.)  Below, we specialise this definition to the case
-of a channel.
+for concurrent datetypes.)  Below, we specialise the definition of
+synchronisation linearisation to the case of a channel.
 
 A \emph{history} (or trace) of a channel is a sequence of |begin| and |end|
 events, as in the previous subsection, corresponding to threads using the
@@ -47,6 +47,12 @@ thread~$r$, passing data value~$x$.
 A~\emph{synchronisation history} is a sequence of such \CSPM{sync} events.
 Each instance identifier must appear at most once in the history. 
 %\end{definition}
+For example,
+\[
+\trace{\CSPMM{sync}^{1,2}.t_1.t_2.3}
+\]
+is a synchronisation history that describes the synchronisations in the
+earlier example channel history.  
 
 In the case of a basic synchronous channel, every such sequence of \CSPM{sync}
 events is legal.  However, for some synchronisation objects, only certain
@@ -187,16 +193,33 @@ linearisation~\cite{LL:synchronisation}.
 We now describe how we use model checking to test synchronisation
 linearisability of the channel.  (We drop the execution identifiers from
 events: they were just convenient in defining synchronisation linearisation.)
-We create an instance |C| of the channel module.  Below, expressions of the
-form |C::v| represent a value~|v| from this instance.  We create a process
-|System| that combines the channel and a number of threads (with identities
+We create an instance |C| of the channel module from
+Figure~\ref{fig:basic-CSP-model} .  Below, expressions of the form |C::v|
+represent a value~|v| from this instance.
+%
+We create a processes that represent threads (with identities
 from a set |ThreadID|): each thread repeatedly calls the send and receive
-operations (represented by events on CSP channels |C::beginSend| and
-|C::beginReceive|), and waits for them to return (on CSP channels |C::endSend|
-and |C::endReceive|).
+operations,
+% (represented by events on CSP channels |C::beginSend| and |C::beginReceive|),
+and waits for them to return:
+% (on CSP channels |C::endSend| and |C::endReceive|).
+%
+\begin{cspm}
+Thread(me) = 
+  C::beginSend.me?x -> C::endSend.me?res -> Thread(me)
+  [] C::beginReceive.me -> C::endReceive.me?res -> Thread(me)
+Threads = **||| t : ThreadID @ Thread(t)
+\end{cspm}
+%
+We build a process |System| that combines the threads with the channel (the
+function |runWithAndHide| from the channel module runs its argument in
+parallel with the module's internal processes, and hides the internal events):
+\begin{cspm}
+System = C::runWithAndHide(Threads)
+\end{cspm}
 
-We build a CSP specification process that allows precisely the traces that are
-synchronisation linearisable.  As above, we use events of the form
+We now build a CSP specification process that allows precisely the traces that
+are synchronisation linearisable.  As above, we use events of the form
 \CSPM{sync.t}$_1$\CSPM{.t}$_2$\CSPM{.x} to represent a synchronisation point
 between sender~$\CSPMM{t}_1$ and receiver~$\CSPMM{t}_2$, passing data
 value~|x|.  We build a \emph{lineariser} process for each thread as follows,

@@ -15,10 +15,10 @@ channels are shared: multiple senders and receivers can compete to use the
 channel.
 
 The SCL implementation is based on a monitor (more precisely, using an
-implementation of monitors within the SCL library).  All operations are
-carried out while holding the monitor's lock.  In addition, the implementation
-uses a number of \emph{conditions}: one thread can wait on a condition until
-another thread signals on the same condition.
+implementation of monitors within the SCL library), called |lock|.  All
+operations are carried out while holding the monitor's lock.  In addition, the
+implementation uses a number of \emph{conditions}: one thread can wait on a
+condition until another thread signals on the same condition.
 
 The implementation uses a variable \SCALA{value} to store the value that a
 thread is currently trying to send (if any).  Further, it uses a variable
@@ -33,12 +33,34 @@ the following values:
   corresponding sender has not yet returned.
 \end{description}
 %
-The implementation also uses a variable |receiversWaiting|, which records how
-many receivers are currently waiting to receive a value. 
+%% The implementation also uses a variable |receiversWaiting|, which records how
+%% many receivers are currently waiting to receive a value. 
 
 %%%%%
 
 \begin{figure}
+\begin{minipage}[t]{80mm}
+\begin{scala}
+def send(x: A) = lock.mutex{
+  while(status != Empty) slotEmptied.await()
+  value = x; status = Filled; slotFull.signal()
+  continue.await(); assert(status == Read)
+  status = Empty; slotEmptied.signal()
+}
+\end{scala}
+\end{minipage}
+%
+\begin{minipage}[t]{75mm}
+\begin{scala}
+def receive(): A = lock.mutex{
+  while(status != Filled) slotFull.await()
+  status = Read; continue.signal()
+  value
+}
+\end{scala}
+\end{minipage}
+
+
 \begin{center}
 \def\rx{3} % x coord of receiver
 \def\height{4}  % height of fig
@@ -57,25 +79,29 @@ many receivers are currently waiting to receive a value.
   node[above, near start]{\scalashape\small slotEmptied} ++ (\rx+\rx, 0);
 \end{tikzpicture}
 \end{center}
-\caption{Sequence diagram illustrating signalling on conditions within a channel
-  implementation. \label{fig:channel-sd}} 
+\caption{The code for sending and receiving, and a sequence diagram
+  illustrating signalling on conditions within a channel
+  implementation. \label{fig:channel-sd}}
 \end{figure}
 
 %%%%%
 
-Figure~\ref{fig:channel-sd} illustrates the use of conditions within the
-channel implementation. 
-A sender waits (on a condition \SCALA{slotEmptied}) until the status is
+Figure~\ref{fig:channel-sd} gives code for sending and receiving.  (Note: this
+is a large simplification of the full code, which supports alts, closing of
+the channel, and the timed operations; we give this stripped-down version to
+illustrate the modelling and analysis technique.)  The figure also gives a
+sequence diagram to illustrate the use of conditions.
+
+The sender waits on the condition \SCALA{slotEmptied} until the status is
 \SCALA{Empty}.  It then stores its value in |value|, sets the status to
-|Filled|, and signals (on a condition |slotFull|) to a receiver.  It next 
+|Filled|, and signals on the condition |slotFull| to the receiver.  It next 
 waits (on a condition |continue|) until the status is |Read|.  Finally, it
 sets the status back to |Empty|, and signals (on |slotEmptied|) to the next
 sender.
 
-A receiver waits (on |slotFull|) until the status is |Filled| (updating
-|receiversWaiting| before and after).  It then sets the status to |Read|,
-signals to the sender (on |continue|), and returns the value stored in
-|value|.
+The receiver waits on |slotFull| until the status is |Filled|.  It then sets
+the status to |Read|, signals to the sender on |continue|, and returns the
+value stored in |value|.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -102,7 +128,7 @@ Section~\ref{sec:conc}.)
 \draw (0,-3) node[draw] (monitor){%
   \cspmstyle
   \begin{tabular}{c}
-  Monitor \\ \cline{1-1}
+  Monitor  \\ \cline{1-1}
   Lock \\
   Unlock \\
   Await \\
@@ -157,9 +183,9 @@ Status = Var(Empty, getStatus, setStatus)
 
 %%%%%
 
-The monitor is modelled by a CSP module.  This encapsulates a process that
-maintains the state of the monitor, defined recursively in terms of the
-following two families of processes:\footnote{%
+The monitor |lock| is modelled by a CSP module |Monitor|.  This encapsulates a
+process that maintains the state of the monitor, defined recursively in terms
+of the following two families of processes:\footnote{%
 %
 The type \CSPM{(|ConditionID => \{ThreadID\}|)} represents maps from condition
 identities to sets of thread identities.  The type \CSPM{ConditionID} contains
@@ -256,7 +282,8 @@ process diverge if the property does not hold; in
 Section~\ref{sec:syncchan-analysis-1}, we use FDR to verify that such
 divergences do not occur.
 
-Each operation is framed by \CSPM{begin} and \CSPM{end} events:
+Each operation is framed by events that represent the operations being called
+or returning:
 %
 \begin{itemize}
 \item The event \CSPM{beginSend.t.x} represents a thread with
@@ -271,6 +298,9 @@ Each operation is framed by \CSPM{begin} and \CSPM{end} events:
   receives the value~\CSPM{x}.
 \end{itemize}
 %
+We refer to these collectively as \CSPM{begin} and \CSPM{end} events.
+
+%
 %% Each thread is modelled by a process |Thread| that accepts a |begin| event,
 %% performs the relevant operation, and then signals its completion via an |end|
 %% event. 
@@ -281,10 +311,62 @@ module, so that only the |begin| and |end| events are visible outside the
 module.  We achieve this encapsulation by including inside the module a
 process |Thread(t)| corresponding to each thread~|t|; this process accepts the
 \CSPM{begin} events, simulates the operation, and then performs the
-appropriate \CSPM{end} event.  This technique allows us to hide the internal
-events.  A process outside the module can simulate calling the operation by
-synchronising on the |begin| and |end| events; below, we capture correctness
-properties in terms of those events.
+appropriate \CSPM{end} event.  Figure~\ref{fig:send-scala-csp} gives the
+outline of the |Thread| process, part of the Scala definition of the |send|
+function, and the corresponding part of the CSP model.  The Scala |send|
+function operates under mutual exclusion on~|lock| (denoted
+``|lock.mutex{...}|''); the corresponding parts of the CSP model call the
+|Lock| and |Unlock| functions on the monitor.  The body of |send| starts
+by waiting, on condition |slotEmptied|, until |status| is |Empty|; the process
+|Send1| gives the corresponding CSP\null.  (Appendix~\ref{app:modelling} gives
+techniques for improving the structure of such models; we do not employ these
+techniques in Figure~\ref{fig:send-scala-csp}, in the interests of brevity.)
+
+%
+
+%%%%%
+
+\begin{figure}
+\begin{center}
+\begin{minipage}[t]{52mm}
+\begin{scala}
+def send(x: A) = lock.mutex{
+  while(status != Empty) 
+    slotEmptied.await()
+  ...
+}
+\end{scala}
+\end{minipage}
+%
+\qquad
+%
+\begin{minipage}[t]{100mm}
+\begin{cspm}
+Thread(me) = 
+  beginSend.me?x -> Send(me, x)
+  [] beginReceive.me -> Receive(me)
+Send(me, x) = 
+  Monitor::Lock(t); Send1(me, x); 
+  Monitor::Unlock(t); endSend.me.SendSuccess -> Thread(me)
+Send1(me, x) = 
+  getStatus.me?s -> 
+  if s == Empty then Send2(me, x)
+  else (Monitor::Await(me, SlotEmptied); Send1(me, x))
+Send2(me, x) = ...
+\end{cspm}
+\end{minipage}
+\end{center}
+\caption{Part of the Scala code for the {\scalastyle send} operation (left),
+  and the corresponding CSP (right).}
+\label{fig:send-scala-csp}
+\end{figure}
+
+This encapsulation  allows us to hide the internal events.  A process
+outside the module can simulate calling the operation by synchronising on the
+|begin| and |end| events; below, we capture correctness properties in terms of
+those events.
+
+%%%%%
 
 %% Inside the channel module is a process corresponding to each thread, which
 %% accepts the \CSPM{begin} events, simulates the operation, and then performs

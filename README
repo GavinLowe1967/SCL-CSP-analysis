@@ -22,6 +22,11 @@ JVMMonitor.csp: model of a JVM monitor, as described in Section 4.3.
 SCL Components
 --------------
 
+SyncChan0.csp: the simplified channel from the start of Section 3.
+
+* SyncChanTest0.csp: test on the simplified channel, as decribed in Section
+3.2.
+
 ChanInterface.csp: the interface of a channel.
 
 AltInterface.csp: the interface of an alt. 

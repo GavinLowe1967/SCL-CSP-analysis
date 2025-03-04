@@ -1,7 +1,7 @@
 -- Test upon SyncChan (without alts).  This file is really a stepping stone 
 -- towards more sophisticated tests.
 
-datatype ThreadID = T1 | T2 | T3 | T4  | T5 -- | T6
+datatype ThreadID = T1 | T2 | T3 -- | T4  | T5 -- | T6
 
 -- The following are needed in Types.csp, but aren't otherwise used here. 
 datatype ChanID = Chan1
@@ -32,7 +32,22 @@ AllowedEvents = Union({
   {| C::beginClose, C::endClose | CLOSE_FLAG |}
 })
 
-Threads = RUN(AllowedEvents)
+Thread(me) = 
+  C::beginSend.me?x -> C::endSend.me?res -> Thread(me)
+  [] 
+  C::beginReceive.me -> C::endReceive.me?res -> Thread(me)
+  [] 
+  TIMED_FLAG & ( 
+    C::beginSendWithin.me?x -> C::endSendWithin.me?res -> Thread(me)
+    []
+    C::beginReceiveWithin.me -> C::endReceiveWithin.me?res -> Thread(me)
+  )
+  []
+  CLOSE_FLAG & C::beginClose.me -> C::endClose.me -> Thread(me)
+
+Threads = ||| t : ThreadID @ Thread(t)
+  
+-- RUN(AllowedEvents)
 
 System = C::runWithAndHide(Threads)
 

@@ -2,6 +2,11 @@ TO DO
 
 Cite lock-free queue paper and compare
 
+Mention rely-guarantee prop as contribution? 
+
+Memory model
+
+Make LL25 paper available
 
 =============================================================
 
@@ -177,12 +182,12 @@ All corrected.
 
 This is somewhat intruding on the subject of the companion paper [LL25], so
 I'm reluctant to duplicate material from that paper.  However, I've now given
-a more complete definition for synchronisation linearisation.  And I've tried
-to explain the difference with standard linearisation better (and referred to
-[LL25] for details).
+a more complete definition for synchronisation linearisation.  And I've
+explained better the difference with standard linearisation better (and
+referred to [LL25] for details).
 
 I don't consider the elimination stack and queue to be synchronisation
-objects.  Their correctness is described using standard linearisation.  In the
+objects.  Their correctness is specified using standard linearisation.  In the
 case of an exchange, a push (or enqueue) is linearised immediately before the
 corresponding pop (or dequeue).  Put another way: the "synchronisation" is
 part of the implementation mechanism, rather than part of the specification.
@@ -196,8 +201,9 @@ captured as standard linearisation.
 > (synchronisation) linearizability? The main theorem that allows this result
 > to fit together needs to be carefully stated. 
 
-It's composition of refinement.  The final sentence of Section 5.3 states the
-relevant result; but I've also added a paragraph near the start of Section 5.
+It's composition of refinement.  In fact, I've now included a proposition
+(Prop 8) that generalises the strategy, and making clear the form of
+compositionality.  I've also added a paragraph near the start of Section 5.
 
 As it happens, synchronisation linearisation is also compositional; but that's
 not relevant here. 
@@ -243,7 +249,8 @@ much of it.  Interested readers can read the web version.  However, I have
 expanded the description of the basic CSP model, in particular sketching the
 model of the monitor.
 
-**** Section 4.2??? 
+I've said more about locking in Section 4.1, and included it in the sequence
+diagrams. 
 
 > 6) It's good that links to the CSP code are provided via the project
 > webpage, but the gold standard is to upload the mechanisation / artifact to
@@ -311,7 +318,9 @@ explain!)
 > L47 - *which may be* one of the following
 > Pseudocode for alts would really help
 
-???
+As noted above, I don't think it would help: there's just too much code; and
+the pseudocode would need to include several low-level implementation details,
+which would be a distraction.
 
 > 
 > Pg 6
@@ -379,10 +388,8 @@ See above: this paragraph has been removed.
 > Pg 12
 > L57 - As in (5) above, I found the discussion of locking unclear.
 
-*** 
+Improved, as described above.
 
-
-> 
 > Pg 13
 > L32 - What does it mean to "clear the registration information"? Which
 > variables are cleared? 
@@ -416,16 +423,13 @@ precise as is possible.
 > assumption/commitment?  
 
 Yes, in the sense that they can be seen to be tackling similar questions; but
-no, in the sense that the technique is quite different.
-
-*****
-
+no, in the sense that the technique is quite different.  I've briefly
+discussed the relationship.
 
 >        - Do you rely on a compositionality / locality property for
 > synchronisation linearizability (see (1) above).
 
-***
-
+No, just compositionality of CSP semantics.
 
 > 
 > Pg 17
@@ -524,6 +528,9 @@ no, in the sense that the technique is quite different.
 > fell this should be much better emphasised at the start of the paper. Perhaps
 > some pictures and some examples that illustrate the kind of outcomes this is
 > designed for.
+
+??
+
 > I am also concerned about a very fundamental thing: when using FDR to show
 > refinements you are explicitly assuming an underlying execution fabric that
 > matches 100% that of CSP. That is, when an even is ready it may happen. I think
@@ -532,12 +539,21 @@ no, in the sense that the technique is quite different.
 > system. Therefore, it becomes virtually important to take these external controlforces
 > into account. There is bound to be something in the runtime that could
 > limit the order in which things can happen.
+
+??
+
 > The abstract does not mention that the primitives you consider are those of
 > Scala. You should add that.
+
+Ok.
+
 > P1 L46: I do not like the words 'inport' and 'outport' as compound words. In
 > particular because there is a word 'outport' that is defined as 'a subsidiary port
 > built near an existing one.' That is not what we are dealing with here (I assume);
 > hyphenate instead: in-port and out-port.
+
+Ok.
+
 > P1 L48: I assume that sendWithin(delay)(x) is similar to an alternation which
 > allows output guards in the style of OCCAM:
 > ...
@@ -552,10 +568,23 @@ no, in the sense that the technique is quite different.
 > time ? AFTER t PLUS x
 > success := FALSE
 > that may be worth mentioning.
+
+I think occam isn't sufficiently well known nowadays for that to be useful.
+
+
 > P2 L1-2: Is a closed port similar to a poisoned OCCAM-pi channel?
-> 
+
+???
+
 > P2 L15: "where 'in' is a channel (or inport)..."; what is the difference between a
 > channel and an in-port?
+
+As explained on page 1, a channel is composed of an inport and an outport.  I
+don't think the following is relevant to the paper.  But the type of a channel
+is defined using multiple inheritance from an InPort and an OutPort.  If an
+identifier's type is InPort, then code is only allowed to input (and similarly
+with OutPorts): this gives some type safety.  
+
 > P2 L16: You say "..and f is a function whose argument matches the type of in";
 > but you just said that in is a channel or in-port but it seems to me that the
 > argument passed to f in the example of { x => println(x) } is x, and not a channel
@@ -567,51 +596,124 @@ no, in the sense that the technique is quite different.
 > example, if Type(out) = channel<int> then what we are looking for here is the int
 > from channel<int>? This just needs to be a little better explained and a bit more
 > precise.
+
+That is what was intended.
+
+
 > P2 L38: The brief mention of something called Serve(.) seems oddly
 > disconnected? Why is it here and is it needed later? Please elaborate.
+
+??? Maybe remove, and also the iter parameter.  
+
 > P2 L48: I understand your "motivation" for not including the code for the
 > implementation but it does take away from the understanding of the paper that
 > it is not there. I think perhaps some of the highlights should be shown.
+
+??
+
 > P2: Why CSP/FDR? Why is that the best alternative? What about SPIN or other
 > similar tools?
+
+??
+
 > P3 L1: a correct synchronisation as opposed to an incorrect one? I assume that
 > once we get to that particular section more will be revealed?
+
+I've added a few words.
+
 > P3 L4: "real bugs on code" -> "real bugs _in_ code"
+
+Ok.
+
 > P3 L56: Comma after e.g.
 > P4 L23: Either use 'that is' instead of i.e., or, when using commas, the sentence
-> with the i.e. should be parenthetical, i.e., it should be followed by a comma.
+> with the i.e. should be parenthetical, i.e., it should be followed by a
+> comma.
+
+Style guides differ on this question.  In particular, British style is
+normally not to use commas here.
+
 > P4 L35: Please explain the CHAOS(P) in a little more detail.
+
+I've given the definition.
+
 > P4 L35: For P;Q, when P terminates is the tick observable in the trace? that is,
 > can we see a trace like this <....., tick, ......, tick>?
+
+It's hidden.
+
 > P4 L42: That replicated operator messing with the P in the previous line looks
 > strange - perhaps move things around a little so that ||does not get a top bar
 > from the P.
+
+I see what you've been.  Fixed.
+
 > P5 L54: This is exactly what I mean about the execution environment: just
 > 
 > because the receiver can now run and get the value does not mean that it really
 > can; it may not have been scheduled.
+
+But it will eventually be scheduled.  ***
+
 > You keep citing LL24 which apparently is a draft paper in preparation. Please
 > either publish the paper, make it available or remove the citation.
+
+***
+
 > The gitHub page is difficult to navigate. Please clean it up.
+
+I don't know what you mean here.  The README file seems to give a pretty good
+overview.  
+
 > P5 L24: There seems to be quite a substantial jump from the previous discussion
 > to here. I feel this seems disconnected and strongly suggest that you sketch out
 > the Scala code here to give the reader a better idea of what the code you are
-> modelling looks like. You mention begin and end events but then move on to
+> modelling looks like. 
+
+(I think you mean page 6 here and in the next few items.)  I've added more
+explanation of the CSP model.  But I don't think giving Scala code would be
+enlightening, or a good use of space.
+
+> You mention begin and end events but then move on to
 > talking about beginSend, endSend, beginReceive, and endReceive. This is
 > confusing; perhaps the easiest way to alleviate this issue is to remove the blue
 > colour of the begin and ends in like 28 and 35-39.
+
+I've rewritten this. 
+
 > P5 L35-39: I feel that showing the code here that does what you describe would
 > be a good idea.
+
+I've given a diagram showing the structure of the definition.  However, it's
+nearly 600 lines of CSP, so would fill at least 10 pages.
+
 > P5 L49: Here you refer to something that you reference as [LL24] – a reference to
 > something that does not yet exist for anyone to read. If this reference is not
 > available then do not use it and re-introduce explicitly the part(s) of this paper
 > that you need. Alternatively, publish [LL24]!
+
+See above. 
+
 > P5 L55: I am not a fan of using "below" and "above" as LaTex places things where
-> they fit. Put them in a figure and reference that figure.
+> they fit.
+
+The issue concerning "below" has gone away as a result of other edits.  **
+
+>  Put them in a figure and reference that figure.
+
+I disagree with this point: sometimes it's clearer to have a diagram in the
+main text, so the reader doesn't have to look in two places at once. 
+
 > P6 L13-17: I feel you are rushing this very important point at this point. Please
 > expand and explain better. Upon further reflection, most of the rest of the paper
 > rests on the description in this one paragraph. I am still not clear at this point in
 > time what this really says.
+
+(I think you mean page 7, definition of synchronisation linearisation.)  I've
+significantly expanded the definition.
+
+
+
 > P6 L19: Another reference to a result in [LL24] which I cannot verify.
 > P6 L20-24: I would like to see these processes.
 > P6 L26+L36: the subscripts are in black but the text is in blue.

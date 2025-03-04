@@ -14,8 +14,8 @@ to more branches).  The branches are defined using a definition such as
 branches =  <InPortBranch.c1, OutPortBranch.c2>
 \end{cspm}
 %
-In different tests, we can vary whether the branches correspond to inports or
-outports, so test different combinations.  We also create two instances |C1|
+In different tests, we can vary whether the branches correspond to in-ports or
+out-ports, so test different combinations.  We also create two instances |C1|
 and |C2| of the channel module, corresponding to channels with
 identities~|c1| and |c2|.  We combine these together in parallel with |A1|,
 synchronising on the |begin| and |end| events that correspond to the alt
@@ -99,7 +99,7 @@ We similarly build a lineariser process for the alt-thread.  We introduce an
 event |allClosed| which will represent the linearisation point of an alt usage
 that finds all the channels are closed and so throws an |AltAbort|.  
 %
-Let |inports| and |outports| be the sets of inports and outports that the alt
+Let |inports| and |out-ports| be the sets of in-ports and out-ports that the alt
 uses, and let the function |index| give the index of a particular branch.  The
 definition below captures that before a successful return, the alt-thread must
 perform a suitable synchronisation with a channel-thread, and that before
@@ -150,8 +150,8 @@ F & 319s & 1.11B
 %
 However, this approach suffers from a state-space explosion.  The table on the
 right gives statistics about checks, for divergence freedom (D) and
-progressibility (F); each test considers an alt with two branches (one inport
-branch and one outport branch) and the corresponding two channels, used by
+progressibility (F); each test considers an alt with two branches (one in-port
+branch and one out-port branch) and the corresponding two channels, used by
 three threads (one alt-thread and two channel-threads).  The corresponding
 tests with four threads were beyond the limits of the machine used. 
 \end{window}

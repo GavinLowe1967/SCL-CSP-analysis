@@ -106,9 +106,9 @@ exports
   -- Perform P under mutual exclusion
   Mutex(t, P) = Lock(t); P; Unlock(t)
 
-  -- Perform P under mutual exclusion, and apply cond to the result. 
+  -- Perform P under mutual exclusion, and apply cont to the result. 
   MutexC :: (ThreadID, ((a) -> Proc) -> Proc, (a) -> Proc) -> Proc
-  MutexC(t, P, cond) = Lock(t); P(\ x @ Unlock(t); cond(x))
+  MutexC(t, P, cont) = Lock(t); P(\ x @ Unlock(t); cont(x))
 
   -- Perform an await() on c, and then regain the lock.
   Await(t,c) = await.t.c -> acquire.t -> SKIP 

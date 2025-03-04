@@ -344,7 +344,7 @@ indices of |branches| to the type |RegInfo|, defined as follows.
 \end{cspm}
 %
 The clauses in |RegInfo| represent, respectively, that the corresponding
-branch is not registered, registered at an inport, registered at an outport,
+branch is not registered, registered at an in-port, registered at an out-port,
 or the port is closed.  Initially all indices are marked as not registered.
 
 The process |RegTracker1| synchronises on the |end| events of call to
@@ -418,8 +418,8 @@ reflecting the behaviour of the implementation.
 %%%%%%%%%%
 
 The process |RegTracker2(reg)| deals with deregistration.  The names |inRegs|,
-|outRegs| and |allRegs| are set to the indices of registered inports,
-registered outports, and all registered ports, respectively.  The process can
+|outRegs| and |allRegs| are set to the indices of registered in-ports,
+registered out-ports, and all registered ports, respectively.  The process can
 send to |AltLin| information about a port that can be deregistered (channels
 |getToDeregisterIn| and |getToDeregisterOut|), or an indication that there is
 no such port (channel |deregisterDone|).  It synchronises on the |end| events
@@ -428,10 +428,10 @@ of deregistrations, and updates its state to map the relevant index to
 %% (via the subsidiary process |RecordDereg|, omitted for brevity).
 
 |RegTracker2| can synchronise with |Lin(t)| on the linearisation point of a
-\SCALA{maybeReceive} operation corresponding to a registered inport; at this
+\SCALA{maybeReceive} operation corresponding to a registered in-port; at this
 point, the callback will be unsuccessful, as captured by the final |false|
 field in the event.  Likewise, it can synchronise on the linearisation point
-of a \SCALA{maybeSend} operation corresponding to a registered outport, which
+of a \SCALA{maybeSend} operation corresponding to a registered out-port, which
 again will be unsuccessful.  Further, it can synchronise on the linearisation
 point of a \SCALA{closed} operation on a registered port.  However, any
 callback not corresponding to a suitably registered port would be outside of
@@ -465,11 +465,11 @@ The |RegTracker3| process %(Figure~\ref{fig:RegTracker3})
 deals with the
 waiting phase, waiting for callbacks from registered ports.  It can
 synchronise with |Lin(t)| on the linearisation point of a \SCALA{maybeReceive}
-operation corresponding to a registered inport.  The operation will be
+operation corresponding to a registered in-port.  The operation will be
 successful, as captured by the final |true| field in the event.  It informs
 |AltLin| of the success, on channel |endWait|, and moves to the deregistration
 phase.  Likewise, it can synchronise on the linearisation point of a
-\SCALA{maybeSend} operation corresponding to a registered outport; this
+\SCALA{maybeSend} operation corresponding to a registered out-port; this
 succeeds with a value~|x| sent (modelled as being chosen
 nondeterministically).  Further, it can synchronise on the linearisation point
 of a |close| operation; if all ports are now closed, it indicates this to
@@ -519,7 +519,7 @@ FD & 6 & 662M & 701s \\
 },]
 %
 The table to the right gives statistics about these checks.  In each case, we
-considered an alt with two branches, one inport branch and one outport
+considered an alt with two branches, one in-port branch and one out-port
 branch.  The checks are faster than the corresponding checks for a channel,
 mainly because normalisation of the specification was
 faster than for a channel, because the idealised alt has fewer states than an

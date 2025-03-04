@@ -91,6 +91,15 @@ the program does with the result.  Returns from the Scala function are then
 modelled by applying |cont| to the returned value.  A call to the function is
 modelled by providing a suitable function as the continuation.
 
+For example, the |Thread| process from Figure~\ref{fig:send-scala-csp} can be
+written more conveniently as follows, to allow for different results.
+\begin{cspm}
+Thread(me) = beginSend.me?x -> Send(me, x, £$\lambda$£res @ endSend.me.res -> Thread(me))  [] ...
+\end{cspm}
+%
+Then the |Send| process has a continuation parameter, which it applies to the
+final result.
+
 A continuation-passing style can also be used to model computations that are
 passed to other constructs.  For example, the following macro captures an
 \SCALA{if} statement.  The test of the \SCALA{if} is modelled by a process
@@ -115,4 +124,11 @@ Likewise, a \SCALA{while} loop can be captured using the following macro.
 \begin{cspm}
 While :: (((Bool) -> Proc) -> Proc, Proc) -> Proc
 While(test, body) = test(£$\lambda$£b @ if b then body; While(test, body) else SKIP)
+\end{cspm}
+For example, the loop \SCALA{while(status != Empty) slotEmptied.await()} from
+Figure~\ref{fig:send-scala-csp} could be written more more concisely as
+\begin{cspm}
+Send1(me, x) = 
+  let Test(k) = getStatus.me?s -> k(s != Empty)
+  within While(Test, Monitor::Await(me, SlotEmptied))
 \end{cspm}

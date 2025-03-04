@@ -28,59 +28,66 @@ We can then use FDR to verify that this system is divergence-free (when the
 stable-failures model) the specification from Section~\ref{sec:combined} (with
 the |spuriousWakeup| events hidden).  The table to the right gives statistics
 about these checks, where 
-|branches| contains one inport branch and one output branch.
+|branches| contains one in-port branch and one out-port branch.
 \end{window}
 
-In particular, the above stable-failures test verifies that the system does
-not perform any of the error events from |Errors|$_A \union\null$|Errors|$_C$:
-this confirms that each component follows the alt protocol assuming the other
-has not previously broken the protocol.
+%% In particular, the above stable-failures test verifies that the system does
+%% not perform any of the error events from |Errors|$_A \union\null$|Errors|$_C$:
+%% this confirms that each component follows the alt protocol assuming the other
+%% has not previously broken the protocol.
 
-Recall that the processes |ChannelSpec| and |AltSpec| behaved like
-|IdealisedChannel| and |IdealisedAlt|, except that they allowed arbitrary
-behaviours after an error event.  The fact that the combination of
-|IdealisedChannel|s and |IdealisedAlt| does not perform any error events means
-that the same combination of |ChannelSpec|s and |AltSpec| would not perform
-and error events, and so would behave identically overall.  That means that
-the combination would also pass the tests in the previous paragraph (although
-the checks would take slightly longer).
+%% Recall that the processes |ChannelSpec| and |AltSpec| behaved like
+%% |IdealisedChannel| and |IdealisedAlt|, except that they allowed arbitrary
+%% behaviours after an error event.  The fact that the combination of
+%% |IdealisedChannel|s and |IdealisedAlt| does not perform any error events means
+%% that the same combination of |ChannelSpec|s and |AltSpec| would not perform
+%% and error events, and so would behave identically overall.  That means that
+%% the combination would also pass the tests in the previous paragraph (although
+%% the checks would take slightly longer).
 
-Further, we earlier showed that the models of the implementations refine
-|ChannelSpec| and |AltSpec|.  This then implies that the same combination of
-the implementations would also pass the tests described above (although the
-checks might be infeasible in practice): formally, this is because refinement
-is compositional with respect to all CSP operators.
+%% Further, we earlier showed that the models of the implementations refine
+%% |ChannelSpec| and |AltSpec|.  This then implies that the same combination of
+%% the implementations would also pass the tests described above (although the
+%% checks might be infeasible in practice): formally, this is because refinement
+%% is compositional with respect to all CSP operators.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\framebox{Move}
 
 \def\Idealised{\CSPMM{Idealised}}
 \def\Spec{\CSPMM{Spec}}
 
+We will use the following proposition to deduce corresponding results about
+the models of the channel and alt implementations.  The proposition
+generalises our strategy, and describes how ``rely-guarantee'' reasoning can
+be captured using CSP model checking.
+%
 \begin{prop}
 Let $M$ be a CSP model, either {\it F} (stable failures) or {\it FD}
 (failures-divergences).  Let $P_i$, for $i \in I$, be a collection of
 processes, with alphabets~$\alpha_i$.  For each $i$, let $Err_i$ be a set of
-fresh ``error'' events, let $\Idealised_i$ be a process with alphabet
-$\alpha_i \union Err_i$, and let
+fresh ``error'' events (disjoint from each other and from each~$\alpha_j$),
+let $\Idealised_i$ be a process with alphabet $\alpha_i \union Err_i$, and let
 \begin{eqnarray*}
-\Spec_i & = & (\Idealised_i \throw{Err_i} \CSPMM{Any}_M) \hide Err_i.
+\Spec_i & = & (\Idealised_i \throw{Err_i} \CSPMM{Any}_M) \hide Err_i,
 \end{eqnarray*} 
 where $\CSPMM{Any}_F = \CSPMM{CHAOS}(\alpha_i)$ and $\CSPMM{Any}_{\it FD} =
 \CSPMM{DIV}$.
 %
 Let $\Spec$ be a process with alphabet $\Union_{i \in I} \alpha_i$ (so without
-any error events).  Suppose
+any error events), and let $A$ be a set of events disjoint from $\Union_{i \in
+} Err_i$.  Suppose
 \begin{enumerate}
 \item\label{rg-1} $\Spec_i \refinedby_M P_i$, for each~$i \in I$;
 
 \item\label{rg-2} $\Spec \refinedby_M 
- \Parallel i:I \spot [\alpha_i \union Err_i] \, \Idealised_i$. 
+ \left( \Parallel i:I \spot [\alpha_i \union Err_i] \, \Idealised_i \right)
+ \hide A$. 
 \end{enumerate}
 Then
 \begin{eqnarray*}
-\Spec & \refinedby_M & \Parallel i:I \spot [\alpha_i \union Err_i] \, P_i.
+\Spec & \refinedby_M & 
+  \left( \Parallel i:I \spot [\alpha_i] \, P_i \right) \hide A.
 \end{eqnarray*}
 \end{prop}
 %
@@ -94,8 +101,8 @@ assumptions.
 From condition~\ref{rg-2}, and the assumption about the alphabet of~$\Spec$,
 we can deduce that $\Parallel i:I \spot [\alpha_i \union Err_i] \,
 \Idealised_i$ performs no error event from $\Union_{i \in I} Err_i$.  But this
-implies that $\Parallel i:I \spot [\alpha_i] \, \Spec_i$ likewise
-performs no (hidden) error event, since the two processes behave up to the
+implies that $\Parallel i:I \spot [\alpha_i] \, \Spec_i$ likewise performs no
+(hidden) error event, since the two processes behave identically up to the
 first error event.  So, in fact,
 \begin{eqnarray*}
 \Parallel i:I \spot [\alpha_i \union Err_i] \, \Idealised_i & = & 
@@ -103,12 +110,28 @@ first error event.  So, in fact,
 \end{eqnarray*}
 since the ``throws'' operator in each $\Spec_i$ is never triggered.  Thus
 \[
-\Spec  \;\refinedby_M\;    \Parallel i:I \spot [\alpha_i] \, \Spec_i 
-  \;\refinedby\;  \Parallel i:I \spot [\alpha_i] \, P_i,
+\Spec  \;\refinedby_M\; 
+  \left( \Parallel i:I \spot [\alpha_i \union Err_i] \, \Idealised_i \right)
+    \hide A
+  \; = \; 
+  \left(  \Parallel i:I \spot [\alpha_i] \, \Spec_i \right) \hide A
+  \;\refinedby\; 
+  \left( \Parallel i:I \spot [\alpha_i] \, P_i \right) \hide A,
 \]
-from condition~\ref{rg-1}, and the fact that CSP operators are compositional
-with respect to refinement.
+using condition~\ref{rg-1}, and the fact that refinement is compositional with
+respect to CSP operators (specifically parallel composition and hiding).
 \end{proof}
+
+We can apply the above proposition, instantiating the $P_i$ with a model of a
+channel or alt implementation, instantiating the $\Idealised_i$ with
+|IdealisedChannel| or |IdealisedAlt|, instantiating the $\Spec_i$ with
+|ChannelSpec| or |AltSpec|, and instantiating $\Spec$ with the specification
+described above.  Condition~\ref{rg-1} is shown to hold by the checks in
+Sections~\ref{sec:idealisedChan} and~\ref{sec:idealisedAlt};
+condition~\ref{rg-2} is shown to hold by the tests described at the start of
+this subsection.  Thus we can deduce that the corresponding combinations of
+the models of channels of alt implementations also refine the specifications
+described above.
 
 
 %% \framebox{Type sizes, timing}

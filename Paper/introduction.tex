@@ -1,19 +1,19 @@
 \begin{abstract}
 We carry out an analysis of message-passing concurrency primitives, namely a
-synchronous channel and an alt (alternation) construct.  We model these
-primitives using the process algebra CSP, and analyse them using the model
-checker FDR.  We consider the correctness properties of \emph{synchronisation
-  linearisation} (informally, that each completed operation execution
-corresponds to a correct synchronisation) and \emph{progressibility}
-(informally, that executions don't get stuck if they could synchronise): we
-show how these properties can be captured in CSP\@.  Our initial analysis
-discovered an error in a previous implementation; our subsequent analysis
-helped us to produce a correct implementation.  It turns out that a direct
-analysis of the composition of an alt and corresponding channels scales quite
-poorly.  To overcome this, we perform a compositional analysis: we show that a
-channel and an alt each satisfies a more abstract description; and show that
-the composition of these abstract descriptions satisfies synchronisation
-linearisation and progressibility.
+synchronous channel and an alt (alternation) construct, implemented in Scala.
+We model these primitives using the process algebra CSP, and analyse them
+using the model checker FDR.  We consider the correctness properties of
+\emph{synchronisation linearisation} (informally, that each completed
+operation execution corresponds to a correct synchronisation) and
+\emph{progressibility} (informally, that executions don't get stuck if they
+could synchronise): we show how these properties can be captured in CSP\@.
+Our initial analysis discovered an error in a previous implementation; our
+subsequent analysis helped us to produce a correct implementation.  It turns
+out that a direct analysis of the composition of an alt and corresponding
+channels scales quite poorly.  To overcome this, we perform a compositional
+analysis: we show that a channel and an alt each satisfies a more abstract
+description; and show that the composition of these abstract descriptions
+satisfies synchronisation linearisation and progressibility.
 \end{abstract}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -36,8 +36,8 @@ value.  We consider just \emph{synchronous} channels in this paper: the
 sending thread must wait until there is a thread willing to receive, so that
 the two operation executions synchronise.  Channels are typed: the type
 |SyncChan[A]| represents synchronous channels that send data of type~|A|.  A
-channel is composed of an \emph{outport}, where values are sent, and an
-\emph{inport}, where values are received.
+channel is composed of an \emph{out-port}, where values are sent, and an
+\emph{in-port}, where values are received.
 
 Channels in SCL also have timed operations.  The operation
 |sendWithin(delay)(x)| attempts to send |x|, but if it is unable to
@@ -67,20 +67,21 @@ alt(
 \end{scala}
 %
 An alt consists of a number of branches, separated by ``\SCALA{\|}''.  An
-\emph{inport branch} is denoted ``\SCALA{in =?=> f}'' where |in| is a channel
-(or inport), and |f| is a function whose argument matches the type of~|in|; we
-call~|f| a \emph{continuation} (above, ``\SCALA{x => println(x)}'' denotes the
-function that takes argument~|x| and executes~|println(x)|).  An \emph{outport
-  branch} is denoted ``\SCALA{out =!=> e ==> cont}'', where |out| is a channel
-(or outport), |e| is an expression whose value matches the type of~|out|, and
-|cont| is a computation, which we again call a continuation (this continuation is
-optional).  
+\emph{in-port branch} is denoted ``\SCALA{in =?=> f}'' where |in| is a channel
+(or in-port), and |f| is a function whose argument matches the type of data
+passed on~|in|; we call~|f| a \emph{continuation} (above, ``\SCALA{x =>
+  println(x)}'' denotes the function that takes argument~|x| and
+executes~|println(x)|).  An \emph{out-port branch} is denoted ``\SCALA{out
+  =!=> e ==> cont}'', where |out| is a channel (or out-port), |e| is an
+expression whose value matches the type of data passed on~|out|, and |cont| is
+a computation, which we again call a continuation (this continuation is
+optional).
 
 The alt waits until there is another thread ready to communicate at the other
 end of the channel corresponding to one of the branches, at which point the
-two threads can synchronise to transmit a value.  In the case of an inport
+two threads can synchronise to transmit a value.  In the case of an in-port
 branch, the continuation is applied to the value received.  In the case of an
-outport branch, the value of the expression is sent, and the continuation (if
+out-port branch, the value of the expression is sent, and the continuation (if
 present) is executed.
 
 A branch may have a boolean \emph{guard}: a branch can be selected only if the
@@ -98,13 +99,13 @@ while(true){
 \end{scala}
 %
 This example also illustrates that the calculation of the value sent in an
-outport branch might have side effects; therefore the expression that produces
+out-port branch might have side effects; therefore the expression that produces
 the value is evaluated only once the alt commits to communication via that
 branch.
 
 We say that a branch is \emph{feasible} if the port has not been closed and
-the guard is true.  Above, the inport branch is feasible only if the buffer is
-not full and |in| is not closed; the outport branch is feasible only if the
+the guard is true.  Above, the in-port branch is feasible only if the buffer is
+not full and |in| is not closed; the out-port branch is feasible only if the
 buffer is not empty and |out| is not closed.  If no branch of an alt is
 feasible, the alt throws an |AltAbort| exception.
 
@@ -140,9 +141,10 @@ different aspects of channels incrementally, in the interests of clarity.  We
 start by considering just the (untimed) send and receive operations: we give
 an overview of the implementation, and of the corresponding part of the CSP
 model.  We then describe the correctness condition for these operations,
-namely \emph{synchronisation linearisation}~\cite{LL:synchronisation},
-informally, that each completed operation execution corresponds to a correct
-synchronisation.  We also describe a related progress property,
+namely \emph{synchronisation linearisation}~\cite{LL:synchronisation}:
+informally,  each completed operation execution corresponds to a correct
+synchronisation, where an execution of |send(x)| synchronises with an execution
+of |receive| that returns~|x|.  We also describe a related progress property,
 \emph{synchronisation progressibility}, informally, that operation executions
 don't get stuck when they could synchronise.  We present the corresponding CSP
 specification and refinement check for each property.  We then extend our
@@ -209,7 +211,7 @@ We consider our main contributions to be the following:
 \item The illustration of how synchronisation linearisation and
   progressibility can be tested using model checking;
 
-\item The demonstration that this technique can discover real bugs on code;
+\item The demonstration that this technique can discover real bugs in code;
 
 \item The demonstration of compositional verification, in particular where
   each component makes assumptions about the correct behaviour of other
