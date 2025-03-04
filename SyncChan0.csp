@@ -32,17 +32,18 @@ module SyncChan(ThreadID, Data)
   -------- Sending
 
   -- Thread me sends x.  The continuation expects a SendResult.
-  Send :: (ThreadID, Data, (Result) -> Proc) -> Proc
-  Send(me, x, cont) = MonitorCondition::MutexC(me, Send1(me, x), cont)
+  Send :: (ThreadID, Data) -> Proc
+  Send(me, x) = MonitorCondition::Lock(me); Send1(me, x)
 
-  -- slotEmptied.await(status == Empty || isClosed)
-  Send1 :: (ThreadID, Data) -> ((Result) -> Proc) -> Proc
-  Send1(me, x)(cont) = 
-    let Test(k) = getStatus.me?s -> k(s == Empty)
-    within MonitorCondition::AwaitTest(me, SlotEmptied, Test); Send2(me, x, cont)
+  -- while(status != Empty) slotEmptied.await()
+  Send1 :: (ThreadID, Data) -> Proc
+  Send1(me, x) = 
+    getStatus.me?s ->
+    if s == Empty then Send2(me, x)
+    else (MonitorCondition::Await(me, SlotEmptied); Send1(me, x))
 
-  Send2 :: (ThreadID, Data, ((Result) -> Proc)) -> Proc
-  Send2(me, x, cont) = 
+  Send2 :: (ThreadID, Data) -> Proc
+  Send2(me, x) = 
     -- value = x; status = Filled
     setValue.me.x -> setStatus.me.Filled -> 
     -- slotFull.signal(); continue.await()
@@ -52,37 +53,37 @@ module SyncChan(ThreadID, Data)
     getStatus.me?s -> Assert1(s == Read); 
     -- status = Empty; slotEmptied.signal()
     setStatus.me.Empty -> MonitorCondition::Signal(me, SlotEmptied);
-    cont(SendSuccess)
+    -- unlock and done
+    MonitorCondition::Unlock(me); endSend.me.SendSuccess -> SKIP
 
   -------- Receiving
 
   -- Thread me receives value.  The continuation expects to be given a
   -- ReceiveResult.
-  Receive :: (ThreadID, (Result) -> Proc) -> Proc
-  Receive(me, cont) = 
-    MonitorCondition::MutexC(me, Receive1(me), cont) -- Receive1(me), cont)
+  Receive :: (ThreadID) -> Proc
+  Receive(me) = MonitorCondition::Lock(me); Receive1(me)
 
   -- while(status != Filled) slotFull.await() 
-  Receive1 :: (ThreadID) -> ((Result) -> Proc) -> Proc
-  Receive1(me)(cont) =
+  Receive1 :: (ThreadID) -> Proc
+  Receive1(me) =
     getStatus.me?s -> 
-    if s != Filled 
-    then MonitorCondition::Await(me, SlotFull); Receive1(me)(cont) 
-    else Receive2(me)(cont)
+    if s != Filled then MonitorCondition::Await(me, SlotFull); Receive1(me)
+    else Receive2(me)
 
-  Receive2(me)(cont) = 
+  Receive2(me) = 
     -- status = Read; continue.signal(); value
     setStatus.me!Read -> MonitorCondition::Signal(me, Continue); 
     -- return value
-    getValue.me?v -> cont(ReceiveSuccess.v) 
+    getValue.me?v -> 
+    (MonitorCondition::Unlock(me); endReceive.me.ReceiveSuccess.v -> SKIP) 
 
   ---------- Threads
 
   -- A thread that performs operations, wrapping them in begin/end events
   Thread(me) = 
-    beginSend.me?x -> Send(me, x, \ res @ endSend.me.res -> Thread(me))
+    beginSend.me?x -> Send(me, x); Thread(me)
     []
-    beginReceive.me -> Receive(me, \ x @ endReceive.me.x -> Thread(me))
+    beginReceive.me -> Receive(me); Thread(me)
 
   Threads0 = ||| t : ThreadID @ Thread(t)
   Threads = if useSymmetry then Threads0 else  getValue?t?x -> Threads0

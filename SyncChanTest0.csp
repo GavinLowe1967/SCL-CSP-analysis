@@ -1,7 +1,7 @@
 -- Test upon SyncChan (without alts).  This file is really a stepping stone 
 -- towards more sophisticated tests.
 
-datatype ThreadID = T1 | T2  | T3 -- | T4 -- | T5 -- | T6
+datatype ThreadID = T1 | T2  | T3  | T4 -- | T5 -- | T6
 
 -- The following are needed in Types.csp, but aren't otherwise used here. 
 datatype ChanID = Chan1

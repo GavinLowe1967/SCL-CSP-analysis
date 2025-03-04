@@ -5,20 +5,36 @@
 
 In this section, we consider the operation of a single synchronous channel,
 without considering interaction with alts.
-
-We start by considering just the send and receive operations.  We outline the
+%
+We start by considering just the send and receive operations: we outline the
 implementation for these operations, how we model them in CSP, and then how we
-analyse their correctness.  In later subsections, we extend the analysis to
-include the timed operations and the closing of channels; for the moment we
-elide details related to those operations or to the use of alts.  Recall that
-channels are shared: multiple senders and receivers can compete to use the
-channel.
+analyse their correctness.  We then extend the analysis to include the timed
+operations and the closing of channels.  Recall that channels are shared:
+multiple senders and receivers can compete to use the channel.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{A simplified channel}
+
+In this section, we describe the implementation of the send and receive
+operations.  For the moment, we elide the parts of the implementation related
+to timed operations, the closing of channels, and alts: we describe a
+stripped-down implementation with those aspects removed.
+
+%% We start by considering just the send and receive operations.  We outline the
+%% implementation for these operations, how we model them in CSP, and then how we
+%% analyse their correctness.  In later subsections, we extend the analysis to
+%% include the timed operations and the closing of channels; for the moment we
+%% elide details related to those operations or to the use of alts.  Recall that
+%% channels are shared: multiple senders and receivers can compete to use the
+%% channel.
 
 The SCL implementation is based on a monitor (more precisely, using an
 implementation of monitors within the SCL library), called |lock|.  All
 operations are carried out while holding the monitor's lock.  In addition, the
-implementation uses a number of \emph{conditions}: one thread can wait on a
-condition until another thread signals on the same condition.
+implementation uses three \emph{conditions} within the monitor: one thread can
+wait on a condition until another thread signals on the same condition.
 
 The implementation uses a variable \SCALA{value} to store the value that a
 thread is currently trying to send (if any).  Further, it uses a variable
@@ -89,14 +105,15 @@ def receive(): A = lock.mutex{
 Figure~\ref{fig:channel-sd} gives code for sending and receiving.  (Note: this
 is a large simplification of the full code, which supports alts, closing of
 the channel, and the timed operations; we give this stripped-down version to
-illustrate the modelling and analysis technique.)  The figure also gives a
-sequence diagram to illustrate the use of conditions.
+illustrate the modelling and analysis technique.)  Each operation acts under
+mutual exclusion on |lock| (denoted ``\SCALA{lock.mutex\{...\}}'').  The
+figure also gives a sequence diagram to illustrate the use of conditions.
 
 The sender waits on the condition \SCALA{slotEmptied} until the status is
 \SCALA{Empty}.  It then stores its value in |value|, sets the status to
 |Filled|, and signals on the condition |slotFull| to the receiver.  It next 
-waits (on a condition |continue|) until the status is |Read|.  Finally, it
-sets the status back to |Empty|, and signals (on |slotEmptied|) to the next
+waits on the condition |continue| until the status is |Read|.  Finally, it
+sets the status back to |Empty|, and signals on |slotEmptied| to the next
 sender.
 
 The receiver waits on |slotFull| until the status is |Filled|.  It then sets
@@ -265,20 +282,61 @@ called by a thread~|t|:
 %% process, with CSP channels to allow the variable's value to be read or
 %% written (see Appendix~\ref{app:modelling}).
 
+%%%%%
+
+\begin{figure}
+\begin{cspm}
+Send(me, x) = Monitor::Lock(me); Send1(me, x)
+
+Send1(me, x) = 
+  getStatus.me?s ->
+  if s == Empty then Send2(me, x) else (Monitor::Await(me, SlotEmptied); Send1(me, x))
+
+Send2(me, x) = 
+  setValue.me.x -> setStatus.me.Filled -> Monitor::Signal(me, SlotFull);	
+  Monitor::Await(me, Continue); 
+  getStatus.me?s -> (if s == Read then SKIP else DIV);
+  setStatus.me.Empty -> Monitor::Signal(me, SlotEmptied);
+  Monitor::Unlock(me); endSend.me.SendSuccess -> SKIP
+
+Receive(me) = Monitor::Lock(me); Receive1(me)
+
+Receive1(me) =
+  getStatus.me?s -> 
+  if s != Filled then Monitor::Await(me, SlotFull); Receive1(me) else Receive2(me)
+
+Receive2(me) = 
+  setStatus.me!Read -> Monitor::Signal(me, Continue); 
+  getValue.me?v -> (Monitor::Unlock(me); endReceive.me.ReceiveSuccess.v -> SKIP) 
+
+ChannelThread(me) = 
+  beginSend.me?x -> Send(me, x); ChannelThread(me)
+  [] beginReceive.me -> Receive(me); ChannelThread(me)
+\end{cspm}
+\caption{CSP processes modelling the {\scalashape send} and {\scalashape
+    receive} operations, and a {\scalashape ChannelThread} process that
+  performs the operations.}
+\label{fig:CSP-send-receive}
+\end{figure}
+
+%%%%%
+
 Each of the send and receive operations can then be straightforwardly
-translated into a CSP process: this process performs the operations on the
-monitor and variables, following the Scala code.
-(Appendix~\ref{app:modelling} describes various techniques that we found
-useful in this modelling.)  
+translated into a CSP process: see Figure~\ref{fig:CSP-send-receive}.  This
+process performs the operations on the monitor and variables, following the
+Scala code.  
 
-Unlike shared variables, each thread-local variable is modelled as a parameter
-of the relevant process: this reduces the number of events performed by
-processes, and so reduces the state-space of the system to be checked;
-however, it does increase the number of states in each individual process, and
-so increases the compilation time.
+%% (Appendix~\ref{app:modelling} describes various techniques that
+%% we found useful in this modelling.)
 
-The Scala code uses several assertions: we model these by having the CSP
-process diverge if the property does not hold; in
+%% Unlike shared variables, each thread-local variable is modelled as a parameter
+%% of the relevant process: this reduces the number of events performed by
+%% processes, and so reduces the state-space of the system to be checked;
+%% however, it does increase the number of states in each individual process, and
+%% so increases the compilation time.
+
+The Scala code uses as assertion.  This is translated into a process that
+diverges if the property does not hold.  In
 Section~\ref{sec:syncchan-analysis-1}, we use FDR to verify that such
 divergences do not occur.
 
@@ -305,66 +363,83 @@ We refer to these collectively as \CSPM{begin} and \CSPM{end} events.
 %% performs the relevant operation, and then signals its completion via an |end|
 %% event. 
 
-We then construct the model of a channel, as in
-Figure~\ref{fig:basic-CSP-model}.  This model is encapsulated inside a CSP
-module, so that only the |begin| and |end| events are visible outside the
-module.  We achieve this encapsulation by including inside the module a
-process |Thread(t)| corresponding to each thread~|t|; this process accepts the
+The |ChannelThread| process in Figure~\ref{fig:CSP-send-receive} accepts the
 \CSPM{begin} events, simulates the operation, and then performs the
-appropriate \CSPM{end} event.  Figure~\ref{fig:send-scala-csp} gives the
-outline of the |Thread| process, part of the Scala definition of the |send|
-function, and the corresponding part of the CSP model.  The Scala |send|
-function operates under mutual exclusion on~|lock| (denoted
-``|lock.mutex{...}|''); the corresponding parts of the CSP model call the
-|Lock| and |Unlock| functions on the monitor.  The body of |send| starts
-by waiting, on condition |slotEmptied|, until |status| is |Empty|; the process
-|Send1| gives the corresponding CSP\null.  (Appendix~\ref{app:modelling} gives
-techniques for improving the structure of such models; we do not employ these
-techniques in Figure~\ref{fig:send-scala-csp}, in the interests of brevity.)
+appropriate \CSPM{end} event.
+
+We construct the model of a channel, as in Figure~\ref{fig:basic-CSP-model}.
+This model is encapsulated inside a CSP module, so that only the |begin| and
+|end| events are visible outside the module.  A process outside the module can
+simulate calling the operation by synchronising on the |begin| and |end|
+events; later, we capture correctness properties in terms of those events.
+
+
+%% We achieve this encapsulation by including inside the module a
+%% process |Thread(t)| corresponding to each thread~|t|; this process accepts the
+%% \CSPM{begin} events, simulates the operation, and then performs the
+%% appropriate \CSPM{end} event.  
+%% \begin{cspm}
+%% Thread(me) = 
+%%   beginSend.me?x -> Send(me, x); Thread(me)
+%%   [] beginReceive.me -> Receive(me); Thread(me)
+%% \end{cspm}
+
+%% Figure~\ref{fig:send-scala-csp} gives the
+%% outline of the |Thread| process, part of the Scala definition of the |send|
+%% function, and the corresponding part of the CSP model.  The Scala |send|
+%% function operates under mutual exclusion on~|lock| (denoted
+%% ``|lock.mutex{...}|''); the corresponding parts of the CSP model call the
+%% |Lock| and |Unlock| functions on the monitor.  The body of |send| starts
+%% by waiting, on condition |slotEmptied|, until |status| is |Empty|; the process
+%% |Send1| gives the corresponding CSP\null.  
+
+Appendix~\ref{app:modelling} gives techniques for improving the structure of
+such models.  We do not employ these techniques here, in the interests of
+brevity, and because they are tangential to the main ideas of this paper.
 
 %
 
 %%%%%
 
-\begin{figure}
-\begin{center}
-\begin{minipage}[t]{52mm}
-\begin{scala}
-def send(x: A) = lock.mutex{
-  while(status != Empty) 
-    slotEmptied.await()
-  ...
-}
-\end{scala}
-\end{minipage}
-%
-\qquad
-%
-\begin{minipage}[t]{100mm}
-\begin{cspm}
-Thread(me) = 
-  beginSend.me?x -> Send(me, x)
-  [] beginReceive.me -> Receive(me)
-Send(me, x) = 
-  Monitor::Lock(t); Send1(me, x); 
-  Monitor::Unlock(t); endSend.me.SendSuccess -> Thread(me)
-Send1(me, x) = 
-  getStatus.me?s -> 
-  if s == Empty then Send2(me, x)
-  else (Monitor::Await(me, SlotEmptied); Send1(me, x))
-Send2(me, x) = ...
-\end{cspm}
-\end{minipage}
-\end{center}
-\caption{Part of the Scala code for the {\scalastyle send} operation (left),
-  and the corresponding CSP (right).}
-\label{fig:send-scala-csp}
-\end{figure}
+%% \begin{figure}
+%% \begin{center}
+%% \begin{minipage}[t]{52mm}
+%% \begin{scala}
+%% def send(x: A) = lock.mutex{
+%%   while(status != Empty) 
+%%     slotEmptied.await()
+%%   ...
+%% }
+%% \end{scala}
+%% \end{minipage}
+%% %
+%% \qquad
+%% %
+%% \begin{minipage}[t]{100mm}
+%% \begin{cspm}
+%% Thread(me) = 
+%%   beginSend.me?x -> Send(me, x)
+%%   [] beginReceive.me -> Receive(me)
+%% Send(me, x) = 
+%%   Monitor::Lock(t); Send1(me, x); 
+%%   Monitor::Unlock(t); endSend.me.SendSuccess -> Thread(me)
+%% Send1(me, x) = 
+%%   getStatus.me?s -> 
+%%   if s == Empty then Send2(me, x)
+%%   else (Monitor::Await(me, SlotEmptied); Send1(me, x))
+%% Send2(me, x) = ...
+%% \end{cspm}
+%% \end{minipage}
+%% \end{center}
+%% \caption{Part of the Scala code for the {\scalastyle send} operation (left),
+%%   and the corresponding CSP (right).}
+%% \label{fig:send-scala-csp}
+%% \end{figure}
 
-This encapsulation  allows us to hide the internal events.  A process
-outside the module can simulate calling the operation by synchronising on the
-|begin| and |end| events; below, we capture correctness properties in terms of
-those events.
+%% This encapsulation  allows us to hide the internal events.  A process
+%% outside the module can simulate calling the operation by synchronising on the
+%% |begin| and |end| events; below, we capture correctness properties in terms of
+%% those events.
 
 %%%%%
 
