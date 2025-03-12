@@ -8,6 +8,41 @@ Memory model
 
 Make LL25 paper available
 
+============================================================
+
+Dear reviewers
+
+Thank you for your comments.  
+
+The companion paper [LL25] (previously [LL24]) has now been submitted.  I'm
+afraid that completion of the paper was delayed by factors that were basically
+beyond my control.  It can be found at
+https://www.cs.ox.ac.uk/people/gavin.lowe/SCL-CSP.html, at least for the time
+being.
+
+Your comments made me realise that in the previous version I had not given
+enough background from [LL25].  I was trying to avoid duplicating material
+from that paper; but I took that too far, and so the current paper wasn't
+sufficiently self-contained.  I have tried to improve that, giving the
+relevant definitions (but specialised to the components of this paper, rather
+than in full generality, in the interests of uniform notation).  In
+particular, I have described synchronisation linearisation more fully in
+Section 3.3, and synchronisation progressibility in Section 3.5.  I have still
+referred to [LL25] for the proof of results.
+
+I have included some more Scala in this paper, to better explain the
+implementation.  And I have included more CSP, to better explain the
+modelling.  However, these are restricted to stripped-down versions of the
+channels, because it's not feasible to include the full models.  They could be
+seen as stepping stones towards the full implementation and model.
+
+A couple of you said that you were overwhelmed by Section 5.  With hindsight,
+I can see why.  I've therefore trimmed this section, and just sketched the
+construction of the idealised models (with some regret, as producing these was
+a lot of work); I've described the full models in a technical report.  I have
+also presented a proposition in this section, formalising the general
+technique that I've employed.  
+
 =============================================================
 
 > Associate Editor comments:
@@ -78,18 +113,16 @@ Make LL25 paper available
 > or a diagram of the structure of the model, would help greatly in
 > understanding the text. The information from Appendix A may also be more
 > useful in the body of the paper as part of the explanation of the model. 
-> 
 
-I've described the basic model in more detail, moving some text from Appendix
-A, as you suggest.
+I've described the basic model in more detail, in particular giving the CSP
+model for the send and receive operations.
 
-> 
 > There are a few smaller points that should also be corrected to aid in
 > understanding. The first of these is that CSP modules are mentioned as being
 > used to structure the implementation and, while these are a feature of FDR,
 > they are not mentioned in the overview of CSP in Section 2.
 
-I've added a couple of sentences.
+I've added more explanation about modules in Section 2.
 
 > The discussion of synchronisation linearisation also seems a little vague in
 > terms of the property that is actually being checked. While there is a diagram
@@ -100,14 +133,15 @@ I've added a couple of sentences.
 > properties are. Is it just that it must occur between a start send + start
 > receive and an end send + end receive? This should be clarified.
 
-I've added some text, and re-drawn the diagram, to clarify.
+I've now given a more complete definition of synchronisation linearisation in
+Section 3.3.
 
 > The discussion of alts is not particularly clear at first, although it becomes
 > clear later. In particular it isn't mentioned until Section 4.2 that a
 > callback cannot occur during registration of channels (due to the alt holding
 > a lock), and this should be noted earlier for clarity. 
 
-I've noted that.
+I've now noted that.
 
 > Also, the description of the registerOut operation is stated to be similar
 > to the registerIn operation, but what is then stated seems very different to
@@ -180,11 +214,9 @@ All corrected.
 > synchronisation linearizability is exactly linearizability, but with an
 > exchanger-like mechanism as an abstract specification. 
 
-This is somewhat intruding on the subject of the companion paper [LL25], so
-I'm reluctant to duplicate material from that paper.  However, I've now given
-a more complete definition for synchronisation linearisation.  And I've
-explained better the difference with standard linearisation better (and
-referred to [LL25] for details).
+I've now given a more complete definition for synchronisation linearisation.
+And I've explained better the difference with standard linearisation better
+(and referred to [LL25] for details).
 
 I don't consider the elimination stack and queue to be synchronisation
 objects.  Their correctness is specified using standard linearisation.  In the
@@ -194,7 +226,8 @@ part of the implementation mechanism, rather than part of the specification.
 
 However, an exchanger is a synchronisation object, since the two invocations
 that exchange must overlap in time.  Its correctness condition can't be
-captured as standard linearisation.
+captured as standard linearisation, but it fits into the general pattern of
+synchronisation linearisation.
 
 >      Relatedly, Sect. 5 talks about a compositional proof method. Is this
 > just composition of refinement or does it rely on compositionally of
@@ -244,10 +277,9 @@ fixed and within the relevant process -- but that's not the case here.
 > to make the locking discipline more explicit. E.g., Fig. 3 could describe
 > where the locks are taken / released within the diagram.    
 
-I'm reluctant to give Scala code or pseudocode in the paper: there's just too
-much of it.  Interested readers can read the web version.  However, I have
-expanded the description of the basic CSP model, in particular sketching the
-model of the monitor.
+I'm reluctant to give too much Scala code or pseudocode in the paper: there's
+just too much of it.  Interested readers can read the web version.  However, I
+have given more of the CSP model of a basic channel.
 
 I've said more about locking in Section 4.1, and included it in the sequence
 diagrams. 
@@ -258,7 +290,11 @@ diagrams.
 > be included in the paper. Similarly, LL24 is unpublished. At minimum, this
 > should be uploaded to Arxiv, or similar to enable proper referencing.  
 
-****
+I take your point, but my understanding is that the page I'm using will remain
+for the foreseeable future -- quite possibly longer than the venues you
+mention. 
+
+That page now also holds LL25.
 
 > 
 > 
@@ -335,13 +371,13 @@ which would be a distraction.
 
 I was using the word "invocation" to mean the period from the call to the
 return.  I thought this was common terminology, but now I'm not so sure:
-different people seem to use different terminology.  Anyway, I'm now saying
-"operation execution" (or "execution") instead of "invocation", throughout.  I
-hope that's unambiguous. 
+different people seem to use different terminology.  Anyway, I've changed so
+as to say "operation execution" (or "execution") instead of "invocation",
+throughout.  I hope that's unambiguous.
 
 > L52 - This definition is also too informal.
 
-I've defined synchronisation progressibility in more detail.
+I've defined synchronisation progressibility more formally.
 
 > 
 > Pg 8
@@ -369,7 +405,7 @@ doesn't do this -- but that's not a proof that none exists.
 > L14 and L18 - both discuss the same issue regarding time
 
 The former is more general than the latter: it was intended to cover both the
-model and the subsequent analysis.  I've tried to make hat clearer.
+model and the subsequent analysis.  I've tried to make that clearer.
 
 > L41 - what about the bounds on x ? I think these are unbounded, right?
 
@@ -396,8 +432,7 @@ Improved, as described above.
 > L43 - Need a citation to the JVM monitors bug. Where has this been reported?
 
 It's pretty much common knowledge, and described in the Java API
-documentation.  I've added a reference to the API
-documentation as a footnote. 
+documentation.  I've added a reference to the API documentation as a footnote.
 
 The API documentation doesn't use the word "bug", but I consider it to be one.
 At best, it's a dreadful design decision, since the "wait" operation doesn't
@@ -412,10 +447,10 @@ programs.
 
 I'm not aware of any precise statement.  The API documentation says "While
 this will rarely occur in practice [...]".  I think it is probably very
-dependent upon the program in question, and how frequently threads do waits
-and notifies.  When I've tried to measure this in the past, spurious wakeups
-have happened at most once every few minutes.  I think "tiny effect" is as
-precise as is possible.  
+dependent upon the program in question, how frequently threads do waits and
+notifies, and other implementation-dependent factors.  When I've tried to
+measure this in the past, spurious wakeups have happened at most once every
+few minutes.  I think "tiny effect" is as precise as is possible.
 
 > 
 > Pg 16
@@ -426,10 +461,12 @@ Yes, in the sense that they can be seen to be tackling similar questions; but
 no, in the sense that the technique is quite different.  I've briefly
 discussed the relationship.
 
+***
+
 >        - Do you rely on a compositionality / locality property for
 > synchronisation linearizability (see (1) above).
 
-No, just compositionality of CSP semantics.
+No, just compositionality of CSP semantics.  I've clarified this. 
 
 > 
 > Pg 17
@@ -529,7 +566,9 @@ No, just compositionality of CSP semantics.
 > some pictures and some examples that illustrate the kind of outcomes this is
 > designed for.
 
-??
+I don't really understand this comment.  The purpose is to verify these
+communication primitives, and also to develop suitable techniques.  I think
+the abstract and introduction make that clear.
 
 > I am also concerned about a very fundamental thing: when using FDR to show
 > refinements you are explicitly assuming an underlying execution fabric that
@@ -540,7 +579,49 @@ No, just compositionality of CSP semantics.
 > into account. There is bound to be something in the runtime that could
 > limit the order in which things can happen.
 
-??
+I understand where you're coming from; but I think you've greatly over-stated
+your point.  The assumptions necessary are:
+
+1. If there is a thread that is not blocked, then some such thread is
+   eventually scheduled;
+
+2. The scheduler does not just schedule threads that repeatedly perform a
+   wait() and then a spurious wakeup, if there is another thread it could
+   schedule.  
+
+*** State these. 
+
+These seem like completely reasonable assumptions.  Let me argue why the CSP
+analysis captures all behaviours modulo those assumptions.
+
+Let's start with traces.  The CSP analysis considers all ways of scheduling
+events.  It's possible that this is a proper *superset* of the traces
+available with a particular scheduler.  But that's fine: the analysis is
+broader than what might actually happen.  If every trace with arbitrary
+scheduling is correct, then every trace with restricted scheduling is
+correct.  
+
+The argument for availability of events (using stable failures) is a little
+more involved.  Note that all computation steps are modelled by internal
+(hidden) events; the visible events ("begin" and "end" events) represent
+signals of operation calls beginning or ending.
+
+For the moment, let's ignore the possibility of spurious wakeups.  The
+analysis shows that in this case, the system is divergence-free.  By
+assumption 1, the scheduler will schedule something.  If no visible event
+happens, then a finite number of internal events are possible, so the
+scheduler will schedule some sequence of these to reach a stable state.  The
+FDR analysis considers the stable failures in those states (and considers all
+possibilities), showing that suitable operations are able to return.
+
+Now consider spurious wakeups.  Assumption 2 says that there can be finitely
+many of these per step of another thread.  So arguing as in the previous
+paragraph, the other threads must eventually perform all their available
+internal events, to reach a state where suitable operations are able to
+return.  (Between receiving a spurious wakeup and waiting again, a thread does
+not change the shared state, so doesn't change the number of internal events
+other threads need to do.)  The FDR analysis includes cases where the
+regulator blocks more spurious wakeups, so includes these cases.
 
 > The abstract does not mention that the primitives you consider are those of
 > Scala. You should add that.
@@ -570,20 +651,31 @@ Ok.
 > that may be worth mentioning.
 
 I think occam isn't sufficiently well known nowadays for that to be useful.
-
+And the concept of a timeout seems simpler than that occam code. 
 
 > P2 L1-2: Is a closed port similar to a poisoned OCCAM-pi channel?
 
-???
+Similar-ish.  (I should say that I'm not very familiar with the technique.
+And most of what I can find is for JCSP rather then occam-pi -- I assume they
+are similar.)
+
+As I understand it, "poison" is a special value sent on a channel, so is
+something done by the thread that sends on the channel.  By contrast, closing
+a channel can be done from either end, or by some third party.  I've added a
+brief note to this effect. 
+
+(My view is that "closing" is a more intuitive concept; but you may disagree.)
 
 > P2 L15: "where 'in' is a channel (or inport)..."; what is the difference between a
 > channel and an in-port?
 
-As explained on page 1, a channel is composed of an inport and an outport.  I
-don't think the following is relevant to the paper.  But the type of a channel
-is defined using multiple inheritance from an InPort and an OutPort.  If an
-identifier's type is InPort, then code is only allowed to input (and similarly
-with OutPorts): this gives some type safety.  
+As explained on page 1, a channel is composed of an in-port and an out-port.
+I've added that they can be thought of as the two ends of the channel.  
+
+I don't think the following is relevant to the paper.  But the type of a
+channel is defined using multiple inheritance from an InPort and an OutPort.
+If an identifier's compile-time type is InPort, then code is only allowed to
+input (and similarly with OutPorts): this gives some type safety.
 
 > P2 L16: You say "..and f is a function whose argument matches the type of in";
 > but you just said that in is a channel or in-port but it seems to me that the
@@ -597,24 +689,32 @@ with OutPorts): this gives some type safety.
 > from channel<int>? This just needs to be a little better explained and a bit more
 > precise.
 
-That is what was intended.
-
+That is what was intended; I've made it more explicit. 
 
 > P2 L38: The brief mention of something called Serve(.) seems oddly
 > disconnected? Why is it here and is it needed later? Please elaborate.
 
-??? Maybe remove, and also the iter parameter.  
+It's a useful programming mechanism: it's basically an alt in a loop,
+providing clean termination.  I think it's used more frequently than a "raw"
+alt.
+
+But I think you're right that it's not really relevant to the paper, so I've
+removed it.  And I've also removed the "iter" parameters within the alt
+operations. 
 
 > P2 L48: I understand your "motivation" for not including the code for the
 > implementation but it does take away from the understanding of the paper that
 > it is not there. I think perhaps some of the highlights should be shown.
 
-??
+I've now included some of the code -- see earlier. 
 
 > P2: Why CSP/FDR? Why is that the best alternative? What about SPIN or other
 > similar tools?
 
-??
+The honest answer to that is that CSP and FDR are what I'm most used to, so
+are what I prefer to use.  And they does the job very well.
+
+I don't think this is the place for a comparison of tools. 
 
 > P3 L1: a correct synchronisation as opposed to an incorrect one? I assume that
 > once we get to that particular section more will be revealed?
@@ -640,39 +740,55 @@ I've given the definition.
 > P4 L35: For P;Q, when P terminates is the tick observable in the trace? that is,
 > can we see a trace like this <....., tick, ......, tick>?
 
-It's hidden.
+The tick is hidden (I've now said that).
 
 > P4 L42: That replicated operator messing with the P in the previous line looks
 > strange - perhaps move things around a little so that ||does not get a top bar
 > from the P.
 
-I see what you've been.  Fixed.
+I see what you mean.  Fixed.
 
 > P5 L54: This is exactly what I mean about the execution environment: just
 > 
 > because the receiver can now run and get the value does not mean that it really
 > can; it may not have been scheduled.
 
-But it will eventually be scheduled.  ***
+The analysis assumes that the scheduler will schedule *some* thread.  Here (if
+I've understood you correctly) the only thread that could be scheduled is the
+receiver.  Hence the scheduler will schedule the receiver.
+
+In other states there might be multiple threads that could be scheduled.  The
+analysis assumes that, at each point, one of them will be scheduled (and
+considers all possibilities).  The analysis shows the system is
+divergence-free, so must eventually reach a state where there are no internal
+(hidden) events available; so all the current threads have either returned or
+reached the point of signalling (via an "end" event) that they are ready to
+return.  The analysis for synchronisation linearisation (in the traces model)
+show that all returns correspond to correct synchronisations.  The analysis
+for synchronisation progressibility (in the failures model) shows that no
+threads get stuck unnecessarily, i.e., if a synchronisation is possible, one
+happens, and the threads become able to return.
+
+I still don't understand your point.  What do you think the analysis is
+missing?  
 
 > You keep citing LL24 which apparently is a draft paper in preparation. Please
 > either publish the paper, make it available or remove the citation.
 
-***
+It's now available: see above.
 
 > The gitHub page is difficult to navigate. Please clean it up.
 
 I don't know what you mean here.  The README file seems to give a pretty good
-overview.  
+overview.  It's true that there is a lot of code.
 
 > P5 L24: There seems to be quite a substantial jump from the previous discussion
 > to here. I feel this seems disconnected and strongly suggest that you sketch out
 > the Scala code here to give the reader a better idea of what the code you are
 > modelling looks like. 
 
-(I think you mean page 6 here and in the next few items.)  I've added more
-explanation of the CSP model.  But I don't think giving Scala code would be
-enlightening, or a good use of space.
+(I think you mean page *6* here, and in the next few items.)  I've now given
+the Scala and the (relevant subset of) the CSP model -- see earlier.
 
 > You mention begin and end events but then move on to
 > talking about beginSend, endSend, beginReceive, and endReceive. This is
@@ -684,8 +800,7 @@ I've rewritten this.
 > P5 L35-39: I feel that showing the code here that does what you describe would
 > be a good idea.
 
-I've given a diagram showing the structure of the definition.  However, it's
-nearly 600 lines of CSP, so would fill at least 10 pages.
+I've now included most of the CSP model for the basic channel (Section 3.2).
 
 > P5 L49: Here you refer to something that you reference as [LL24] – a reference to
 > something that does not yet exist for anyone to read. If this reference is not
@@ -697,7 +812,7 @@ See above.
 > P5 L55: I am not a fan of using "below" and "above" as LaTex places things where
 > they fit.
 
-The issue concerning "below" has gone away as a result of other edits.  **
+The issue concerning "below" has gone away as a result of other edits.  ***
 
 >  Put them in a figure and reference that figure.
 
@@ -710,64 +825,172 @@ main text, so the reader doesn't have to look in two places at once.
 > time what this really says.
 
 (I think you mean page 7, definition of synchronisation linearisation.)  I've
-significantly expanded the definition.
-
-
+significantly expanded the definition (Section 3.3). 
 
 > P6 L19: Another reference to a result in [LL24] which I cannot verify.
+
+See above.
+
 > P6 L20-24: I would like to see these processes.
+
+Now included.
+
 > P6 L26+L36: the subscripts are in black but the text is in blue.
+
+Your eyes are better than mine!  I think I've now fixed all such cases.
+
+Actually, I've changed the CSP to black.  I think the journal requires
+mathematics to be black; so having CSP in blue in the middle of a mathematical
+expression looks odd. 
+
 > P4 L40: is the ThreadID - {t} equal to ThreadID\{t} ?
+
+(I think you mean page 7.)  Yes, if by "\" you mean set difference, rather
+than hiding.  It's common notation
+(e.g. https://en.wikipedia.org/wiki/Complement_(set_theory)#Relative_complement),
+and I want to avoid a clash with the notation for hiding.
+
 > P6 L42: I really think you should show some examples here as this is
 > important.
+
+(I think you mean page 7.)  Ok.  I've added an example following on from the
+example used to illustrate synchronisation linearisation.
+
 > P7 L16: I am confused here. If you have a trace (and let us consider only traces
 > created by one-to-one channel communications) can't you ALWAYS lineraise that
 > as there is always a sender and a receiver? Again, LL24 seems unavailable so I
 > cannot check myself!
+
+I'm not sure what you're concerned about.  Clearly a trace like
+<beginSend.T1.3, endSend.T1.SendSuccess> isn't synchronisation linearisable,
+because T1 hasn't synchronised with a receiver.  Traces like this would be
+flagged as errors.  I've added some discussion here.
+
 > 
 > P7 L31: I am still confused about this. It seems to me that the traces of
+
+I don't know what you intended to say here.
+
 > P7 L29: it is still not clear to me what the entire point of this really is. It seems to
 > me that what you are building is akin to the graph that FDR can generate.
+
+I don't know what you mean by this.  I'm building a specification process that
+only allows traces where sends and receives have synchronised correctly. 
+
 > P7 L40: should the -- be a \?
+
+See above.
+
 > P7 L56: don't -> do not
 > P8 L8: doesn't -> does not
+
+Most style guides consider "don't" and "doesn't" to be acceptable.  But these
+have both gone away as the result of other edits. 
+
 > P8 L47: It is not until here it sort of becomes apparent that, yes, you are
 > modelling what FDR can do but you need that foundation for the following work
 > on closed channels. This should be said hammered home MUCH earlier.
+
+I don't know what you mean by this.  
+
 > P10 L6: stll -> still
+
+Thanks.
+
 > P10 L16-21: this is very difficult to understand.
+
+I've rewritten this paragraph.
+
 > P10 L52: won't -> will not
 > P10 L54: doesn't -> does not
+
+See above.
+
 > P11 P27->: This reads like it is only understood by the author. This is not at all
 > clear what is going on here. It feels like there is something missing at the
 > beginning. We jump directly in to a lot of stuff that was never explained before
 > use.
+
+I've tried to improve this.  But it would be useful if you could say what you
+haven't understood. 
+
 > P11 L50: The most I can make of section 4.1 until here is that registerIn is
 > equivalent to an enable sequence known from OCCAM/JCSP implementations
 > and registerOut is the equivalent of the disable sequence; if this is correct this
 > should definitely be stated.
+
+I think few readers will be familiar with the enable sequence from OCCAM/JCSP
+-- I'm not.
+
 > P11 L51: Although now I think deregisterIn/Out is the disable... please explain
 > this entire thing better.
+
+I've stated explicitly what "deregister" means: I thought it was clear. 
+
 > P13 L27: comma after i.e.
+
+See above.
+
 > P13 L43: The spurious wakeup bug is not a bug of the JVM monitors at all. It
 > stems from the underlying pthread library. That is, the native C library that the
 > JVM uses for threading and (native) monitors.
+
+Do you have a reference for that?  I've searched, and only found rather vague
+discussions -- nothing that I feel is cite-able. 
+
+In any case, the fact that the JVM fails to deal with the issue is, in my
+opinion, a bug.
+
 > P13 L48: Please elaborate on this CHAOS(...) approach and how it really works. I
-> do not think that many readers are familiar with these "more clever" CSP tricks.
+> do not think that many readers are familiar with these "more clever" CSP
+> tricks.
+
+I've rewritten the paragraph.  In particular, I've rewritten the definition of
+Reg without CHAOS.  But I again don't know what you find unclear; is it: (1)
+how the use of CHAOS means that spurious wakeups might or might not happen; or
+(2) why it is important to model that spurious wakeups cannot be depended on
+to happen?
+
 > P13 L56: don't -> do not
 > 
 > P14 L6,9: don't -> do not
+
+See above.
+
 > P14 L9: If you do not model the iter variable then why bother talking about it and
 > adding it to your model?
+
+It's relevant for serves -- but as I've removed mention of serves, I've also
+removed this.  (I've kept a mention in a footnote, in the interests of
+accuracy.)
+
 > P14 L26: You mention the name A1 but that never seems to surface again except
 > for line 33.
+
+It's introduced a few lines earlier.  I've made it more prominent.  It appears
+several times in what follows, e.g. in the definition of AltLin.  
+
 > P14 L44 -> P15 L53: This is impossible to understand if you aren't the person who
 > wrote it. This reads like a lot of "... and then"s followed by a page of code that
-> the reader has no chance of understanding. I do not understand why the code
+> the reader has no chance of understanding.
+
+It would be useful if you said what you don't understand.  I have given more
+explanation and example traces.  But it's a fairly straightforward extension
+of the definitions in Section 3. 
+
+> I do not understand why the code
 > and the text is not mixed: build up the code in steps and add explanation to it
 > rather than a wall of "explanation" followed by a wall of code.
+
+I don't understand this comment.  Each "wall of code" is explained by the
+paragraph of text immediately preceding it.  And each "wall of code" defines a
+single process (by recursion), so can't sensibly be split up.   
+
 > P14 L50: This is very clever and I like it; this is why you should explain the CHAOS
 > stuff a little better.
+
+Ok.
+
 > Section 5: I think most readers’ eyes will glaze over here (mine did). The whole
 > pages with nothing but complicated CSP is simply not digestible for anyone but
 > the persons who wrote it. I don't know that this section necessarily is needed for
@@ -775,8 +998,16 @@ significantly expanded the definition.
 > considering the complexity and difficulty of digesting the text, I would probably
 > remove the entire section or boil it down to a page but remove all the
 > CSP.
+
+I take your point about the quantity of CSP.  As discussed earlier, I've
+removed the CSP (into a technical report) and just sketched the construction
+of the idealised models. 
+
 > P27 L17: eternal -> external
 > P27 L25: must -> most
+
+Done.
+
 > 
 > ======================
 > 
@@ -787,12 +1018,17 @@ significantly expanded the definition.
 > have converted the original Scala code to a CSP implementation or any of the
 > models. It is unclear whether the results are viable at all as we only have certain
 > behaviour specifications, which have issues around them.
-> Linearizability has been misused (or misunderstood). Linearizability is best
+
+> Linearizability has been misused (or misunderstood). 
+
+The paper does not consider linearisation.  It considers *synchronisation
+linearisation*.  The two properties are different (but have similarities). 
+
+> Linearizability is best
 > understood for data objects (Herlihy use the term concurrent object, but they
 > effectively mean the object is a concurrently accessible data object, passive in
 > how it interacts with the processes/threads using it). A channel does not neatly
 > fit this definition as it is not a data object but a synchronisation object. Yes there
-> 
 > is a data component (the communicated value), but this is a synchronisation
 > communicated rather than a data object being manipulated. The channel is not
 > passive in its interaction with a process as it causes the parties involved to
@@ -827,64 +1063,185 @@ significantly expanded the definition.
 > significant, with operations not visibly progressing (although perhaps able to) for
 > some time. Implying there will be a linearization (some sequential interaction) is
 > problematic.
+
+All of that is true.  Except the paper isn't considering linearisation.  And
+you've basically recreated the argument in [LL25] that explains why
+linearisation is not the right property.  
+
 > The author seems to be making an argument for a new safety property around
-> synchronisation linearizability, but they haven’t defined why this is a useful
-> safety property in comparison to what we can already perform, or how we go
-> about reasoning about it (beyond using parts of linearizability). Indeed, there will
-> 
+> synchronisation linearizability,
+
+Indeed.
+
+> but they haven’t defined why this is a useful
+> safety property in comparison to what we can already perform,
+
+I have tried to improve the explanation.  
+
+It's useful because it allows us to describe what "correct" means.
+
+> or how we go
+> about reasoning about it (beyond using parts of linearizability).
+
+The paper shows how we can test for it using model checking. 
+
+> Indeed, there will
 > be no linearization point. The author considers a synchronisation point but the
 > author seems to dismiss this although that is due to the complexity added from
 > closing channels. However, the synchronisation point described seems more
 > focused on “the result” of the synchronisation rather than the synchronisation
 > having occurred (even if this is via a close - it is just a failed synchronisation but
-> the procedure does end). This seems a much larger piece of work than presented
+> the procedure does end).
+
+I've removed the discussion about explicit synchronisation points,
+i.e. identifying particular points in the code where the synchronisation
+appears to take place.  That discussion was a bit of a distraction.
+
+However, the paper shows that you can still test for synchronisation
+linearisation -- just as you can still test for (standard) linearisation
+without explicit linearisation points.
+
+> This seems a much larger piece of work than presented
 > here, but the use of the term linearizability is misleading in this regard. There is a
 > reference to another paper the author is working on, but this is not available and
 > again means they are not presenting enough about synchronisation linearisation
 > in this paper, putting a lot of expectation on the reader.
+
+That paper is now available.  But I've added more explanation to this paper to
+try to make it more self-contained.  
+
 > It is unclear what the new synchronisation linearisation property adds beyond
 > having identified that a channel implementation must only exhibit behaviour
-> that a channel would have. This is surely achieved via the traces model in CSP. I
+> that a channel would have.
+
+That's the point of a specification.  Here, it *defines* the behaviours that a
+channel should have.
+
+> This is surely achieved via the traces model in
+> CSP.
+
+Yes, and this paper describes what traces are correct.  (And also considers
+liveness properties, which require the failures-divergences model.)
+
+>  I
 > cannot see how the linearization checking processes do more than show that a
 > read will start and end (returning the communicated value) and likewise a write
 > will start and end. The processes synchronise between begin and end with the
-> partner, communicating the value. This is a simple model of a channel (indeed
+> partner, communicating the value. 
+
+In other words, they show that the implementation is correct. 
+
+> This is a simple model of a channel (indeed
 > the reference the author uses to Welch, et. Al. seems similar but covers a wider
 > range of behaviours).
+
+That isn't true.  This paper considers all the features considered in the
+Welch-Martin papers.  But further, the Welch-Martin papers:
+
+- don't consider closing of channels;
+
+- don't consider timed sending and receiving;
+
+- only allow in-ports (receiving ends) to be used in alts, not out-ports
+  (sending ends); 
+
+- don't allow a channel end to be shared between an alt and a non-alt thread;
+
+- don't consider spurious wakeups.
+
+Each of these features adds considerable complexity to the implementation and
+the model; my finger-in-the-air estimate is by an overall factor of 8 or 10.
+(This is not to criticise Welch and Martin -- but this paper goes a lot
+further.)
+
 > As such, the claim (p2, line 45) that the implementations have been checked
 > against appropriate specifications is problematic. They do not seem to add
-> anything that couldn’t be checked otherwise. Likewise, the “idealised” models
+> anything that couldn’t be checked otherwise. 
+
+What do you mean by "otherwise"?  I do not agree, in any case. 
+
+> Likewise, the “idealised” models
 > seem strong in their claim. What does idealised mean here? It seems to be more
 > a “simplified implementation” model. As the author has not presented the
 > implementation models it is really unclear whether these idealised models are
 > correct, or what we are trying to understand.
+
+Each represents a specification of how the component should behave.  The
+refinement checks show they are correct.
+
 > The author has also not undertaken analysis of the shared nature of the channels
 > in use. I find this very troubling as the linerization processes defined rely on
 > correct ordering of begin and end events, but I suspect that if multiple processes
 > were using a channel end this analysis would have problems, especially with
 > regard to the alt behaviours.
+
+That's simply not true.  The paper explicitly describes checks involving
+multiple threads, which can be trying to use the same channel end.  (Of
+course, the number of threads is bounded, as is always the case with explicit
+model checking.  But there are enough threads for more than one to be using
+the same end.)  I've stated that explicitly.
+
 > Given that linearizability has inspired the synchronisation linearisation idea, a
 > fuller presentation on linearizability is required so readers understand it and how
 > the author has extended this idea for their new property.
+
+Done. 
+
 > I am unclear how read/write ordering is maintained, and how this has been
 > modelled. If we have three readers A, B, C that start reading from a channel c in
 > that order, and then three writers come in the order P, Q, R, does that mean
 > communication pairings (A, P), (B, Q), and (C, R) or is it arbitrary? Have you
 > checked that ordering is preserved, or is this why a weaker model has been used
 > for verification that only looks at correct begin-end sequencing?
+
+No, the property of synchronisation linearisation allows all pairings -- and
+that's what we want.  Just because thread A starts first, doesn't mean that it
+gets to synchronise first.  
+
 > 
 > It is also not clear why the channels have been implemented in the way they
 > have been. Why shared? Is this a multiparty synchronisation (one writer
 > broadcasting) or interleaving access? Why can channels be closed? I also have
 > some concerns about how such a library would be used in practice as it seems
-> systems cannot be implemented transparently. The alt does not allow a channel
+> systems cannot be implemented transparently.
+
+We've been teaching a Concurrent Programming course using libraries like this
+for nearly 20 years.  The students have used them effectively.
+
+The channels are shared in the sense that there can be multiple threads using
+each end.  But each synchronisation is between one sender and one receiver.
+Having shared channels is useful, for example, to allow communication between
+a server and multiple clients.  (I've made this clearer.)
+
+Closing channels is useful as a way of indicating the end of a data stream, to
+allow a system to shutdown.   (I've explained this.)
+
+> The alt does not allow a channel
 > to be used in another alt, but if using a library of code how would you know until
-> you hit a random exception, and then how would you find the error? The design
+> you hit a random exception, and then how would you find the error? 
+
+Many libraries come with usage rules.  For example, a one-to-one channel in
+JCSP assumes that there is at most one thread using each end.
+
+As stated, the implementation throws an exception if these restrictions are
+not respected.
+
+The restrictions aren't an issue in practice.  Students don't have
+difficulties with them.
+
+> The design
 > decisions of the channel and alt require some more thought and likely modified,
 > making the analysis presented seem premature. At the moment, I would not
 > want to use this library as any systems developed would have to come with
 > warnings about what is plugged in where and little ability to easily debug where
 > problems arise.
+
+Considerable thought was put into this question.  Not making these
+restrictions would make the implementation considerably more complicated, as
+in [Low11]; this would probably make the primitives slower in practice.  
+
+As I said above: these restrictions aren't an issue in practice.
+
 > For closing channels, what is the prioritisation? Does only partial
 > communications complete? Both reading and writing? Or is it an almost
 > complete communication and then the close takes priority and any reading and
@@ -893,6 +1250,14 @@ significantly expanded the definition.
 > impact a system unexpectently, having one part of a system basically shut down
 > another because it arbritrarily decided to close a channel (see the transparency
 > comment above).
+
+The property of synchronisation linearisation captures the required property,
+as described in Section 3.6.  Either a synchronisation is linearised before
+the closing of the channel, in which case both sending and receiving succeed;
+or the closing is linearised first, so both sending and receiving fail.  The
+second paragraph of this section states this property informally.  I've added
+related explanation later. 
+
 > The underpinning implementation of these channels (using conditions and a
 > state machine) does seem complicated, and perhaps is leading to the challenges
 > in state space explosion. Is this required to support the approach to alt and
@@ -901,18 +1266,57 @@ significantly expanded the definition.
 > • It seems the alt effectively locks down the channels engaged with it during
 > the registration process. This seems inefficient. You are effectively
 > shutting down a part of a system when undertaking an alt.
+
+It locks each channel during the call to registerIn or registerOut on it, in
+the same way that a send or receive locks the channel.  That's not very long
+-- similar to the time taken to do a send or receive.
+
 > • How does a shared channel work with an alt? What if a non-alt-thread
 > wants to read from a channel being used by an alt? Is that alt now blocking
 > the progress of a communication that is ready to proceed? Or is an
-> exception thrown? Has this interaction been modelled and checked?
+> exception thrown? 
+
+If an alt and non-alt-thread are both trying to receive on the same channel,
+when another thread tries to send, the alt gets priority: that's a design
+decision, and could have been made the other way.  But basically the
+implementation of the channel deals with this.
+
+> Has this interaction been modelled and checked?
+
+Yes, the analysis in section 5 includes such cases, as it allows
+channel-threads to call arbitrary operations on the channels.  The analysis
+shows that it works correctly.
+
 > • Deregistration seems unsafe as no locking occurs. Are there race
 > conditions here? If not, why not?
+
+I've improved the explanation of locking in this stage.  The alt-thread locks
+a channel while deregistering at that channel; but the alt itself is unlocked.
+
+The term "race condition" is used in different ways by different people.  The
+analysis shows that there is no error. 
+
+There is a small data race as follows.  The implementation uses an array
+"registered" of booleans, recording the branches for which the channel is
+registered.  The alt-thread deregisters from all channels where "registered"
+holds true.  However, if that thread performs a concurrent call-back, it sets
+the entry in "registered" to false, as an optimisation, and deletes its record
+of the registration.  There's a potential race here, where the alt-thread
+tries to deregister at a thread that has just done a call-back and deleted its
+record of the registration.  But the implementation of the deregistration is
+effectively a no-op in this case.
+
+The analysis shows that this works despite the data race. 
+
 > The description of the alt needs a fair bit of reworking to be understandable. It is
 > perhaps from suddenly dipping into Scala at this point, but working out how the
 > interactions occur takes a lot of effort and I’m not 100% sure I’ve got it (which
 > might be leading to some of my problems with how the alt works.
+
+I have tried to improve the explanation.  But you haven't said what you're
+unsure about. 
+
 > There is also misunderstanding of how concurrency is implemented in Java. The
-> 
 > JVM does not provide threads, scheduling, or otherwise. It provides an interface
 > to another threading library implementation (typically the operating system;
 > Java’s “green threads” have not been supported since Java 1.2). There is a 1:1
@@ -923,6 +1327,10 @@ significantly expanded the definition.
 > The author should be very cautious about the claims they are making about how
 > Java works as it is not as universal as many expect, although in practice there is
 > often no difference across major JVM implementations and OS platforms.
+
+I don't fully understand your point here.  Whether spurious wakeups originate
+in pthreads or the JVM, they still exist.
+
 > Likewise, the author is unaware that Java does indeed provide
 > conditions https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/
 > util/concurrent/locks/Condition.html. The models presented seem to rely on the
@@ -930,14 +1338,50 @@ significantly expanded the definition.
 > have been checked for correctness (and also considered for spurious wake ups).
 > It might be better to use the Java conditions for consistency, but either case as
 > they both likely use waits they will be susceptible to spurious wake ups.
+
+I'm fully aware of Java conditions.  However, that again suffer from spurious
+wakeups.  My own implementation does not (or rather, it protects against
+spurious wakeups coming from the LockSupport library in Java).  It was a
+deliberate decision to use my implementation, for this reason.
+
+The implementation is at
+https://github.com/GavinLowe1967/Scala-Concurrency-Library/blob/main/src/Lock/Lock.scala.
+I haven't analysed it.  But it's almost obviously correct: a thread doing a
+signal sets a boolean, and a thread doing an await checks that boolean.
+(Which raises the question: why doesn't Java provide a similar protection?)
+
 > At the start of Section 5, three goals are defined, but I’m not convinced these are
 > suitable:
+
+Those are steps in the verification of this section, rather than goals. 
+
 > 1. The channels have not considered the shared nature.
+
+(I assume you mean the fact that multiple threads can access the same port
+concurrently.)  That is incorrect: the analysis considers shared behaviour.
+The analysis uses four threads, so will include, for example, cases where two threads
+concurrently access each end.
+
 > 2. The alt in isolation I assume means modelled with no channels. Surely that
 > is a limitation when comparing — we don’t know if the idealised alt is
 > equivalent to the alt implementation when four channels are used. Also,
 > the lack of iter modelling (see below) worries me that the implementation
 > model is more general than the implementation actually is.
+
+Section 5 is performing a *compositional* verification.  Section 5.2 shows
+that an alt satisfies a particular property.  Section 5.3 shows that that
+property, and the corresponding property of a channel, is enough to show that
+the composition of an alt and channels satisfies the desired properties
+(synchronisation linearisation and progressibility).
+
+The analysis in Section 5.2 considers the alt "in isolation" in the sense that
+it doesn't model the channels explicitly.  However, it treats the channels as
+part of the environment of the alt, and does consider possible interactions
+with the channels.  
+
+The words "in isolation" seem to have been misunderstood, so I've rewritten
+this. 
+
 > 3. As this goal relies on the first two it becomes problematic.
 > From Section 5 onwards the presentation of work becomes hard on the reader,
 > with repetition, lots of unexplained CSP code, and uncertainty where we are
@@ -945,93 +1389,272 @@ significantly expanded the definition.
 > comments) and considers how best to present this idea. It maybe does not need
 > the amount of CSP presented (it seems repetitive from earlier and internally) and
 > focus on the differences easier.
+
+See my comments in the introduction of this response.  I take your point here:
+there was a lot of CSP.  I've removed that CSP (into a technical report), and
+just sketched the construction.
+
 > Returning to the contributions stated for the paper (p3, line 37) given the above,
 > these need revised:
 > • Modelling of a larger body of code than previous work - this is never
 > justified in the paper and would be hard to. How is this judged? Lines-ofcode
 > is not a code metric between languages, but anyway the only
 > presentation here is of a channel and alt which the references cited give
-> 
 > provide similar analyses.
+
+I agree lines-of-code isn't a good metric.  But I think lines-of-model or
+characters-of-model are decent metrics, as they give an idea of the complexity
+of what's being modelled.
+
+The CSP files amount to over 3000 lines, or over 110,000 characters.  By
+contrast, [WM00] looks like about 300 lines.  In particular, [WM00b] doesn't
+study closing of channels, timed operations, sharing of channel ends, and
+doesn't allow out-ports to be used in an alt; further, [WM00a] doesn't model
+alts at all.
+
 > • Development of modelling techniques - agree this seems to be the focus
 > of this paper, but whether these techniques tell us anything is unclear.
 > • Demonstration of compositional verification - has been undertaken
 > elsewhere, (e.g., [TODO])
+
+Certainly, compositional verification has been considered before.  But I think
+this approach is new.
+
+**** Rewrite relevant bullet.
+
+You have missed two of the stated contributions:
+
+• The illustration of how synchronisation linearisation and progressibility
+  can be tested using model checking;
+• The demonstration that this technique can discover real bugs on code;
+
+(Ok, the second of those isn't completely original.)
+
 > Other points:
 > • In section 2, exceptions in CSP are introduced. These need more
 > explanation as they are not a commonly used operator.
+
+The discussion of exceptions was intended as an example usage of the operator:
+the events could *represent* exceptions; but they're just events as far as CSP
+is concerned.  I've made this clearer.
+
 > • The author seems surprised by the FD results being quicker than F in some
 > cases, demonstrating a lack of understanding of how FDR undertakes
 > refinement checking. The normalisation process is applied first, but that
 > result is cached. So the F results must wait for normalisation but the FD do
 > not. The Refinement Checking section of the FDR manual discusses this.
+
+You seem to be saying that the results of normalisation in the F check can be
+used to avoid normalisation in the F check.  This is incorrect for three reasons.
+
+1. It assumes that the F and FD checks were done as part of the same FDR
+session.  In fact, each was done in a separate session, to make the timing
+results independent.
+
+2. FDR cannot use normalisation results from an F check to avoid normalisation
+in an FD check, because the normal forms are different.  The implementer of
+FDR has confirmed this for me.
+
+3. The two specifications are different, namely ChannelSpec_F and
+ChannelSpec_D. 
+
 > • CSP (well really this is CSPm/FDR) modules are used but never described
 > or explained. Again, this is putting onus on the reader to find out about
 > these and work out what is happening in the paper.
+
+I've said more about modules. 
+
 > • I’m not sure why the small tables of states and times are presented. OK,
 > there is a problem of state space explosion, but that can be handled by a
 > sentence rather than a collection of tables.
+
+I think a table is far easier to read than a sentence containing a load of
+numbers.  Or where you suggesting omitting the numbers altogether?  I think
+some readers will be interested in the numbers. 
+
 > • Also, related to the small tables, what are the limits of FDR? The is a
 > statement about FDR getting stuck but that sounds like not waiting long
 > enough. Surely FDR can keep going until it runs out of memory or has two
 > many states or transitions to store.
+
+The checks that failed ran out of memory.  I state that they were "beyond the
+limits of this machine"; I don't know how you interpret that as not waiting
+long enough.  
+
+That limit is obviously dependent both on the hardware used and the complexity
+of the model.  But the tables give some indication of what is possible.
+
 > • Section 3.2, around line 43 onwards - we need a diagram at this point to
 > understand the interactions. This will help understand what close is
 > actually doing.
+
+Ok, done; in fact I've given two diagrams describing two different issues.
+I've also given the relevant code.
+
 > • I am sort of convinced that the timeouts work, but is there a problem
 > when one side of a communication sees a state that will change after a
 > timeout?
+
+The implementation avoids this.  When the thread wakes up (after a timeout, or
+after receiving a signal), it re-reads the state. 
+
+And the analysis shows the implementation is correct.
+
 > • p10, line 39 - can a figure be presented illustrating what has been hooked
 > up?
+
+Ok.  I've done this a bit earlier than you were suggesting, in the "closing
+channels" subsection, rather than the "timed operations" subsection: it seems
+to fit better there. 
+
 > • p11 - Scala code suddenly is used with little warning but I’m not clear why
 > this was deemed necessary here and not elsewhere in the paper.
-> 
+
+Well, it's necessary to describe the interactions (operation calls) between
+the objects, so it seems necessary here.  But I have now also given some Scala
+earlier.
+
 > • P12, line 54 - you mention JVM (or more accurately whatever Java uses)
 > monitors being more efficient than SCL, which makes me wonder how SCL
 > is implemented. Surely it just uses Java libraries under the hood? Unless
 > SCL uses some other techniques (Java Native Interface, bytecode
 > rewriting) instead? This needs to be clarified, especially around how
 > efficient.
+
+I think you're asking specifically about SCL monitors.  They do use Java under
+the hood (specifically the LockSupport library).  But I don't really feel this
+is worth saying.
+
 > • Section 4.3, first para. - we require a diagram again.
+
+I've added a diagram.
+
 > • Section 4.3, second para. - no CSP provided for the JVM monitor. How is
-> this managed? What does spurious look like?
+> this managed?  
+
+The paragraph describes the model.  I think that is enough as it's very
+similar to the model of an SCL monitor.  
+
+> What does spurious look like?
+
+This was answered in the following paragraph (I've now merged those
+paragraphs). 
+
 > • P14, line 7 - the author states the continuation is not modelled in the alt,
 > but I’m unclear if this means the actual channel communication isn’t
 > modelled. Or is it assumed that this occurs prior to the continuation so
 > you are just recursing around again.
+
+The channel communication is modelled.  The continuation happens after the
+communication; I've made that explicit. 
+
 > • P14, line 9 - the author doesn’t model the iter in the alt, but surely that
 > means ordering is arbitrary. This seems to refer to the implementation
 > model, meaning the implementation is not a true representation allowing
 > it to meet behaviours it cannot do in practice.
+
+No, the iter parameter isn't really needed in the implementation: as noted,
+it's only used in assertions.  It was useful when I was developing the code.
+But it's a bit of a distraction, so I've now removed it (other than in a
+footnote). 
+
+The analysis verifies that iterations happen in order (or else trace errors
+would be exhibited, where values are received out of order).
+
 > • P27, line 12 - the author claims this style of analysis is widely applicable
-> but they would have to demonstrate so. Also, there are problems with the
+> but they would have to demonstrate so. 
+
+I've added some discussion.  I've described a generic form of the construction
+for binary synchronisations, and noted that this can be generalised to other
+forms of synchronisation.
+
+> Also, there are problems with the
 > style of analysis and the understanding of what is being achieved and why
 > it is different.
+
+I hope the revised version of the paper is clearer.
+
 > Other minor points:
 > • The paper title is confusing as the author does not analyse a library of
 > concurrency primitives just a channel (and a limited version of the
 > implementation) and alt.
+
+I am content with the title.
+
 > • I don’t know why guarded branches in alts were presented (and
 > mentioned a few times) as the author dismisses them later as too
 > complicated to model and probably not necessary. A one sentence
 > mention about guarded branches at the start of the paper would be
 > sufficient.
+
+Guards are mentioned twice in Section 1, and twice in Section 4.1; in each
+case, not mentioning the guard would be an untruth. 
+
 > • The full stops and parentheses are not consistent. It really should be full
 > stops after the closing parenthesis, but anyway the style is not consistent.
+
+No, every style guide I've consulted says that if a complete sentence is
+inside parentheses, then the full stop should also be inside the parentheses.
+I've checked, and that is what I've done.  
+
 > • Some lin process definitions use t for the process, some use me. Pick one
 > and be consistent.
+
+Ok.
+
 > • P3, Line 30 - can this stray sentence be added to a paragraph.
-> 
+
+I feel it is more logical and consistent to keep it in its own paragraph.  
+
 > • P4, Line 6-7 - I don’t know why this reference and statement is made in
 > this paper. It does not appear relevant.
+
+Both involve modelling code in CSP.  
+
 > • p4, Line 21 - why is tick distinguished? This seems superlative.
+
+It's distinguished because it represents termination.  It's treated slightly
+differently from other events (but in ways not relevant to this paper).  I
+suggest you read either of Roscoe's books.  
+
 > • p4, Line 22 - far too many joining of sentence fragments with ;
+
+I disagree. There are only two semicolons in that paragraph.  In each case,
+the two parts of the sentence relate to the same syntactic construction, so
+are closely related to one another. 
+
 > • P4, Line 23 - i.e. missing the follow-on ,
+
+Style guides differ on this question.  In particular, British style is
+normally not to use commas here.
+
 > • P6, line 55 - figure needs to be properly referenced.
+
+It's not a figure; it's an in-line diagram. 
+
 > • P10 (and elsewhere) - those small results tables for states, times, etc. need
-> to be presented as proper tables. The style (e.g., column ordering) should
+> to be presented as proper tables. 
+
+I don't know what you mean by this.  If you mean using the full width of the
+page, I think that would be a poor use of space, and harder to read.  
+
+> The style (e.g., column ordering) should
 > be consistent.
-> • P12, line 51 - what is the lock mentioned? Is this a Java lock or a SCL lock?
+
+I've fixed the one that had a different order, thanks. 
+
+> • P12, line 51 - what is the lock mentioned? Is this a Java lock or a SCL
+    lock?
+
+Section 3 explained that channels use SCL locks.  But at this point, it
+doesn't matter how the lock is implemented.  
+
 > • Appendix A - variable modelling. Does the thread ID matter here? It
 > doesn’t seem to do anything, and I assume this is hidden during
-> 
+
+As it turns out, they're not strictly necessary in this case.  However, it's
+normally a good idea to include a thread's identity in each of its events, in
+order to make it easier to define the thread's alphabet for alphabetised
+parallel composition.  (Here, the threads are interleaved, which is why it's
+not strictly necessary.)  It also helps to see the thread IDs in error traces
+produced by FDR.  The cost is negligible.  

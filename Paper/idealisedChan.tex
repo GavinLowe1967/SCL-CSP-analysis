@@ -71,10 +71,12 @@ from the implementation.  We assume (for simplicity) a single thread,
 %%%%%
 
 \uncspMid
-\textbf{Key.}  We use BNF-style notation to capture
-channels with similar names; for example, we write
-``\CSPM{(begin}\m\CSPM{end)Send}'' to denote the \CSPM{beginSend} and
-\CSPM{endSend} channels.  The interface with an alt appears on the left; the
+\textbf{Key.} 
+%%  We use BNF-style notation to capture
+%% channels with similar names; for example, we write
+%% ``\CSPM{(begin}\m\CSPM{end)Send}'' to denote the \CSPM{beginSend} and
+%% \CSPM{endSend} channels.  
+The interface with an alt appears on the left; the
 interface with channel-threads appears on the right; error events appear
 below; internal events appear inside the box. 
 
@@ -463,65 +465,56 @@ following.
 \begin{cspm}
 Errors£$_C$£ = {|registerError, deregisterInError, deregisterOutError|}
 ChannelSpec£$_F$£ = (IdealisedChannel [|Errors£$_C$£|> CHAOS(Interface) ) \ Errors£$_C$£
-ChannelSpec£$_D$£ = (IdealisedChannel [|Errors£$_C$£|> DIV ) \ Errors£$_C$£
+ChannelSpec£$_{FD}$£ = (IdealisedChannel [|Errors£$_C$£|> DIV ) \ Errors£$_C$£
 \end{cspm}
 
-We can then compare the CSP model of a synchronous channel implementation
-against the idealised model.  We create a system using the model of the
-implementation, allowing threads to call appropriate operations.  We can then
-verify that this system refines |ChannelSpec|$_F$ and |ChannelSpec|$_D$ in the
-relevant models.
+\input{idealisedChanCommon}
 
-\begin{window}[1,r,{
-%
-\vspace{0.5ex}
-\begin{tabular}{\|cccc\|}
-Model & Threads & States  & Time\\
-F & 4 & 236M & 569s \\
-FD & 4 & 176M & 107s \\
-%% F & 4 & 236M & 530s \\
-%% FD & 4 & 176M & 105s 
-\end{tabular}
-},]
-%
-The table to the right gives statistics about the number of states explored
-and the times taken to perform these checks, in different models; in each
-case, one thread was an alt-thread and the remainder where channel-threads.
-With five threads, the checks fail to complete on the available architecture.
-\end{window}
+%% We can then compare the CSP model of a synchronous channel implementation
+%% against the idealised model.  We create a system using the model of the
+%% implementation, allowing threads to call appropriate operations.  We can then
+%% verify that this system refines |ChannelSpec|$_F$ and |ChannelSpec|$_D$ in the
+%% relevant models.
 
-The bottleneck in these checks is the time taken to normalise the
-specification: this accounts for about 90\% of the total in the
-stable-failures model; checks with more than four threads get stuck at this
-point.  This step builds an automaton equivalent to the specification, but
-with the property that after each trace (of visible events), a unique state is
-reached; if, after trace~$tr$, the specification can reach
-states~$st_1,\ldots,st_k$, then the normalised automaton contains a
-corresponding state equivalent to $st_1 \mathbin{\CSPMM{\|~\|}} \ldots
-\mathbin{\CSPMM{\|~\|}} st_k$.  The idealised channel is a complex process,
-with much internal nondeterminism, so normalising it is slow.
+%% \begin{window}[1,r,{
+%% %
+%% \vspace{0.5ex}
+%% \begin{tabular}{\|cccc\|}
+%% Model & Threads & States  & Time\\
+%% F & 4 & 236M & 569s \\
+%% FD & 4 & 176M & 107s \\
+%% \end{tabular}
+%% },]
+%% %
+%% The table to the right gives statistics about the number of states explored
+%% and the times taken to perform these checks, in different models; in each
+%% case, one thread was an alt-thread and the remainder where channel-threads.
+%% With five threads, the checks fail to complete on the available architecture.
+%% \end{window}
 
-
- 
-Interestingly, the failures-divergences check is faster than the
-stable-failures model: normally, it is the other way round.  The difference is
-due to the time taken to normalise the specification.
-%% , which accounted for about 90\% of the total in the stable-failures model.
-%% This step builds an automaton equivalent to the specification, but with the
-%% property that after each trace (of visible events), a unique state is
+%% The bottleneck in these checks is the time taken to normalise the
+%% specification: this accounts for about 90\% of the total in the
+%% stable-failures model; checks with more than four threads get stuck at this
+%% point.  This step builds an automaton equivalent to the specification, but
+%% with the property that after each trace (of visible events), a unique state is
 %% reached; if, after trace~$tr$, the specification can reach
 %% states~$st_1,\ldots,st_k$, then the normalised automaton contains a
 %% corresponding state equivalent to $st_1 \mathbin{\CSPMM{\|~\|}} \ldots
-%% \mathbin{\CSPMM{\|~\|}} st_k$.
-Consider the case where a trace~$tr$ might have included a (hidden) error
-event.  In the failures-divergences model, the resulting normalised state
-after~$tr$ includes |DIV|, and so is equal to~|DIV|: the normalisation
-algorithm identifies this, and so does not need to expand its successor
-states.  However, in the stable-failures model, the algorithm does not
-identify that the corresponding state is equivalent to |CHAOS(Interface)|: it
-does construct the successor states, making normalisation much slower than in
-the failures-divergences model.  It is straightforward to show that the
-failures-divergences check implies the corresponding stable-failures check,
-because |IdealisedChan| is divergence-free.
+%% \mathbin{\CSPMM{\|~\|}} st_k$.  The idealised channel is a complex process,
+%% with much internal nondeterminism, so normalising it is slow.
+
+%% Interestingly, the failures-divergences check is faster than the
+%% stable-failures model: normally, it is the other way round.  The difference is
+%% due to the time taken to normalise the specification.
+%% Consider the case where a trace~$tr$ might have included a (hidden) error
+%% event.  In the failures-divergences model, the resulting normalised state
+%% after~$tr$ includes |DIV|, and so is equal to~|DIV|: the normalisation
+%% algorithm identifies this, and so does not need to expand its successor
+%% states.  However, in the stable-failures model, the algorithm does not
+%% identify that the corresponding state is equivalent to |CHAOS(Interface)|: it
+%% does construct the successor states, making normalisation much slower than in
+%% the failures-divergences model.  It is straightforward to show that the
+%% failures-divergences check implies the corresponding stable-failures check,
+%% because |IdealisedChan| is divergence-free.
 
 

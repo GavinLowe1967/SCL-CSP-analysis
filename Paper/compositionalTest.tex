@@ -7,10 +7,12 @@ We now consider an alternative approach to analysing the combination of an alt
 and some channels.  
 %
 \begin{enumerate}
-\item We show that a single channel (in isolation) is consistent with a more
+\item\label{item:channel-idealise}
+  We show that a single channel is consistent with a more
   abstract model, which we call |IdealisedChannel|;
 
-\item We likewise show that an alt (in isolation) is consistent with a more
+\item\label{item:alt-idealise}
+  We likewise show that an alt  is consistent with a more
   abstract model, which we call |IdealisedAlt|;
 
 \item We show that the combination of an |IdealisedAlt| and several
@@ -19,7 +21,9 @@ and some channels.
 \end{enumerate}
 %
 This allows us to deduce that the combination of an alt and several channels
-satisfies the same property.  
+satisfies the same property.  The idea is that the ``idealised'' models,
+|IdealisedChannel| and |IdealisedAlt|, capture the desired behaviour of the
+components, abstracting away from their implementations. 
 
 The fundamental reason why such an approach works is that CSP refinement is
 compositional: if $P \refinedby Q$ then $C(P) \refinedby C(Q)$ for any
@@ -32,6 +36,14 @@ system.
 This approach scales better than that in the previous section, so allows us to
 deduce correctness for a larger number of threads.
 
+The analysis in step~\ref{item:channel-idealise} considers the channel in
+isolation, in the sense that we do not model the alt explicitly.  Instead, we
+treat the alt as part of the environment of the channel.  This means we model
+interactions between the channel and the alt, at the interface, without
+modelling how the alt deals with those interactions.  Likewise, the analysis
+in step~\ref{item:alt-idealise} considers the alt in isolation, without
+modelling the channel explicitly.
+
 The analysis is complicated by the following issue.  A channel works correctly
 under the assumption that any alt that interacts with it follows the alt
 protocol.  However, if the alt does not follow the protocol, then the channel
@@ -39,7 +51,7 @@ can act incorrectly.  For example, if an alt tries to register \emph{twice}
 with a channel, or tries to deregister without having previously registered,
 then the implementation throws an exception, and the CSP model diverges.
 Likewise, the alt works correctly under the assumption that channels follow
-the alt protocol, but may act incorrectly otherwise.
+the alt protocol, but it may act incorrectly otherwise.
 
 When we analyse a channel in isolation, we cannot assume that its environment
 (an alt) follows the protocol; and when we analyse an alt in isolation, we
@@ -52,45 +64,142 @@ rely-guarantee~\cite{jones-83} and
 assumption-commitment~\cite{misra-chandy-81,PJ-91}.  Our approach shows how to
 use CSP model checking in such a situation. 
 
-
-Our approach is as follows.  Our idealised model of a channel will detect if
-its environment breaks the alt protocol, and if so allow arbitrary behaviour.
+We tackle this issue as follows.  Our idealised model of a channel detects if
+its environment breaks the alt protocol, and if so allows arbitrary behaviour.
 Thus testing whether the model of a channel refines this specification is
 equivalent to testing whether it satisfies the specification when the
-environment does follow the protocol.  More precisely, we will produce a
+environment does follow the protocol.  More precisely, we produce a
 process |IdealisedChannel| that describes allowed behaviour when the
 environment does follow the protocol, but produces an \emph{error event} from
-a set |Errors|$_C$ if the environment breaks the protocol.  We then test
-(Section~\ref{sec:idealisedChan}) whether the channel model refines the
-process
+a set |Errors|$\CSPcolour_C$ if the environment breaks the protocol.
+
+We then test (Section~\ref{sec:idealisedChan}) whether the channel model (from
+Section~\ref{sec:syncchan}) refines the process
 %
 \begin{cspm}
-(IdealisedChannel [|Errors£$_C$£|> Any) \ Errors£$_C$£
+ChannelSpec = (IdealisedChannel [|Errors£$\CSPcolour_C$£|> Any) \ Errors£$\CSPcolour_C$£
 \end{cspm}
 %
-where |Any| allows arbitrary behaviour (the definition depends upon the
-semantic model we are using).  Thus the above process acts like~|Any| after an
-error event. 
+where |Any| allows arbitrary behaviour.  Thus the above process acts
+like~|Any| after an error event.  The definition of |Any| defends upon the
+semantic model we are using: in the stable-failures model, the appropriate
+process is |CHAOS(Interface)|, where |Interface| is the interface of the
+channel; in the failures-divergences model, the appropriate process is |DIV|.
+Showing that the channel refines |ChannelSpec| will show that it acts like
+|IdealisedChannel|, provided its environment follows the alt protocol.
 
-Likewise, we build an idealised model of an alt that allows arbitrary
-behaviour if its environment breaks the protocol
-(Section~\ref{sec:idealisedAlt}).  The model will be of the form
+\ifJournal{The construction of the \CSPM{IdealisedChannel} process is rather
+  involved.  We therefore just sketch the construction here, and refer the
+  reader to~\cite{TR} for full details.}
+
+Likewise, we build a process |IdealisedAlt|, which describes allowed behaviour
+when the environment does follow the protocol, but performs an event
+from~|Errors|$\CSPcolour_A$ if the environment breaks the protocol.  We then
+build an idealised model of an alt that allows arbitrary behaviour if its
+environment breaks the protocol (Section~\ref{sec:idealisedAlt}), as follows:
 %
 \begin{cspm}
-(IdealisedAlt [|Errors£$_A$£|> Any) \ Errors£$_A$£
+AltSpec = (IdealisedAlt [|Errors£$\CSPcolour_A$£|> Any) \ Errors£$\CSPcolour_A$£
 \end{cspm}
 %
-where |IdealisedAlt| describes allowed behaviour when the environment does
-follow the protocol, but performs an event from~|Errors|$_A$ if the
-environment breaks the protocol.
+%% where |IdealisedAlt| describes allowed behaviour when the environment does
+%% follow the protocol, but performs an event from~|Errors|$\CSPcolour_A$ if the
+%% environment breaks the protocol. 
+Showing that the model of an alt (from Section~\ref{sec:alt}) refines
+|AltSpec| will show that it acts like |IdealisedAlt|, provided its environment
+follows the alt protocol.  
+%
+\ifJournal{As with the idealised channel, we just sketch the construction of
+  \CSPM{IdealisedAlt} here, and refer the reader to~\cite{TR} for full
+  details.}
 
-We can then consider the combination of |IdealisedAlt| and several instances
-of |IdealisedChannel|.  Part of the analysis
-(Section~\ref{sec:combiningIdealised}) will show that no events from
-$\CSPMM{Errors}_C \union \CSPMM{Errors}_A$ occur: each component follows the
-alt protocol, provided the other has not previously broken the protocol.  But
-we can also show that this combination satisfies the correctness property from
-the previous section, allowing us to deduce that the corresponding combination
-of an alt and channels satisfies that property.
+We then consider the combination of |IdealisedAlt| and several instances of
+|IdealisedChannel|, and test (Section~\ref{sec:combiningIdealised}) whether it
+refines the specification |Spec| from Section~\ref{sec:combined}.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+The following proposition generalises this style of compositional
+verification. 
+%
+\begin{prop}
+\label{prop:rely-guarantee}
+Let $M$ be a CSP model, either {\it T} (traces), {\it F} (stable failures), or
+{\it FD} (failures-divergences).  Let $P_i$, for $i \in I$, be a collection of
+processes, with alphabets~$\alpha_i$.  For each $i$, let $Err_i$ be a set of
+fresh ``error'' events (disjoint from each other and from each~$\alpha_j$),
+let $Idealised_i$ be a process with alphabet $\alpha_i \union Err_i$, and let
+\begin{eqnarray*}
+Spec_i & = & (Idealised_i \throw{Err_i} {Any}_M) \hide Err_i,
+\end{eqnarray*} 
+where $Any_T = Any_F = \CSPMM{CHAOS}(\alpha_i)$ and $Any_{\it FD} =
+\CSPMM{DIV}$.
+%
+Let $Spec$ be a process with alphabet $\Union_{i \in I} \alpha_i$ (so without
+any error events), and let $A$ be a set of events disjoint from $\Union_{i \in
+} Err_i$.  Suppose
+\begin{enumerate}
+\item\label{rg-1} $Spec_i \refinedby_M P_i$, for each~$i \in I$;
+
+\item\label{rg-2} $Spec \refinedby_M 
+ \left( \Parallel i:I \spot [\alpha_i \union Err_i] \, Idealised_i \right)
+ \hide A$. 
+\end{enumerate}
+Then
+\begin{eqnarray*}
+Spec & \refinedby_M & 
+  \left( \Parallel i:I \spot [\alpha_i] \, P_i \right) \hide A.
+\end{eqnarray*}
+\end{prop}
+%
+The idea is that, for each~$i$,\, $Idealised_i$ is an idealised model
+of~$P_i$, which describes $P_i$'s behaviour under the assumption that its
+environment satisfies certain assumptions, but performs an error event
+otherwise; so $Spec_i$ allows arbitrary behaviour when the environment does
+not follow the assumptions.
+
+\begin{proof}
+From condition~\ref{rg-2}, and the assumption that~$Spec$ performs no error
+event from $\Union_{i \in I} Err_i$, we can deduce that $\Parallel i:I \spot
+[\alpha_i \union Err_i] \, Idealised_i$ performs no error event.  But this
+implies that $\Parallel i:I \spot [\alpha_i] \, Spec_i$ likewise performs no
+(hidden) error event, since the two processes behave identically up to the
+first error event.  So, in fact,
+\begin{eqnarray*}
+\Parallel i:I \spot [\alpha_i \union Err_i] \, Idealised_i & = & 
+  \Parallel i:I \spot [\alpha_i] \, Spec_i,
+\end{eqnarray*}
+since the ``throws'' operator in each $Spec_i$ is never triggered.  Thus
+\[
+Spec  \;\refinedby_M\; 
+  \left( \Parallel i:I \spot [\alpha_i \union Err_i] \, Idealised_i \right)
+    \hide A
+  \; = \; 
+  \left(  \Parallel i:I \spot [\alpha_i] \, Spec_i \right) \hide A
+  \;\refinedby\; 
+  \left( \Parallel i:I \spot [\alpha_i] \, P_i \right) \hide A,
+\]
+using conditions~\ref{rg-1} and~\ref{rg-2}, and the fact that refinement is
+compositional with respect to CSP operators (specifically parallel composition
+and hiding).
+\end{proof}
+
+
+We can apply the above proposition, instantiating the $P_i$ with a model of a
+channel or alt implementation, instantiating the $Idealised_i$ with
+|IdealisedChannel| or |IdealisedAlt|, instantiating the $Spec_i$ with
+|ChannelSpec| or |AltSpec|, and instantiating $Spec$ with the specification
+from Section~\ref{sec:combined}.  Condition~\ref{rg-1} of the proposition is
+discharged via the refinement checks, concerning |ChannelSpec| and |AltSpec|,
+described above.  Condition~\ref{rg-2} can be discharged by combining
+|IdealisedChannel| and |IdealisedAlt| processes, in the same way that we
+combined channel and alt processes in Section~\ref{sec:combined}.
+
+%%%%%%%%%%
+
+%% Part of the analysis
+%% (Section~\ref{sec:combiningIdealised}) will show that no events from
+%% $\CSPMM{Errors}\CSPcolour_C \union \CSPMM{Errors}\CSPcolour_A$ occur: each component follows the
+%% alt protocol, provided the other has not previously broken the protocol.  But
+%% we can also show that this combination satisfies the correctness property from
+%% the previous section, allowing us to deduce that the corresponding combination
+%% of an alt and channels satisfies that property.
+

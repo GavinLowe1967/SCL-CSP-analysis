@@ -22,9 +22,6 @@
 
 \usepackage{SCL-CSP} % misc macros 
 
-% Macro to control different versions of the paper. 
-\def\ifJournal#1{#1}
-
 \newtheorem{theorem}{Theorem}
 \newtheorem{definition}[theorem]{Definition}
 \newtheorem{lemma}[theorem]{Lemma}
@@ -34,6 +31,11 @@
 \def\topfraction{0.85}
 \renewcommand{\floatpagefraction}{0.75}
 \sloppy
+
+\journal{}
+
+% Macro to control different versions of the paper. 
+\def\ifJournal#1{}
 
 \title{Analysing a Library of Concurrency Primitives using CSP} 
 \author[Gavin Lowe]{Gavin Lowe\thanks{%
@@ -52,9 +54,8 @@
 \input{alt} % Introduction to alts
 \input{combinedTest} % direct test of alts + channels
 \input{compositionalTest}
-\input{idealisedSteps}
-%% \input{idealisedChan}
-%% \input{idealisedAlt}
+\input{idealisedChan}
+\input{idealisedAlt}
 \input{combiningIdealised}
 \input{conc.tex}
 

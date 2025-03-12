@@ -1,0 +1,159 @@
+\subsection{Idealised model of a channel}
+\label{sec:idealisedChan}
+
+%\cspMid
+
+We now sketch the idealised model of a channel: this describes the behaviour
+of a channel in terms of the calls and returns of operations, while
+abstracting away from the implementation.  We assume (for simplicity) a single
+thread, |AltThread|, that runs any alt that interacts with the channel.
+%
+The alphabet of the idealised channel is the same as the channel in
+Figure~\ref{fig:alt-chans}, together with error events representing erroneous
+registrations and deregistrations.
+
+The model keeps track of whether the channel is open or closed.  However, the
+closing is wrapped between |beginClose| and |endClose| events.  The closing
+happens at a nondeterministic point between these events: we say the
+operation is \emph{linearised} at that point.
+
+The model keeps track of which threads are trying to send or receive on the
+channel, updating its state as a result of the relevant |begin| events.  It
+also keeps track of which such threads have synchronised and so can return
+(indicated by |end| events).  If one thread is trying to send, and another is
+trying to receive, then they can synchronise, and both become able to return.
+Alternatively, a timed send or receive can nondeterministically timeout, and
+so become able to return with a negative result.  If the channel is closed,
+all such pending operations become able to return with a |Closed| result.
+
+The model also keeps track of whether an alt is registered at a port.  Each
+registration is linearised between the corresponding |begin| and |end|
+events.  There are several possibilities:
+%
+\begin{itemize}
+\item If a thread is waiting, trying to send on the channel when a
+  registration happens at the in-port, then the two can synchronise: the send
+  operation becomes able to return, and the registration returns with a
+  successful result.
+
+\item The case of a synchronisation between a waiting receive operation and a
+  registration at the out-port is similar.
+
+\item If no such synchronisation is possible, the registration is recorded,
+  and the registration can return with a negative result.
+
+\item If the channel is closed, the registration can return with a
+  |RegisterClosed| result. 
+
+\item If a registration happens when an alt is already registered at either
+  port, an error event is performed.
+\end{itemize}
+
+Deregistrations are again linearised between the corresponding |begin| and
+|end| events.  If an alt is registered with the channel, and a deregistration
+happens for a \emph{different} alt (or with the wrong index), then an error
+event is performed (however, it's fine to allow a deregistration when no port
+is registered, as this can happen in the implementation, if a channel thread
+has performed a callback concurrently with the deregistration phase: the
+subsequent deregistration is just ignored).
+
+It an alt is registered at the in-port, and a thread tries to send on the
+channel, then the channel may attempt a callback, via a |beginMaybeReceive|
+event.  No other operation can be linearised until after a corresponding
+|endMaybeReceive| event (this reflects the fact that the channel is locked
+during this period).  If the callback is successful, the sending operation
+becomes able to return.  The case of an alt being registered at the out-port
+when a thread tries to receive on the channel is similar.
+
+If an alt is registered at a port, and the channel is closed, the idealised
+model performs a callback, represented by |beginPortClosed| and
+|endPortClosed| events.
+
+As can be seen by the above discussion, the model is rather complex.  In
+particular, if there are multiple synchronisations or linearisations that can
+occur, the model allows any of them to occur, nondeterministically.  
+
+The model is structured as the parallel composition of three families of
+processes: one process for each channel thread, modelling and linearising that
+thread's operations; one process keeping track of the state of the channel;
+and one linearising and keeping track of registrations and deregistrations by
+the alt.  These processes synchronise together to achieve the above effect.
+This structure makes it easier to allow all the desired interleavings of
+events, in particular to ensure operations are linearised between the
+corresponding |begin| and |end| events.  See~\cite{TR} for full details.
+
+This produces a process |IdealisedChannel|.  Recall that we want to allow
+arbitrary behaviour if the environment has not followed the alt protocol,
+represented by events from a set |Errors|$_C$.  
+%% In the stable-failures model, the process |CHAOS(Interface)| allows
+%% arbitrary behaviour over the set |Interface| (the interface of the
+%% channel); in the failures-divergences model, the process |DIV| allows
+%% arbitrary behaviour.
+We therefore define the following, corresponding to the failures and
+failures-divergences models.
+\begin{cspm}
+ChannelSpec£$_F$£ = (IdealisedChannel [|Errors£$_C$£|> CHAOS(Interface) ) \ Errors£$_C$£
+ChannelSpec£$_{FD}$£ = (IdealisedChannel [|Errors£$_C$£|> DIV ) \ Errors£$_C$£
+\end{cspm}
+
+\input{idealisedChanCommon}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Idealised model of an alt}
+\label{sec:idealisedAlt}
+
+We now describe the construction of the idealised model of an alt.  
+%
+The alphabet of the idealised alt is the same as the alt in
+Figure~\ref{fig:alt-chans}, together with error events representing erroneous
+callbacks that do not correspond to any current registration.
+
+The model responds to a |beginAlt| event by registering, in turn, at the ports
+corresponding to its branches.  It performs a |beginRegister| event for each,
+and waits to receive back an |endRegister| event; it keeps track of the
+results.  If it receives a successful result, it moves onto the deregistration
+phase.  If it completes the registration and finds every channel was closed,
+it returns an |AltAbort| result on |endAlt|.  Otherwise, it moves to the
+waiting phase.
+
+The model allows callbacks; each callback is linearised between the
+corresponding |begin| and |end| events.  Callbacks cannot be linearised during
+the registration phase (in the implementation, the alt-thread holds the alt's
+lock during this phase).  A callback of |maybeSend| or |maybeReceive| can be
+linearised successfully during the waiting phase, if it corresponds to a valid
+registration; this moves the model to the deregistration phase.  A callback of
+|portClosed| can also be linearised; if this was for the final open channel,
+the alt reacts with a |AltAbort| result on |endAlt|, and returns to the initial
+state.  However, a callback that does not correspond to a correct registration
+is signalled via an error event.
+
+In addition, during the waiting phase, the alt might signal a spurious
+wakeup. 
+
+During the deregistration phase, the idealised model deregisters from each of
+its registered ports (via appropriate |begin| and |end| events).  If further
+callbacks occur, these are linearised with a negative result.  When all
+deregistrations are complete, the model signals with an appropriate |endAlt|
+event.
+
+If a callback occurs outside of the execution of the alt (e.g.~before the
+first |beginAlt| event), this causes an error event. 
+
+As with the idealised channel, the idealised alt is defined as the parallel
+composition of three families of processes: one process for each channel
+thread, modelling and linearising that thread's callbacks; a process that
+keeps track of the current registrations; and a process that controls the
+overall execution.  See~\cite{TR} for  full details.
+
+The above procedure produces a process |IdealisedAlt|.  Let |Errors|$_A$ be
+the corresponding error events.  We then allow arbitrary behaviours after the
+error events, much as for the idealised model of a channel.
+%
+\begin{cspm}
+AltSpec£$_F$£ = (IdealisedAlt [|Errors£$_A$£|> CHAOS(Interface) ) \ Errors£$_A$£
+AltSpec£$_{FD}$£ = (IdealisedAlt [|Errors£$_A$£|> DIV ) \ Errors£$_A$£
+\end{cspm}
+
+\input{idealisedAltCommon}
+

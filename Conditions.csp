@@ -1,0 +1,231 @@
+-- CSP model of SCL locks and conditions.
+
+-- In this version, we just consider simple aquire and release of the lock,
+-- and signal and await on a single condition.
+
+-- Thread IDs
+datatype ThreadIDType = Null | T1 | T2 | T3 -- | T4
+ThreadID = diff(ThreadIDType, {Null})
+
+otherThreads(t) = diff(ThreadID,{t})
+
+--------- The lock
+
+channel acquire, release : ThreadID
+
+Lock = acquire?t -> release.t -> Lock
+
+-- ======================= The Condition =============================
+
+module Condition
+  --------- ThreadInfos
+
+  -- References to ThreadID objects
+  datatype ThreadInfoID = TI1 | TI2 | TI3 -- | TI4
+
+  -- acquireTI.t.ti represents thread t acquiring ThreadInfo ti.  releaseTI.t.ti 
+  -- represents  thread t releasing ti.
+  channel acquireTI, releaseTI : ThreadID . ThreadInfoID
+
+  -- getThread.t1.ti.t represents thread t1 readding thread value t from ti.
+  channel getThread : ThreadID . ThreadInfoID . ThreadID 
+
+  -- setReady.t1.ti represents thread t1 setting the ready field in ti to true. 
+  channel setReady : ThreadID . ThreadInfoID
+
+  -- getReady.t1.ti.b represents thread t1 reading ready = b from ti.
+  channel getReady : ThreadID . ThreadInfoID . Bool
+
+  ThreadInfo(me) = acquireTI?t!me -> ThreadInfo'(me, t, false, 2)
+
+  -- A ThreadInfo, used by thread t, with ready variable ready.  k gives the
+  -- number of references held to the object; when this reaches 0, the object
+  -- is "recycled" and returned to its original state.  There are initially
+  -- two references to the object: the waiter and the queue.  When the object
+  -- is dequeued, a reference is transfered to the signaller (so we ignore
+  -- this); the signaller releases its reference by the getThread event.
+  ThreadInfo'(me, t, ready, k) = 
+    getThread?_!me!t -> ThreadInfo''(me, t, ready, k)
+    [] 
+    setReady?_!me -> ThreadInfo'(me, t, true, k)
+    [] 
+    getReady?_!me!ready -> ThreadInfo'(me, t, ready, k)
+    [] 
+    releaseTI?_!me -> ThreadInfo''(me, t, ready, k)
+
+  -- Release a reference
+  ThreadInfo''(me, t, ready, k) = 
+    if k > 1 then ThreadInfo'(me, t, ready, k-1) 
+    else if k == 1 then ThreadInfo(me) else DIV
+
+  ThreadInfos = ||| ti <- ThreadInfoID @ ThreadInfo(ti)
+
+  --------- The queue of waiting threads
+
+  channel enqueue, dequeue : ThreadID . ThreadInfoID
+  channel isEmpty : ThreadID . Bool
+
+  Waiters = Waiters'(<>)
+
+  Waiters'(ts) = 
+    isEmpty?_!(null(ts)) -> Waiters'(ts)
+    []
+    length(ts) < card(ThreadInfoID) & enqueue?_?t -> Waiters'(ts ^ <t>)
+    []
+    if not(null(ts)) then dequeue?_!head(ts) -> Waiters'(tail(ts))
+    else dequeue?_?_ -> DIV -- shouldn't happen
+
+  --------- Lock support
+
+  channel park : ThreadID
+  channel unpark : ThreadID . ThreadIDType
+  channel wakeUp : ThreadID
+
+  LockSupport = LockSupport'({}, {})
+
+  LockSupport'(waiting, permits) =
+    park?t -> (
+      if member(t,permits)
+      then wakeUp.t -> LockSupport'(waiting, diff(permits, {t}))
+      else LockSupport'(union(waiting, {t}), permits) 
+    )
+    []
+    unpark?t1?t -> (
+      if member(t, waiting)
+      then wakeUp.t -> LockSupport'(diff(waiting, {t}), permits)
+      else if t != Null then LockSupport'(waiting, union(permits, {t}))
+      else LockSupport'(waiting, permits) 
+    )
+    []
+    -- Spurious wakeups
+    waiting != {} & (
+      spurious -> wakeUp$t:waiting -> LockSupport'(diff(waiting, {t}), permits)
+      |~| STOP 
+    )
+
+  ------- Await
+  Await1(me) = 
+    acquireTI.me?ti -> enqueue.me.ti -> release.me -> Await2(me, ti)
+  
+  -- The waiting loop: while(!myInfo.ready) LockSupport.park()
+  Await2(me, ti) = 
+    getReady.me.ti?r -> 
+    if r then Await3(me, ti) else park.me -> wakeUp.me -> Await2(me, ti)
+
+  -- Release the ThreadInfo, and acquire the lock
+  Await3(me, ti) = releaseTI.me.ti -> acquire.me -> SKIP
+
+  --------- Signal
+  Signal1(me) = 
+    -- if(waiters.nonEmpty) ...
+    isEmpty.me?e -> 
+    if not(e) then 
+      -- val threadInfo = waiters.dequeue(); if(!threadInfo.ready) ...
+      dequeue.me?ti -> getReady.me.ti?r -> 
+      if not(r) then 
+      -- threadInfo.ready = true; LockSupport.unpark(threadInfo.thread) }
+        setReady.me.ti -> getThread.me.ti?t -> unpark.me.t -> SKIP
+      -- else signal() // try next one; that thread was interrupted or timed out
+      else Signal1(me) 
+    else SKIP
+
+  --------- Construct internal processes
+
+  Internals = ThreadInfos ||| Waiters ||| LockSupport
+
+  SyncSet = 
+    {| acquireTI, releaseTI, getThread, setReady, getReady, 
+       enqueue, dequeue, isEmpty, park, unpark, wakeUp |}
+
+exports
+
+  channel spurious
+
+  channel beginAwait, endAwait, beginSignal, endSignal : ThreadID
+
+  -- Functions to simulate await() and signal()
+
+  Await(me) = beginAwait.me -> Await1(me); endAwait.me -> SKIP
+
+  Signal(me) = beginSignal.me -> Signal1(me); endSignal.me -> SKIP
+
+  -- Run P with this module, hiding internal events.
+  runWith(P) = (Internals [| SyncSet |] P) \ SyncSet
+
+endmodule  -- =======================================================
+
+instance C = Condition
+
+--------- A single thread that picks operations nondeterministically.
+
+Thread(me) = acquire.me -> Thread'(me)
+Thread'(me) = 
+  C::Signal(me); Thread'(me) 
+  |~| C::Await(me); Thread'(me) 
+  |~| release.me -> Thread(me)
+
+Threads = ||| t <- ThreadID @ Thread(t)
+
+--------- System for testing
+
+System = C::runWith(Lock [| {|acquire,release|} |] Threads)
+
+assert System :[divergence free]
+
+System1 = System \ {C::spurious}
+
+assert System1 :[divergence free] -- fails
+
+--------- Specification
+
+-- sync.t1.t2 represents a synchronisation between signaller t1 and awaiter t2.
+channel sync : ThreadID . ThreadID
+
+-- nullSignal.t represents thread t doing a signal() when no thread is waiting. 
+channel nullSignal : ThreadID 
+
+Lin(t) = acquire.t -> Lin'(t)
+
+Lin'(t) =
+  let others = otherThreads(t) within
+  C::beginSignal.t -> (
+    sync.t?other:others -> C::endSignal.t -> Lin'(t)
+    [] nullSignal.t -> C::endSignal.t -> Lin'(t)
+  )
+  |~| 
+  C::beginAwait.t -> release.t -> sync?other:others!t -> 
+    acquire.t -> C::endAwait.t -> Lin'(t)
+  |~|
+  release.t -> Lin(t)
+
+alphaLin(t) = union( 
+  {| C::beginSignal.t, C::endSignal.t, C::beginAwait.t, C::endAwait.t,
+     acquire.t, release.t, nullSignal.t |}, 
+  { sync.t.other, sync.other.t | other <- otherThreads(t) }
+)
+
+AllLins = || t <- ThreadID @ [alphaLin(t)] Lin(t)
+
+MonitorSpec = MonitorSpec'({})
+
+-- ts is the threads currently waiting
+MonitorSpec'(ts) = 
+  let others = diff(ThreadID,ts) within
+  C::beginAwait?t:others  -> MonitorSpec'(union(ts,{t}))
+  []
+  if empty(ts) then nullSignal?t:others -> MonitorSpec'(ts)
+  else sync?_:others?t:ts -> MonitorSpec'(diff(ts,{t}))
+
+-- Note: the above treats a thread as joining the waiting set immediately it
+-- calls beginAwait.  This works with the implementation, beacause the thread
+-- holds the lock at this point. 
+
+-- Synchronisation events between AllLins and MonitorSpec or Lock
+SpecSync = {| C::beginAwait, nullSignal, sync, acquire, release |}
+
+Spec0 = AllLins [| SpecSync |] (MonitorSpec ||| Lock)
+
+Spec = Spec0 \ {| nullSignal, sync |}
+
+assert Spec [T= System1
+assert Spec [F= System1

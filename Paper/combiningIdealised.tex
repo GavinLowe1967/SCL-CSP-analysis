@@ -54,84 +54,87 @@ about these checks, where
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-\def\Idealised{\CSPMM{Idealised}}
-\def\Spec{\CSPMM{Spec}}
+%% \def\Idealised{\CSPMM{Idealised}}
+%% \def\Spec{\CSPMM{Spec}}
 
-We will use the following proposition to deduce corresponding results about
-the models of the channel and alt implementations.  The proposition
-generalises our strategy, and describes how ``rely-guarantee'' reasoning can
-be captured using CSP model checking.
-%
-\begin{prop}
-Let $M$ be a CSP model, either {\it F} (stable failures) or {\it FD}
-(failures-divergences).  Let $P_i$, for $i \in I$, be a collection of
-processes, with alphabets~$\alpha_i$.  For each $i$, let $Err_i$ be a set of
-fresh ``error'' events (disjoint from each other and from each~$\alpha_j$),
-let $\Idealised_i$ be a process with alphabet $\alpha_i \union Err_i$, and let
-\begin{eqnarray*}
-\Spec_i & = & (\Idealised_i \throw{Err_i} \CSPMM{Any}_M) \hide Err_i,
-\end{eqnarray*} 
-where $\CSPMM{Any}_F = \CSPMM{CHAOS}(\alpha_i)$ and $\CSPMM{Any}_{\it FD} =
-\CSPMM{DIV}$.
-%
-Let $\Spec$ be a process with alphabet $\Union_{i \in I} \alpha_i$ (so without
-any error events), and let $A$ be a set of events disjoint from $\Union_{i \in
-} Err_i$.  Suppose
-\begin{enumerate}
-\item\label{rg-1} $\Spec_i \refinedby_M P_i$, for each~$i \in I$;
+%% We will use the following proposition to deduce corresponding results about
+%% the models of the channel and alt implementations.  The proposition
+%% generalises our strategy, and describes how ``rely-guarantee'' reasoning can
+%% be captured using CSP model checking.
+%% %
+%% \begin{prop}
+%% Let $M$ be a CSP model, either {\it F} (stable failures) or {\it FD}
+%% (failures-divergences).  Let $P_i$, for $i \in I$, be a collection of
+%% processes, with alphabets~$\alpha_i$.  For each $i$, let $Err_i$ be a set of
+%% fresh ``error'' events (disjoint from each other and from each~$\alpha_j$),
+%% let $Idealised_i$ be a process with alphabet $\alpha_i \union Err_i$, and let
+%% \begin{eqnarray*}
+%% Spec_i & = & (Idealised_i \throw{Err_i} {Any}_M) \hide Err_i,
+%% \end{eqnarray*} 
+%% where $Any_F = \CSPMM{CHAOS}(\alpha_i)$ and ${Any}_{\it FD} =
+%% \CSPMM{DIV}$.
+%% %
+%% Let $Spec$ be a process with alphabet $\Union_{i \in I} \alpha_i$ (so without
+%% any error events), and let $A$ be a set of events disjoint from $\Union_{i \in
+%% } Err_i$.  Suppose
+%% \begin{enumerate}
+%% \item\label{rg-1} $Spec_i \refinedby_M P_i$, for each~$i \in I$;
 
-\item\label{rg-2} $\Spec \refinedby_M 
- \left( \Parallel i:I \spot [\alpha_i \union Err_i] \, \Idealised_i \right)
- \hide A$. 
-\end{enumerate}
-Then
-\begin{eqnarray*}
-\Spec & \refinedby_M & 
-  \left( \Parallel i:I \spot [\alpha_i] \, P_i \right) \hide A.
-\end{eqnarray*}
-\end{prop}
+%% \item\label{rg-2} $Spec \refinedby_M 
+%%  \left( \Parallel i:I \spot [\alpha_i \union Err_i] \, Idealised_i \right)
+%%  \hide A$. 
+%% \end{enumerate}
+%% Then
+%% \begin{eqnarray*}
+%% Spec & \refinedby_M & 
+%%   \left( \Parallel i:I \spot [\alpha_i] \, P_i \right) \hide A.
+%% \end{eqnarray*}
+%% \end{prop}
 %
-The idea is that $\Idealised_i$ is an idealised model of~$P_i$, which
-describes $P_i$'s behaviour under the assumption that its environment
-satisfies certain assumptions, but performs an error event otherwise; so
-$\Spec_i$ allows arbitrary behaviour when the environment does not follow the
-assumptions.
-%
-\begin{proof}
-From condition~\ref{rg-2}, and the assumption about the alphabet of~$\Spec$,
-we can deduce that $\Parallel i:I \spot [\alpha_i \union Err_i] \,
-\Idealised_i$ performs no error event from $\Union_{i \in I} Err_i$.  But this
-implies that $\Parallel i:I \spot [\alpha_i] \, \Spec_i$ likewise performs no
-(hidden) error event, since the two processes behave identically up to the
-first error event.  So, in fact,
-\begin{eqnarray*}
-\Parallel i:I \spot [\alpha_i \union Err_i] \, \Idealised_i & = & 
-  \Parallel i:I \spot [\alpha_i] \, \Spec_i,
-\end{eqnarray*}
-since the ``throws'' operator in each $\Spec_i$ is never triggered.  Thus
-\[
-\Spec  \;\refinedby_M\; 
-  \left( \Parallel i:I \spot [\alpha_i \union Err_i] \, \Idealised_i \right)
-    \hide A
-  \; = \; 
-  \left(  \Parallel i:I \spot [\alpha_i] \, \Spec_i \right) \hide A
-  \;\refinedby\; 
-  \left( \Parallel i:I \spot [\alpha_i] \, P_i \right) \hide A,
-\]
-using condition~\ref{rg-1}, and the fact that refinement is compositional with
-respect to CSP operators (specifically parallel composition and hiding).
-\end{proof}
+%% The idea is that $Idealised_i$ is an idealised model of~$P_i$, which
+%% describes $P_i$'s behaviour under the assumption that its environment
+%% satisfies certain assumptions, but performs an error event otherwise; so
+%% $Spec_i$ allows arbitrary behaviour when the environment does not follow the
+%% assumptions.
+%% %
+%% \begin{proof}
+%% From condition~\ref{rg-2}, and the assumption about the alphabet of~$Spec$,
+%% we can deduce that $\Parallel i:I \spot [\alpha_i \union Err_i] \,
+%% Idealised_i$ performs no error event from $\Union_{i \in I} Err_i$.  But this
+%% implies that $\Parallel i:I \spot [\alpha_i] \, Spec_i$ likewise performs no
+%% (hidden) error event, since the two processes behave identically up to the
+%% first error event.  So, in fact,
+%% \begin{eqnarray*}
+%% \Parallel i:I \spot [\alpha_i \union Err_i] \, Idealised_i & = & 
+%%   \Parallel i:I \spot [\alpha_i] \, Spec_i,
+%% \end{eqnarray*}
+%% since the ``throws'' operator in each $\Spec_i$ is never triggered.  Thus
+%% \[
+%% Spec  \;\refinedby_M\; 
+%%   \left( \Parallel i:I \spot [\alpha_i \union Err_i] \, Idealised_i \right)
+%%     \hide A
+%%   \; = \; 
+%%   \left(  \Parallel i:I \spot [\alpha_i] \, \Spec_i \right) \hide A
+%%   \;\refinedby\; 
+%%   \left( \Parallel i:I \spot [\alpha_i] \, P_i \right) \hide A,
+%% \]
+%% using condition~\ref{rg-1}, and the fact that refinement is compositional with
+%% respect to CSP operators (specifically parallel composition and hiding).
+%% \end{proof}
 
-We can apply the above proposition, instantiating the $P_i$ with a model of a
-channel or alt implementation, instantiating the $\Idealised_i$ with
-|IdealisedChannel| or |IdealisedAlt|, instantiating the $\Spec_i$ with
-|ChannelSpec| or |AltSpec|, and instantiating $\Spec$ with the specification
-described above.  Condition~\ref{rg-1} is shown to hold by the checks in
+We can then apply Proposition~\ref{prop:rely-guarantee}, as described
+earlier. 
+%% We can apply the above proposition, instantiating the $P_i$ with a model of a
+%% channel or alt implementation, instantiating the $Idealised_i$ with
+%% |IdealisedChannel| or |IdealisedAlt|, instantiating the $Spec_i$ with
+%% |ChannelSpec| or |AltSpec|, and instantiating $Spec$ with the specification
+%% described above.  
+Condition~\ref{rg-1} of the proposition is shown to hold by the checks in
 Sections~\ref{sec:idealisedChan} and~\ref{sec:idealisedAlt};
-condition~\ref{rg-2} is shown to hold by the tests described at the start of
-this subsection.  Thus we can deduce that the corresponding combinations of
-the models of channels of alt implementations also refine the specifications
-described above.
+condition~\ref{rg-2} is shown to hold by the tests in the previous paragraph.
+Thus we can deduce that the corresponding combinations of the models of
+channels and alt implementations also refine the specifications described
+above.
 
 
 %% \framebox{Type sizes, timing}

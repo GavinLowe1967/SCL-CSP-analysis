@@ -18,6 +18,7 @@ MonitorCondition.csp: model of an SCL monitor, as described in Section 3.
 
 JVMMonitor.csp: model of a JVM monitor, as described in Section 4.3.
 
+* Conditions.csp: an analysis of SCL Conditions.  Not included in the paper. 
 
 SCL Components
 --------------

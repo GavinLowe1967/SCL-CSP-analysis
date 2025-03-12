@@ -65,8 +65,9 @@ The process \CSPM{P [|E|> Q}
 % {]}
 (sometimes denoted $\CSPMM{P} \mathbin{\theta_E} \CSPMM{Q}$) denotes a
   throw-catch mechanism: initially, |P| is executed, but if it performs an
-  event from~|E|, control is passed to~|Q|: the events from~|E| can be thought
-  of as exceptions, and |Q| as an exception handler.
+  event from~|E|, control is passed to~|Q|; for example, the events from~|E|
+  could represent exceptions thrown by~|P|, and |Q| could be an exception
+  handler.
 
 The process \CSPM{P [|A|] Q} runs \CSPM{P} and~\CSPM{Q} in parallel,
 synchronising on events from~\CSPM{A}.  The process \CSPM{P [A||B] Q} again
@@ -93,11 +94,29 @@ are hidden, i.e.~turned into internal $\tau$~events.
 
 CSP, as implemented in the model checker FDR, is supported by a functional
 sublanguage, roughly equivalent to Haskell, but without type classes, and
-augmented with sets and mappings.  FDR also supports modules, where related
-definitions can be encapsulated.  In particular, modules can be parameterised,
-and multiple instances created (like classes in an object-oriented programming
-language); for example, we create a parameterised module representing an SCL
-channel, and then create multiple instances representing distinct channels. 
+augmented with sets and mappings.  
+
+FDR also supports modules, where related definitions can be encapsulated.  In
+particular, modules can be parameterised (like classes in an object-oriented
+programming language).  The typical form of a module definition is as follows:
+\begin{cspm}
+module M(x, y)
+  ... -- private definitions
+exports
+  ... -- public definitions
+endmodule
+\end{cspm}
+where |x| and |y| are formal parameters.
+%
+Then  multiple instances can be created, for example:
+\begin{cspm}
+instance M1 = M(X1, Y1)
+instance M2 = M(X2, Y2)
+\end{cspm}
+%
+A value |x| within |M1| can be referenced as |M1::x|.
+Later, we create a parameterised module representing an SCL channel, and then
+create multiple instances representing distinct channels.
  
 A \emph{trace} of a process is a sequence of (visible) events that it
 can perform.  We say that \CSPM{P} is refined by~\CSPM{Q} in the traces model,

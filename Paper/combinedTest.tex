@@ -5,21 +5,36 @@
 
 We now describe how we can perform a direct analysis of an alt together with
 channels.  
+%% -- Identities of channels
+%% datatype ChanID = Chan1 | Chan2 
+
+%% include "Types.csp"
+
+%% -- Identities of Alts
+%% datatype AltID = Alt1 -- | Alt2
+
 
 We build a system that uses an alt with a fixed collection of branches.
-Below, we consider an alt~|A1| with two branches (but the approach generalises
-to more branches).  The branches are defined using a definition such as
+Below, we consider an instance |A1| of the alt module:
+\begin{cspm}
+instance A1 = Alt(Alt1, branches, ThreadID, ChanID)
+\end{cspm}
+where |Alt1| is the name of this alt, |ThreadID| is the type of thread
+identifiers, |ChanID| is the type of channel identifiers, and |branches|
+defines the branches of the alt,   using a definition such as
 %
 \begin{cspm}
 branches =  <InPortBranch.c1, OutPortBranch.c2>
 \end{cspm}
 %
-In different tests, we can vary whether the branches correspond to in-ports or
-out-ports, so test different combinations.  We also create two instances |C1|
-and |C2| of the channel module, corresponding to channels with
-identities~|c1| and |c2|.  We combine these together in parallel with |A1|,
-synchronising on the |begin| and |end| events that correspond to the alt
-calling operations on a channel, or vice versa.
+In different tests, we can vary the number of branches, and whether they
+correspond to in-ports or out-ports, so test different combinations.
+
+We also create two instances |C1| and |C2| of the channel module,
+corresponding to channels with identities~|c1| and |c2|.  We combine these
+together in parallel with |A1|, synchronising on the |begin| and |end| events
+that correspond to the alt calling operations on a channel, or vice versa, as
+depicted in Figure~\ref{fig:alt-chans}.
 
 We combine these together with some threads.  One thread, which we denote
 |AltThread|, repeatedly runs the alt.  The other threads, from set
@@ -38,14 +53,16 @@ assertions fail, and the only possible source of infinite internal activity is
 the spurious wakeups.
 
 In the checks below, we hide the spurious wakeups.  The checks will be carried
-out in the stable-failures model, so we should consider whether the potential
-divergence is masking possible errors, by making critical states unstable.
-But recall that we included in the model of the monitor a regulator process
-that could block all spurious wakeups.  Thus for every state that is unstable
-because of the possibility of a spurious wakeup, there is another, stable
-state where the regulator blocks the spurious wakeup.  This way of abstracting
-the spurious wakeups corresponds to Roscoe's \emph{lazy
-  abstraction}~\cite{awr:UCS}. 
+out in the stable-failures model, but recall that this model records refusal
+information only in \emph{stable} states, where no internal event is possible.
+We should therefore consider whether the potential divergence is masking
+possible errors, by making critical states unstable.  But recall that we
+included in the model of the monitor a regulator process that could block all
+spurious wakeups.  Thus for every state that is unstable because of the
+possibility of a spurious wakeup, there is another, stable state where the
+regulator blocks the spurious wakeup, and so the model does include the stable
+refusal information we want.  This way of abstracting the spurious wakeups
+corresponds to Roscoe's \emph{lazy abstraction}~\cite{awr:UCS}.
 
 % Note: alternatively we could keep the spurious wakeups visible, and
 % interleave with Chaos.  This makes no noticeable difference to the speed of
@@ -56,13 +73,14 @@ of the correctness condition for a single channel from
 Section~\ref{sec:syncchan}. 
 
 We extend the |sync| events to include the identity of the channel being used:
-|sync.t|$_1$|.t|$_2$|.c.x| represents a synchronisation between a sending
-thread~|t|$_1$ and a receiving thread~|t|$_2$, both of which are
+|sync.t|$\CSPcolour_1$|.t|$\CSPcolour_2$|.c.x| represents a synchronisation between a sending
+thread~|t|$\CSPcolour_1$ and a receiving thread~|t|$\CSPcolour_2$, both of which are
 channel-threads, using channel~|c|, passing value~|x|.
 %
-We introduce similar events of the form |altSync.t|$_1$|.t|$_2$|.c.x| to
-represent a synchronisation between a sending thread~|t|$_1$ and a receiving
-thread~|t|$_2$, where one of the threads is the alt-thread.
+We introduce similar events of the form
+|altSync.t|$\CSPcolour_1$|.t|$\CSPcolour_2$|.c.x| to represent a
+synchronisation between a sending thread~|t|$\CSPcolour_1$ and a receiving
+thread~|t|$\CSPcolour_2$, where one of the threads is the alt-thread.
 
 We build lineariser processes for the channel-threads.  These are very similar
 to as in Section~\ref{sec:syncchan}, so we elide some parts.  They are
@@ -71,48 +89,59 @@ and alt-thread may use a port concurrently).  Further, they allow
 synchronisations with the alt-thread.
 %-- Lineariser for a channel thread.
 \begin{cspm}
-ChanThreadLin(me) = 
-  C1::beginSend.me?x -> LinSending(me, x, c1, C1::endSend.me)
-  [] C2::beginSend.me?x -> LinSending(me, x, c2, C2::endSend.me)
+ChanThreadLin(t) = 
+  C1::beginSend.t?x -> LinSending(t, x, c1, C1::endSend.t)
+  [] C2::beginSend.t?x -> LinSending(t, x, c2, C2::endSend.t)
   [] ... -- similar for other operations 
 
-LinSending(me, x, c, endChan) = 
-  sync.me?other!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
-  [] altSync.me?altThread!c!x -> endChan.SendSuccess -> ChanThreadLin(me)
-  [] isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
+LinSending(t, x, c, endChan) = 
+  sync.t?other!c!x -> endChan.SendSuccess -> ChanThreadLin(t)
+  [] altSync.t?altThread!c!x -> endChan.SendSuccess -> ChanThreadLin(t)
+  [] isClosed.t.c -> endChan.Closed -> ChanThreadLin(t)
 
-LinReceiving(me, c, endChan) = 
-  sync?other!me!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
-  [] altSync?altThread!me.c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(me)
-  [] isClosed.me.c -> endChan.Closed -> ChanThreadLin(me)
+LinReceiving(t, c, endChan) = 
+  sync?other!t!c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(t)
+  [] altSync?altThread!t.c?x -> endChan.ReceiveSuccess.x -> ChanThreadLin(t)
+  [] isClosed.t.c -> endChan.Closed -> ChanThreadLin(t)
 
-LinSendingWithin(me, x, c, endChan) = 
-  LinSending(me, x, c, endChan)
-  [] timeout.me.c -> endChan.Timeout -> ChanThreadLin(me)
+LinSendingWithin(t, x, c, endChan) = 
+  LinSending(t, x, c, endChan)
+  [] timeout.t.c -> endChan.Timeout -> ChanThreadLin(t)
 
-LinReceivingWithin(me, c, endChan) = 
-  LinReceiving(me, c, endChan)
-  [] timeout.me.c -> endChan.Timeout -> ChanThreadLin(me) 
+LinReceivingWithin(t, c, endChan) = 
+  LinReceiving(t, c, endChan)
+  [] timeout.t.c -> endChan.Timeout -> ChanThreadLin(t) 
 \end{cspm}
 
 We similarly build a lineariser process for the alt-thread.  We introduce an
 event |allClosed| which will represent the linearisation point of an alt usage
 that finds all the channels are closed and so throws an |AltAbort|.  
 %
-Let |inports| and |out-ports| be the sets of in-ports and out-ports that the alt
-uses, and let the function |index| give the index of a particular branch.  The
-definition below captures that before a successful return, the alt-thread must
-perform a suitable synchronisation with a channel-thread, and that before
-returning an |AltAbort|, it must detect that all the channels are closed. 
+Let |inports| and |outports| be the sets of in-ports and out-ports that the
+alt uses ($\set{\CSPMM{c1}}$ and $\set{\CSPMM{c2}}$ for the earlier definition
+of |branches|); and let the function |index| give the index of a particular
+branch (so $\CSPMM{index(c1)} = 0$ and $\CSPMM{index(c2)} = 1$ for the earlier
+definition of |branches|).  In the definition below, the first branch of the
+external choice represents a synchronisation between the alt-thread~|t| (as
+receiver) and a channel-thread~|other| (as sender) on in-port~|c| passing
+value~|x|, followed by the alt signalling that it has received~|x| on the
+relevant branch of the alt.  The second branch of the external choice is
+similar, but where the alt-thread sends~|x| on out-port~|c|.  The third branch
+represents that the alt detects that all the channels are closed, and returns
+an |AltAbort|.  
+%%  captures that before a
+%% successful return, the alt-thread must perform a suitable synchronisation with
+%% a channel-thread, and that before returning an |AltAbort|, it must detect that
+%% all the channels are closed.
 %
 \begin{cspm}
-AltLin(me) = 
-  A1::beginAlt.me -> (
-    altSync?other:ChanThreads!me?c:inPorts?x -> 
-       A1::endAlt.me.AltReceive.index(InPortBranch.c).x -> AltLin(me)
-    [] altSync.me?other:ChanThreads?c:outPorts?x -> 
-          A1::endAlt.me.AltSend.index(OutPortBranch.c).x -> AltLin(me)
-    [] allClosed -> A1::endAlt.me.AltAbort -> AltLin(me)
+AltLin(t) = 
+  A1::beginAlt.t -> (
+    altSync?other:ChanThreads!t?c:inPorts?x -> 
+       A1::endAlt.t.AltReceive.index(InPortBranch.c).x -> AltLin(t)
+    [] altSync.t?other:ChanThreads?c:outPorts?x -> 
+          A1::endAlt.t.AltSend.index(OutPortBranch.c).x -> AltLin(t)
+    [] allClosed -> A1::endAlt.t.AltAbort -> AltLin(t)
   )
 \end{cspm}
 
@@ -130,18 +159,55 @@ ChanSpecClosed(c) =
   isClosed?t!c -> ChanSpecClosed(c) [] allClosed -> ChanSpecClosed(c) [] close?t!c -> ChanSpecClosed(c)
 \end{cspm}
 
-We combine the different processes together, much as before.  We can then
-verify that the system refines this specification in both the traces and
-stable-failures models, showing that the system is synchronisation
+We combine the |ChanThreadLin|, |AltLin| and |ChanSpec| processes in parallel,
+synchronising on shared events, to produce a process |Spec|$_0$.  For example,
+|Spec|$_0$ allows traces such as the following (based on the earlier definiton of
+|branches|):
+\[
+\begin{align}
+\trace{ 
+\CSPMM{A1::beginAlt.AltThread},\; \CSPMM{C1::beginSend.T1.A}, \;
+ \CSPMM{altSync.T1.AltThread.c1.A}, 
+\\
+\qquad \CSPMM{C1::endSend.T1.SendSuccess},\; 
+  \CSPMM{A1::endAlt.AltThread.AltReceive.0.A}, 
+\\
+\qquad \CSPMM{C1::beginClose.T2},\; \CSPMM{close.T2.c1},\; 
+ \CSPMM{C1::endClose.T2},\;
+ \CSPMM{C2::beginClose.T2},\; \CSPMM{close.T2.c2},\;
+ \CSPMM{C2::endClose.T2},
+\\
+\qquad \CSPMM{A1::beginAlt.AltThread},\; \CSPMM{allClosed},\; 
+ \CSPMM{A1::endAlt.AltThread.AltAbort}
+}.
+\end{align}
+\]
+Here, alt-thread |AltThread| receives value~|A| from channel-thread~|T1|
+on~|c1| (first two lines); then thread~|T2| closes both channels (third line);
+then |AltThread| finds all channels are closed and so returns an |AltAbort|
+(final line). 
+
+Then the specifcation
+\begin{cspm}
+Spec = Spec£$_0$£0 \ {|sync, altSync, timeout, close, isClosed, allClosed|} 
+\end{cspm}
+allows just traces (of |begin| and |end| events) where every complete
+operation execution represents a correct synchronisation.
+%
+We can verify that the system refines this specification in both the traces
+and stable-failures models, showing that the system is synchronisation
 linearisable and progressible.
 
 \begin{window}[1,r,{
 %
 \vspace{0.5ex}
 \begin{tabular}{\|crr\|}
-Model & Time & States \\
-D & 872s & 854M \\
-F & 319s & 1.11B
+Model & States & Time \\
+D &  854M & 872s \\
+F & 1.11B & 319s
+%% Model & Time & States \\
+%% D & 872s & 854M \\
+%% F & 319s & 1.11B
 %% With constants from Data
 %% D & 920s & 834M \\ %???
 %% F & 390s & 1.09B 

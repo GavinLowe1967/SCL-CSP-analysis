@@ -21,6 +21,60 @@ the communication has succeeded, or both should throw |Closed| exceptions.
 The SCL implementation uses a boolean variable |isChanClosed| that records
 whether the channel is closed.  The |close| operation sets this variable, and
 signals to all the threads waiting on conditions.
+\begin{scala}
+def close = lock.mutex{
+  if(!isChanClosed){isChanClosed = true; slotEmptied.signalAll(); slotFull.signalAll(); continue.signalAll()}
+}
+\end{scala}
+
+The implementation also uses a variable |receiversWaiting|, which records how
+many receivers are currently waiting to receive a value. 
+
+Figure~\ref{fig:close-send-receive} gives code to show how |send| and
+|receive| deal with the channel being closed.  (Note: this is still a large
+simplification of the full code, which supports alts and the timed
+operations.)
+
+%%%%%
+
+\begin{figure}
+\begin{minipage}[t]{80mm}
+\begin{scala}
+def send(x: A) = lock.mutex{
+  while(status != Empty && !isChanClosed)
+    slotEmptied.await()  
+  if(isChanClosed) throw new Closed
+  value = x; status = Filled
+  if(receiversWaiting > 0) slotFull.signal()
+  continue.await()  
+  if(status == Read){ 
+    status = Empty; slotEmptied.signal() }
+  else{ 
+    assert(isChanClosed)
+    if(receiversWaiting == 0) throw new Closed }
+}
+\end{scala}
+\end{minipage}
+%
+\begin{minipage}[t]{75mm}
+\begin{scala}
+def receive(): A = lock.mutex{
+  if(isChanClosed) throw new Closed
+  while(status != Filled){
+    receiversWaiting += 1; slotFull.await()
+    receiversWaiting -= 1
+    if(status != Filled && isChanClosed)
+      throw new Closed
+  }
+  status = Read; continue.signal(); value
+}
+\end{scala}
+\end{minipage}
+\caption{Code for deadling with closed channels when sending and receiving.}
+\label{fig:close-send-receive}
+\end{figure}
+
+%%%%%
 
 When a thread calls |send| or |receive|, if |isChanClosed| is set, it throws a
 |Closed| exception.  Likewise, if a sending thread waits on |slotEmptied|, it
@@ -31,6 +85,7 @@ checks whether |status| holds |Filled|.  If so, it continues as described
 earlier: thus we prioritise completing the communication over checking whether
 the channel has been closed (this seems necessary for correct interaction with
 alts).
+%
 %% More precisely, an alt might have filled the slot, which implies it has
 %% performed the computation to calculate the value: at this point, it is
 %% committed to the communication. 
@@ -46,14 +101,120 @@ However, if there is a receiver waiting (as recorded by |receiversWaiting|),
 then that receiver will eventually return the value being sent, so the sending
 thread should also return successfully.  If there is no waiting receiver, the
 sending thread throws a |Closed| exception.
+%
+%% \begin{scala}
+%%   continue.await()  
+%%   if(status == Read){ status = Empty; slotEmptied.signal() }
+%%   else{ assert(isChanClosed); if(receiversWaiting == 0) throw new Closed }
+%% \end{scala}
 
 The precise order of checks in the previous paragraphs is rather subtle.  This
 is where the earlier implementation went wrong.  Previously, when the waiting
-thread received a signal, it first checked |isChanClosed|, and if it was set,
-threw a |Closed| exception.  This could be wrong, as a receiving thread might
-have read the sending thread's value, and returned that value, indicating that
-it had correctly synchronised.  The correct version of the code was found with
-the help of the model checking described below. 
+thread received a signal, it \emph{first} checked |isChanClosed|, and if it
+was set, threw a |Closed| exception.  This could be wrong for a couple of
+reasons, as illustrated in Figure~\ref{fig:old-impl-error}.
+%
+\begin{itemize}
+\item
+In the top part of the figure, a receiving thread reads and returns the
+sending thread's value, indicating that it has correctly synchronised.  Then
+the channel is closed.  If the |send| first checks |isChanClosed|, it will
+throw a |Closed| exception.  This is an error: either both threads should
+succeed, or both should see the channel had closed, and fail.  The correct
+version (Figure~\ref{fig:close-send-receive}) instead reads |status| first,
+and returns correctly.
+
+\item
+The bottom part of the figure is similar, but the channel is closed and the
+|send| continues \emph{before} the |receive| reads the sender's value.  If the
+|send| first checks |isChanClosed| (and maybe |status|), it will throw a
+|Closed| exception, even though the |receive| will subsequently return the
+sender's value.  This is again an error.  The correct version instead finds
+$\sm{receiversWaiting} > 0$, and so returns correctly.
+\end{itemize}
+This correct version was found with the help of the model checking described
+below.
+
+
+%%%%%%%%%%
+
+\begin{figure}
+\def\height{10.5}
+\def\width{6}
+%%%%%
+\begin{tikzpicture}[yscale = 0.5, xscale = 0.9, >= angle 60]
+\draw (0,0) node[draw](send){\scalashape send};
+\draw (send) -- ++ (0,-\height);
+\draw (\width,0) node[draw](receive){\scalashape receive};
+\draw (receive) -- ++ (0,-\height);
+\draw (12,0) node[draw](close){\scalashape close};
+\draw (close) -- ++ (0,-\height);
+%
+%\draw (receive) ++(0,-1) node[right]{\ldots; \scalashape slotFull.await()};
+%
+\draw (send)++(0,-1) node[right]{\ldots};
+\draw (send)++(0,-2) node[right]{
+  set {\scalashape value = x}, {\scalashape status = Filled}};
+%\draw[->] (0,-3.7) -- node[above]{\scalashape slotFull.signal()}  (\width,-3.7);
+\draw (send)++(0,-3) node[right]{\ldots; \scalashape continue.await()};
+%
+\draw (receive) ++ (0,-4) node[right]{
+  \ldots; read {\scalashape status = Filled}};
+\draw (receive) ++ (0,-5) node[right]{set {\scalashape status = Read};
+  \ldots};
+\draw (receive) ++ (0,-6) node[right]{ \scalashape continue.signal()};
+\draw[->] (receive)++(0,-6) --  (0,-6);
+\draw (receive) ++ (0,-7) node[right]{return {\scalashape value}};
+%
+\draw (close)++(0,-8) node[right]{set {\scalashape isChanClosed = true}; \ldots};
+%
+\draw (send) ++ (0,-9) node[right]{read {\scalashape isChanClosed = true}};
+\draw (send) ++ (0,-10) node[right]{throw {\scalashape Closed} exception};
+\end{tikzpicture}
+
+\bigskip
+
+%%%%%
+
+\def\height{11.5}
+\begin{tikzpicture}[yscale = 0.5, xscale = 0.9, >= angle 60]
+\draw (0,0) node[draw](send){\scalashape send};
+\draw (send) -- ++ (0,-\height);
+\draw (\width,0) node[draw](receive){\scalashape receive};
+\draw (receive) -- ++ (0,-\height);
+\draw (12,0) node[draw](close){\scalashape close};
+\draw (close) -- ++ (0,-\height);
+%
+\draw (receive) ++(0,-1) node[right]{\ldots; \scalashape slotFull.await()};
+%
+\draw (send)++(0,-2) node[right]{\ldots};
+\draw (send)++(0,-3) node[right]{
+  set {\scalashape value = x}, {\scalashape status = Filled}};
+\draw (send)++(0,-4) node[right] (sig1) {\scalashape slotFull.signal()};
+\draw[->] (sig1) --  (\width,-4);
+\draw (send)++(0,-5) node[right]{\ldots; \scalashape continue.await()};
+%
+\draw (close)++(0,-6) node[right]{set {\scalashape isChanClosed = true};
+  \ldots};
+%% \draw(close)++(0,-7) node[right]{\scalashape slotFull.signalAll()};
+%% \draw[->] (close)++(0,-7) -- (\width,-7);
+\draw(close)++(0,-7) node[right]{\scalashape continue.signalAll()};
+\draw[->] (close)++(0,-7) -- (0,-7);
+%
+\draw (send) ++ (0,-8) node[right]{read {\scalashape isChanClosed = true}};
+\draw (send) ++ (0,-9) node[right]{throw {\scalashape Closed} exception};
+%
+\draw (receive) ++ (0,-10) node[right]{
+  \ldots; read {\scalashape status = Filled}; \ldots};
+\draw (receive) ++ (0,-11) node[right]{return {\scalashape value}};
+%
+
+\end{tikzpicture}
+
+\caption{Illustration of errors that arise in the earlier implementation.
+  Several steps are elided, for brevity.}
+\label{fig:old-impl-error}
+\end{figure}
 
 %%%%%%%%%% Model
 
@@ -133,15 +294,100 @@ ReceivingLin(t, endChan) =
 \end{cspm}
 %\end{mysamepage}
 
+
+\begin{figure}
+\begin{center}
+\def\height{10mm} % height of boxes
+\begin{tikzpicture}[yscale = 1.5]
+\draw (0,0) node[draw, minimum height = \height](lin1){\cspmstyle Lin(T1)};
+\draw (0,-2) node[draw, minimum height = \height](lin2){\cspmstyle Lin(T2)};
+\draw (5.5,-1) node[draw, minimum height = \height](chanSpec){
+  \cspmstyle ChanSpec};
+% inter-process events
+\draw (lin1) -- (lin2); 
+\fill (0,-1)  circle(1.5pt) coordinate (T1);
+\draw (T1) -- node[above]{{\cspmstyle sync.T1.T2}, {\cspmstyle sync.T2.T1}}
+   (chanSpec);
+\draw (lin1) -| node[near start, above]{
+  {\cspmstyle close.T1}, {\cspmstyle isClosed.T1}}  (chanSpec);
+\draw (lin2) -| node[near start, below]{
+  {\cspmstyle close.T2}, {\cspmstyle isClosed.T2}}  (chanSpec);
+% outer box
+\draw (-1,0.5) -- (6.7,0.5) -- (6.7,-2.5) -- (-1,-2.5) -- (-1,0.5);
+% begin, end events
+\draw (-3.2,0) node (be1) {
+  \begin{tabular}{r@{}}
+  \CSPM{(begin}\m\CSPM{end)Send}.\CSPM{T1} \\ 
+  \CSPM{(begin}\m\CSPM{end)Receive}.\CSPM{T1} \\
+  \CSPM{(begin}\m\CSPM{end)Close}.\CSPM{T1}
+  \end{tabular}};
+\draw(be1.east) -- (lin1);
+\draw (-3.2,-2) node (be2) {
+  \begin{tabular}{r@{}}
+  \CSPM{(begin}\m\CSPM{end)Send}.\CSPM{T2} \\ 
+  \CSPM{(begin}\m\CSPM{end)Receive}.\CSPM{T2} \\
+  \CSPM{(begin}\m\CSPM{end)Close}.\CSPM{T2}
+  \end{tabular}};
+\draw(be2.east) -- (lin2);
+\end{tikzpicture}
+\end{center}
+\caption{Construction of the specification process, with two threads.  We use
+  BNF-style notation to capture channels with similar names; for example, we
+  write ``{\cspmstyle (begin}\m{\cspmstyle end)Send}'' to denote the
+  {\cspmstyle beginSend} and {\cspmstyle endSend} channels.}
+\label{fig:closable-spec}
+\end{figure}
+
 We combine the linearisers as before (with suitably extended alphabets).  We
-then synchronise them with |ChanSpec| on the relevant events, and hide those
+then synchronise them with |ChanSpec| on the relevant events.
 events.
 %
 \begin{cspm}
-Spec£$_0$£ = **|| t <- ThreadID @ [alphaLin(t)] Lin(t)
-Spec = (Spec£$_0$£ [| alphaChanSpec |] ChanSpec) \ alphaChanSpec
+AllLins = **|| t <- ThreadID @ [alphaLin(t)] Lin(t)
+Spec£$_0$£ = AllLins [| alphaChanSpec |] ChanSpec
 \end{cspm}
 %
+This is illustrated in Figure~\ref{fig:closable-spec} in the case of two
+threads.
+
+%
+For example, |Spec|$_0$ allows traces such as
+\[
+\begin{align}
+\trace{
+  \CSPMM{C::beginSend.T1.A},\; \CSPMM{C::beginReceive.T2},\;
+  \CSPMM{C::beginClose.T3},\; 
+  \CSPMM{sync.T1.T2.A},\; \CSPMM{close.T3},
+\\
+\qquad  \CSPMM{C::endSend.T1.SendSuccess},\; 
+  \CSPMM{C::endReceive.T2.ReceiveSuccess.A},\; \CSPMM{C::endClose.T3}
+}.
+\end{align}
+\]
+Here |T1| is trying to send, |T2| is trying to receive, and |T3| is trying to
+close the channel; the synchronisation between~|T1| and~|T2| happens before
+the |close| has an effect, so the threads successfully communicate.  But
+|Spec|$_0$ also allows traces such as
+
+\[
+\begin{align}
+\trace{
+  \CSPMM{C::beginSend.T1.A},\; \CSPMM{C::beginReceive.T2},\;
+  \CSPMM{C::beginClose.T3},\; 
+  \CSPMM{close.T3},\; \CSPMM{isClosed.T1},\; \CSPMM{isClosed.T2},
+\\
+\qquad  \CSPMM{C::endSend.T1.Closed},\; 
+  \CSPMM{C::endReceive.T2.Closed},\; \CSPMM{C::endClose.T3}
+}.
+\end{align}
+\]
+Here the channel is closed before |T1| and~|T2| can synchronise, so both
+return the |Closed| value.
+
+We can then define the specification process
+\begin{cspm}
+Spec = Spec£$_0$£ \ alphaChanSpec
+\end{cspm}
 Thus |Spec| allows all traces, containing the |begin| and |end| events, that
 are synchronisation linearisable.  So testing \CSPM{Spec [T= System}
 %] bracket match hack
@@ -174,7 +420,7 @@ Otherwise, it continues as in the untimed operation, except it waits on
 |continue| until at most |duration| after the initial call.  If it then finds
 that |status| is |Read|, then the send has been successful; it continues as in
 the untimed operation, and returns |true|.  Otherwise |status| must still hold
-|Filled| and |value| must stll hold~|x| (the implementation asserts this, and
+|Filled| and |value| must still hold~|x| (the implementation asserts this, and
 the analysis below checks this).  If the channel is closed, it continues as in
 the untimed operation.  Otherwise, it must have timed out, so it sets |status|
 to |Empty| to clear its value, signals to any thread waiting on |slotEmptied|,
@@ -194,12 +440,20 @@ analysis do not consider absolute time; thus we abstract away from the
 duration of a timed send or receive.  The difficult part of the implementation
 is getting the synchronisations right, rather than the length of the delay.
 
-The CSP model of an SCL monitor, as described earlier, can be extended to also
-model timed waits.  It records which threads are doing timed waits on which
-conditions.  Such threads can receive a signal, as for untimed waits.  In
-addition, they can time out, and subsequently acquire the lock on the monitor.
-Thus we model that such threads can eventually time out, but, as noted above,
-don't model the length of the delay.
+The CSP model of an SCL monitor, described in
+Section~\ref{sec:basic-csp-model}, also models timed waits, via a function
+|TimedAwait|.  A thread that calls this function might receive a signal, as
+for untimed waits.  In addition, it can time out.  Thus we model that such
+threads can eventually time out, but, as noted above, don't model the length
+of the delay.
+
+
+%% earlier, can be extended to also
+%% model timed waits.  It records which threads are doing timed waits on which
+%% conditions.  Such threads can receive a signal, as for untimed waits.  In
+%% addition, they can time out, and subsequently acquire the lock on the monitor.
+%% Thus we model that such threads can eventually time out, but, as noted above,
+%% don't model the length of the delay.
 %% , so we abstract away from the duration of a timed send or
 %% receive.  The difficult part of the implementation is getting the
 %% synchronisations right, rather than the length of the delay.
@@ -221,18 +475,18 @@ the possibility of such a time out to the possibilities of the untimed
 operations.
 %
 \begin{cspm}
-Lin(me) = 
+Lin(t) = 
   ... -- as before
-  [] C::beginSendWithin.me?x -> SendingWithinLin(me, x, C::endSendWithin.me)
-  [] C::beginReceiveWithin.me -> ReceivingWithinLin(me, C::endReceiveWithin.me)
+  [] C::beginSendWithin.t?x -> SendingWithinLin(t, x, C::endSendWithin.t)
+  [] C::beginReceiveWithin.t -> ReceivingWithinLin(t, C::endReceiveWithin.t)
 
-SendingWithinLin(me, x, endChan) = 
-  SendingLin(me, x, endChan)
-  [] timeout.me -> endChan.Timeout -> Lin(me)
+SendingWithinLin(t, x, endChan) = 
+  SendingLin(t, x, endChan)
+  [] timeout.t -> endChan.Timeout -> Lin(t)
 
-ReceivingWithinLin(me, endChan) = 
-  ReceivingLin(me, endChan) 
-  [] timeout.me -> endChan.Timeout -> Lin(me)
+ReceivingWithinLin(t, endChan) = 
+  ReceivingLin(t, endChan) 
+  [] timeout.t -> endChan.Timeout -> Lin(t)
 \end{cspm}
 %
 Further, we adapt the |ChanSpec| process to allow |timeout| events only before

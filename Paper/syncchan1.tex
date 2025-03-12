@@ -1,32 +1,40 @@
 \inlineCSP
 
-\subsection{Analysing the basic channel}
+\subsection{Synchronisation linearisation}
 \label{sec:syncchan-analysis-1}
 
-We now analyse the basic model of the channel.  We start by describing
-abstractly the property that we expect to hold, and then describe how to
-capture it using CSP and FDR.
+In this section, we describe, abstractly, the property that we expect to hold
+of the basic model of the channel.  In the next section, we describe how to
+capture this property using CSP and FDR.
 
 Each successful execution of the |send| operation should synchronise with a
-corresponding execution of |receive|: the two executions should overlap in
-time, and the |receive| should return the value of the |send|'s parameter.
+corresponding execution of |receive|, and vice versa: the two executions
+should overlap in time, and the |receive| should return the value of the
+|send|'s parameter.  
+
 In~\cite{LL:synchronisation}, we introduced a correctness condition,
-\emph{synchronisation linearisation}, corresponding to synchronisation objects
-like this.  (The definition is based upon that for
+\emph{synchronisation linearisation}.  This property applies generally
+to \emph{synchronisation objects}, i.e.~objects that allow two or more threads
+to synchronise, and possibly to exchange data; examples include a synchronous
+channel, the combination of an alt and associated channels, a barrier
+synchronisation object (e.g.~\cite{andrews}), or an exchanger
+(e.g.~\cite{Herlihy-Shavit}).  Below, we specialise the definition of
+synchronisation linearisation to the case of a channel.  (The definition is
+based upon that for
 \emph{linearisation}~\cite{herlihy-wing}, the standard correctness condition
-for concurrent datetypes.)  Below, we specialise the definition of
-synchronisation linearisation to the case of a channel.
+for concurrent datatypes.)  
 
 A \emph{history} (or trace) of a channel is a sequence of |begin| and |end|
 events, as in the previous subsection, corresponding to threads using the
-channel.  It is convenient to label each event with an \emph{instance
-  identifier}, with the same identifier on corresponding |begin| and |end|
-events, for example
-\[
-\trace{\CSPMM{beginSend}^1.t_1.3, \CSPMM{beginReceive}^2.t_2,
-  \CSPMM{endReceive}^2.t_2.\CSPMM{ReceiveSuccess}.3, 
+channel.  It is convenient to label each event with an \emph{execution
+identifier}, so that a |begin| and |end| event that correspond to the same
+execution of an operation have the same execution identifier; for example
+\begin{eqnarray*}
+h & = & 
+\trace{\CSPMM{beginSend}^1.t_1.3,\; \CSPMM{beginReceive}^2.t_2,\;
+  \CSPMM{endReceive}^2.t_2.\CSPMM{ReceiveSuccess}.3,\; 
   \CSPMM{endSend}^1.t_1.\CSPMM{SendSuccess} }.
-\]
+\end{eqnarray*}
 We consider only valid histories, where each identifier appears on at most one
 |begin| event and at most one |end| event, and where the identifier on each
 |end| event matches that on an earlier |begin| event.  We say that a history
@@ -39,20 +47,20 @@ synchronisations should occur in a one-at-a-time order.  We call the points at
 which the synchronisations appear to take place \emph{synchronisation points}.
 %
 We use events of the form $\CSPMM{sync}^{i,j}.s.r.x$ to represent a
-synchronisation between an execution of~|send| with instance identifier~$i$ by
-thread~$s$, and an execution of~|receive| with instance identifier~$j$ by
+synchronisation between an execution of~|send| with execution identifier~$i$ by
+thread~$s$, and an execution of~|receive| with execution identifier~$j$ by
 thread~$r$, passing data value~$x$.
 %
 %\begin{definition}
 A~\emph{synchronisation history} is a sequence of such \CSPM{sync} events.
-Each instance identifier must appear at most once in the history. 
+Each execution identifier must appear at most once in the history. 
 %\end{definition}
 For example,
-\[
-\trace{\CSPMM{sync}^{1,2}.t_1.t_2.3}
-\]
-is a synchronisation history that describes the synchronisations in the
-earlier example channel history.  
+\begin{eqnarray*}
+h_s & = & \trace{\CSPMM{sync}^{1,2}.t_1.t_2.3}
+\end{eqnarray*}
+is a synchronisation history that describes the (single) synchronisation in
+the earlier channel history~$h$.
 
 In the case of a basic synchronous channel, every such sequence of \CSPM{sync}
 events is legal.  However, for some synchronisation objects, only certain
@@ -63,7 +71,7 @@ histories as being \emph{legal}, based on the informal specification of the
 synchronisation object.
 
 The following definition describes when a history and synchronisation history
-use the same instance identifiers.
+use the same execution identifiers.
 \begin{definition}
 We say that a complete history~$h$ of the channel, and a legal synchronisation
 history~$h_s$ \emph{correspond} if:
@@ -80,19 +88,26 @@ history~$h_s$ \emph{correspond} if:
   $h_s$ contains a \CSPM{sync} event with identifier~$(i,j)$, for some~$i$.
 \end{itemize}
 \end{definition}
+%
+The earlier example histories~$h$ and~$h_s$ correspond.
 
 %% The definition below specialises the definition from~\cite{LL:synchronisation}
 %% to an SCL channel.
 \begin{definition}
 \label{def:sync-lin}
 Let $h$ be a complete history of the channel, and $h_s$ a legal
-synchronisation history.  We say that $h_s$ is a \emph{synchronisation
-  linearisation} of~$h$ if there is some way of interleaving $h$ and~$h_s$
-such that each $\CSPMM{sync}^{i,j}.s.r.x$ event is between events
-$\CSPMM{beginSend}^i.s.x$ and $\CSPMM{endSend}^i.s.\CSPMM{sendSuccess}$, and
-between events $\CSPMM{beginReceive}^j.r$ and
-$\CSPMM{endReceive}^j.r.\CSPMM{ReceiveSuccess}.x$. 
+synchronisation history, such that $h$ and~$h_s$ correspond.  We say that
+$h_s$ is a \emph{synchronisation linearisation} of~$h$ if there is some way of
+interleaving $h$ and~$h_s$ such that each $\CSPMM{sync}^{i,j}.s.r.x$ event is
+between events $\CSPMM{beginSend}^i.s.x$ and
+$\CSPMM{endSend}^i.s.\CSPMM{sendSuccess}$, and between events
+$\CSPMM{beginReceive}^j.r$ and
+$\CSPMM{endReceive}^j.r.\CSPMM{ReceiveSuccess}.x$.
 \end{definition}
+
+The earlier example synchronisation history~$h_s$ is a synchronisation
+linearisation of the example~$h$: the event of~$h_s$ can be inserted after the
+first two events of~$h$ to produce a suitable interleaving.
 
 %% \begin{itemize}
 %% \item Between each |beginSend.s.x| and |endSend.s.SendSuccess|, there is a
@@ -107,8 +122,8 @@ $\CSPMM{endReceive}^j.r.\CSPMM{ReceiveSuccess}.x$.
 %% \end{itemize}
 %\end{definition}
 
-The diagram below illustrates the idea; it illustrates a particular history
-of a channel (or a trace of the CSP model) and a synchronisation linearisation.
+The diagram below gives a larger example; it illustrates a particular history
+of a channel and a synchronisation linearisation.
 %
 %\begin{figure}
 \begin{center}
@@ -117,9 +132,9 @@ of a channel (or a trace of the CSP model) and a synchronisation linearisation.
 \draw[|-|] (0,0) -- node[above] {$\sm{send}^1.s_1\sm{.A}$} (4,0);
 \draw[|-|] (4.5,0) -- node[above] {$\sm{send}^2.s_1\sm{.B}$} (8.5,0);
 \draw[|-|] (0.5,-1) -- node[above] {$\sm{send}^3.s_2\sm{.A}$} (8,-1);
-\draw[|-|] (1,-2) -- node[above] {$\sm{receive}^4.r.A$} (3,-2);
-\draw[|-|] (3.5,-2) -- node[above] {$\sm{receive}^5.r.B$} (6.5,-2);
-\draw[|-|] (7,-2) -- node[above] {$\sm{receive}^6.r.A$} (9,-2);
+\draw[|-|] (1,-2) -- node[above] {$\sm{receive}^4.r.\sm{A}$} (3,-2);
+\draw[|-|] (3.5,-2) -- node[above] {$\sm{receive}^5.r.\sm{B}$} (6.5,-2);
+\draw[|-|] (7,-2) -- node[above] {$\sm{receive}^6.r.\sm{A}$} (9,-2);
 \draw (1.9,0) \X; \draw (1.9,-2) \X; 
 \draw[dashed] (1.9,0) -- (1.9,-2); % sync 1 and 3
 \draw (1.9,-2.3) node {\small $\sm{sync}^{1,4}.s_1.r.\sm{A}$};
@@ -140,7 +155,8 @@ Time goes from left to right in the diagram.  Each horizontal line represents
 an operation execution, with the end points representing the \CSPM{begin} and
 \CSPM{end} events.  A corresponding synchronisation history is written at the
 bottom, where each pair of ``$\cross$''s, linked by a dashed vertical line,
-illustrates a possible synchronisation point of the corresponding executions.
+illustrates a possible synchronisation point of the corresponding executions,
+and so defines the interleaving of the histories.
 
 We considered only complete histories above.  We now generalise.  An
 \emph{extension} of a (not necessarily complete) history~$h$ is formed by
@@ -190,11 +206,21 @@ linearisation~\cite{LL:synchronisation}.
 %% channel, it will become \emph{stateful}, with two states, open or closed.
 %% Other synchronisation objects have more interesting states.  \framebox{later?}
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Model checking synchronisation linearisability}
+
 We now describe how we use model checking to test synchronisation
 linearisability of the channel.  (We drop the execution identifiers from
 events: they were just convenient in defining synchronisation linearisation.)
 We create an instance |C| of the channel module from
-Figure~\ref{fig:basic-CSP-model} .  Below, expressions of the form |C::v|
+Figure~\ref{fig:basic-CSP-model}:  
+\begin{cspm}
+instance C = SyncChan(ThreadID, Data)
+\end{cspm}
+where |ThreadID| is a type of thread identifiers, and |Data| is a type of data
+passed on the channel.
+Below, expressions of the form |C::v|
 represent a value~|v| from this instance.
 %
 We create a processes that represent threads (with identities
@@ -220,8 +246,8 @@ System = C::runWithAndHide(Threads)
 
 We now build a CSP specification process that allows precisely the traces that
 are synchronisation linearisable.  As above, we use events of the form
-\CSPM{sync.t}$_1$\CSPM{.t}$_2$\CSPM{.x} to represent a synchronisation point
-between sender~$\CSPMM{t}_1$ and receiver~$\CSPMM{t}_2$, passing data
+\CSPM{sync.t}$\CSPcolour_1$\CSPM{.t}$\CSPcolour_2$\CSPM{.x} to represent a synchronisation point
+between sender~$\CSPMM{t}\CSPcolour_1$ and receiver~$\CSPMM{t}\CSPcolour_2$, passing data
 value~|x|.  We build a \emph{lineariser} process for each thread as follows,
 which ensures that the |sync| events occur between the corresponding |begin|
 and |end| events (the approach is based on that for standard
@@ -239,9 +265,10 @@ other thread, accepting that thread's value~|x|; this |x| is subsequently
 returned by the operation execution.
 
 We combine the |Lin| processes in parallel, with their natural
-alphabets, so the linearisers for threads $\CSPMM{t}_1$ and $\CSPMM{t}_2$
-synchronise on events of \CSPM{sync.t}$_1$\CSPM{.t}$_2$ and
-\CSPM{sync.t}$_2$\CSPM{.t}$_1$.  
+alphabets, so the linearisers for threads $\CSPMM{t}_{\CSPcolour 1}$ and
+$\CSPMM{t}_{\CSPcolour 2}$
+synchronise on events of \CSPM{sync.t}$\CSPcolour_1$\CSPM{.t}$\CSPcolour_2$ and
+\CSPM{sync.t}$\CSPcolour_2$\CSPM{.t}$\CSPcolour_1$.  
 %
 \begin{cspm}
 alphaLin(t) =
@@ -250,20 +277,60 @@ alphaLin(t) =
 Spec£$_0$£ = **|| t <- ThreadID @ [alphaLin(t)] Lin(t)
 \end{cspm} % £$\union$£
 %
-Thus each trace of |Spec|$_0$ represents an interleaving of a history of the
+Thus each trace of |Spec|$\CSPcolour_0$ represents an interleaving of a history of the
 channel with a synchronisation history, as required by
-Definition~\ref{def:sync-lin}.  By hiding the synchronisation points, we
-obtain a process whose traces represent precisely those histories that are
-synchronisation linearisable.  We can then use FDR to check that the system is
-synchronisation linearisable.
-%
+Definition~\ref{def:sync-lin}.  For example
+\[
+\begin{align}
+\trace{\CSPMM{beginSend.T1.3},\; \CSPMM{beginReceive.T2},\;
+  \CSPMM{sync.T1.T2.3}, \\
+\qquad  \CSPMM{endReceive.T2.ReceiveSuccess.3}, \;
+  \CSPMM{endSend.T1.SendSuccess}}
+\end{align}
+\]  
+is a trace of~|Spec|$_0$, since the restriction to the events of |T1| is a
+trace of~|Lin(T1)|, and the restriction to the events of |T2| is a
+trace of~|Lin(T2)|.  On the other hand, the trace
+\[
+\trace{\CSPMM{beginSend.T1.3},\;  \CSPMM{sync.T1.T2.3}, 
+  \CSPMM{endSend.T1.SendSuccess}}
+\]
+is not a trace of~|Spec|$_0$: the |sync| event would be blocked by |Lin(T2)|.
+
+By hiding the synchronisation points, we obtain a process whose traces
+represent precisely those histories that are synchronisation linearisable: 
 \begin{cspm}
 Spec = Spec£$_0$£ \ {|sync|}
+\end{cspm}
+For example, |Spec| would allow the correct trace
+\[
+\begin{align}
+\trace{\CSPMM{beginSend.T1.3},\; \CSPMM{beginReceive.T2},\;
+  \CSPMM{endReceive.T2.ReceiveSuccess.3}, \;
+  \CSPMM{endSend.T1.SendSuccess}},
+\end{align}
+\]  
+but not the incorrect trace 
+\[
+\trace{\CSPMM{beginSend.T1.3},\;   \CSPMM{endSend.T1.SendSuccess}}.
+\]
+We can thus use FDR to check that the system is synchronisation linearisable
+as follows:
+%
+\begin{cspm}
 assert Spec [T= System
 \end{cspm}
 
+This tests succeeds.  (Fuller results, for the complete model of the channel,
+are given in Section~\ref{sec:syncchan-timed}.)
+
+In particular, we can perform these tests with multiple threads, and so
+include cases where multiple threads access the same port concurrently.  Hence
+the analysis shows the channel works correctly when shared. 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Synchronisation progressibility}
 
 We now consider our progress property, \emph{synchronisation
   progressibility}~\cite{LL:synchronisation}.  This property assumes that the

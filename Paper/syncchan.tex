@@ -76,6 +76,7 @@ def receive(): A = lock.mutex{
 \end{scala}
 \end{minipage}
 
+%%%%%
 
 \begin{center}
 \def\rx{3} % x coord of receiver
@@ -97,7 +98,8 @@ def receive(): A = lock.mutex{
 \end{center}
 \caption{The code for sending and receiving, and a sequence diagram
   illustrating signalling on conditions within a channel
-  implementation. \label{fig:channel-sd}}
+  implementation. 
+\label{fig:channel-sd}}\label{fig:basic-channel-scala}
 \end{figure}
 
 %%%%%
@@ -123,6 +125,7 @@ value stored in |value|.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \subsection{Basic CSP model}
+\label{sec:basic-csp-model}
 
 We now outline the CSP model; Figure~\ref{fig:basic-CSP-model} gives an
 overview.  The model uses small fixed types |Data| representing the type of
@@ -324,7 +327,8 @@ ChannelThread(me) =
 Each of the send and receive operations can then be straightforwardly
 translated into a CSP process: see Figure~\ref{fig:CSP-send-receive}.  This
 process performs the operations on the monitor and variables, following the
-Scala code.  
+Scala code.  Each expression of the form |Monitor::Op(args)| represents a call
+to |Op(args)| within the |Monitor| module, which models~|lock|.
 
 %% (Appendix~\ref{app:modelling} describes various techniques that
 %% we found useful in this modelling.)

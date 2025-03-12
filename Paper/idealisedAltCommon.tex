@@ -1,0 +1,46 @@
+%%% Text from the "idealised alt" section, common to both the TR and the
+%%% submitted version. 
+
+We can then compare the CSP model of an alt implementation to the idealised
+model.  We can verify that the implementation model refines |AltSpec|$_F$ and
+|AltSpec|$_{FD}$ in the relevant semantic models.
+
+\begin{window}[1,r,{
+%
+\vspace{0.5ex}
+\begin{tabular}{\|cccc\|}
+Model & Threads & States  & Time\\
+F & 4 & 33.1M & 21s \\
+FD & 4 & 5.6M & 5.4s \\
+F & 5 & 601M & 472s \\
+FD & 5 & 62.7M & 46s \\
+F & 6 & 10.6B & 153min \\
+FD & 6 & 662M & 701s \\
+\end{tabular}
+},]
+%
+The table to the right gives statistics about these checks.  In each case, we
+considered an alt with two branches, one in-port branch and one out-port
+branch.  The checks are faster than the corresponding checks for a channel,
+mainly because normalisation of the specification was
+faster than for a channel, because the idealised alt has fewer states than an
+idealised channel.  We think the main reason for this is that the |Lin(t)|
+processes in the idealised alt have fewer states than the |Lin(t)| processes
+in the idealised channel (there is one such process for each channel thread,
+so the total number of states increases exponentially).  In addition, the
+implementation model for an alt has fewer states than for a channel.
+\end{window}
+
+We used a couple of techniques to improve the efficiency of these checks.
+Firstly, we applied the prioritisation operator of FDR to |IdealisedAlt| to
+give priority to error events over all other events (except $\tau$s); so in
+any state where an error event (or $\tau$) is possible, all other events are
+blocked.  This is sound here because the subsequent behaviours allowed by the
+specification (in |CHAOS(Interface)| or |DIV|) include the behaviours
+corresponding to the blocked events.
+
+Further, for the check in the stable-failures model, we normalised
+|IdealisedAlt| before the application of the throws operator.  This made the
+subsequent normalisation of |AltSpec|$_F$ faster.  (However, the same
+technique in the failures-divergences model made the check slower.)
+

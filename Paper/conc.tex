@@ -6,18 +6,57 @@ CSP and its model checker FDR\@.  We have shown how the properties of
 synchronisation linearisability and synchronisation progressibility can be
 captured as CSP refinement checks, and tested using FDR.  The specification is
 built from a lineariser process for each thread: these processes synchronise
-on events that represent the synchronisation points of operations.  We believe
-that this style is widely applicable to other synchronisation objects.
+on events that represent the synchronisation points of operations.  
+
+We believe that this style is widely applicable to other synchronisation
+objects.  Consider a synchronisation object that allows binary
+synchronisations between operations \SCALA{op1} and \SCALA{op2}.  We can use
+events of the form |sync.t1.t2.x1.x2.y1.y2| to represent a synchronisation
+between an execution by~|t1| of \SCALA{op1(x1)} returning~|y1|, and an
+execution by~|t2| of \SCALA{op2(x2)} returning~|y2|.  (In many cases, like in
+the body of this paper, the form of these events can be simplified.)  Then we
+can define lineariser processes as follows.
 %
-Our analysis revealed an error in a previous version of the code, but also
-helped us reach a correct implementation.  We have shown how compositional
+\begin{cspm}
+Lin(t) = 
+  beginOp1.t?x1 -> sync.t?other!x1?x2?y1?y2 -> endOp1.t.y1 -> Lin(t) 
+  [] beginOp2.t?x2 -> sync?other!t?x1!x2?y1?y2 -> endOp2.t.y2 -> Lin(t)
+\end{cspm}
+%
+In each case, this thread contributes its identity and parameter to the |sync|
+event, and receives back its return value.  The lineariser ensures that each
+synchronisation event happens between the corresponding |begin| and |end|
+events.  These linearisers can then be placed in parallel with a suitable
+process that specifies what values should be returned, possibly as a function
+of some state.  A generic definition for this process would be
+%
+\begin{cspm}
+SyncSpec(state) = 
+  sync?t1?t2?x1?x2!f1(state,x1,x2)!f2(state,x2,x2) -> SyncSpec(update(state,x1,x2))
+\end{cspm}
+%
+where |state| captures the current state, |f1| and |f2| define the return
+values as functions of the current state and the parameters, and |update|
+defines how the state is updated.  These functions can be chosen so as to
+capture the informal specification of the synchronisation object.
+
+This construction can be generalised to allow an operation to synchronise in
+multiple different ways, as in Section~\ref{sec:combined}.  It can also be
+extended to allow synchronisations between more than two threads.
+
+The analysis revealed an error in a previous version of the code.  But it also
+helped to reach a correct implementation:I went through multiple iterations of
+finding bugs using FDR, and coming up with possible fixes.  I don't think I
+would have reached correct code without the benefits of model checking. 
+
+We have shown how compositional
 verification can be used to make an analysis more efficient, and so allow
 larger systems to be analysed.
-
+%
 The compositional verification proved more difficult that we had expected.
 One reason for this is that the concrete components have complex behaviours
 which the idealised versions have to reflect.  Further, there is a decoupling
-between the eternal interface ---in terms of |begin| and |end| events--- and
+between the external interface ---in terms of |begin| and |end| events--- and
 where those operation executions have an effect: the use of lineariser
 components within the idealised models proved useful in capturing this
 decoupling.  The other main source of difficulty was the necessity of

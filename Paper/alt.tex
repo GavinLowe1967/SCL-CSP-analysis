@@ -12,28 +12,37 @@ CSP, and describe a direct analysis of an alt and associated channels.
 
 \subsection{High-level design}
 
-We describe the interactions between an alt and relevant channels via operation
-calls.  We call this the \emph{alt protocol}. 
+An alt and its channels interact by calling operations on each other.  We call
+the way they interact the \emph{alt protocol}.
 
 We call the thread that is executing the alt the \emph{alt-thread}, and a
 thread performing a send, receive or close operation in a channel a
 \emph{channel-thread}.  The alt-thread calls (package-private) operations upon
-relevant channels; each such operation uses the channel's lock, so as to
-provide mutual exclusion.  Likewise, a channel-thread may call (package-private)
-operations upon relevant alts; each such operation uses the alt's lock.
+relevant channels; and likewise, a channel-thread may call (package-private)
+operations upon relevant alts.
+When the alt-thread calls an operation on a channel, it uses the channel's
+lock, so as to provide mutual exclusion; similarly, when a channel-thread
+calls operations on the alt, it uses the alt's lock.
 
 When an alt-thread executes an alt, it starts by locking the alt.  It then
 registers, in turn, with each of the relevant ports whose guard evaluates to
-|true|.  This asks the port whether it is ready to communicate.  The
-alt-thread calls an operation
+|true|.  This registration tells the port that the alt is willing to
+communicate, and asks the port whether it is also ready to communicate.  More
+precisely, the alt-thread calls an operation
 %
 \begin{scala}
-def registerIn(alt: AltT, index: Int, iter: Int): RegisterInResult[A]  
+def registerIn(alt: AltT, index: Int): RegisterInResult[A]  
 \end{scala}
 %
-on each of its in-ports, where |alt| is a reference to the calling alt, |index|
-is the index of the branch within the alt, and |iter| is an iteration number
-within a |serve| construct (used only for assertions).  
+on each of its in-ports, where |alt| is a reference to the calling alt, and
+|index| is the index of the branch within the alt.\footnote{In the
+  implementation, there is an additional parameter {\scalashape iter} that
+  represents an iteration number when an alt is executed repeatedly; other
+  operations described in this section have a similar parameter.  It is used
+  only in assertions, checking that both components have the same value, and
+  so we omit it from our analysis.}
+%% , and |iter| is an iteration number
+%% within a |serve| construct (used only for assertions).  
 The operation returns a
 result of type |RegisterInResult[A]|, where |A| is the type of data passed by
 the port, of one of the following forms:
@@ -52,12 +61,11 @@ the port, of one of the following forms:
 Similarly, the alt-thread calls an operation
 %
 \begin{scala}
-def registerOut(alt: AltT, index: Int, iter: Int, value: () => A): RegisterOutResult
+def registerOut(alt: AltT, index: Int, value: () => A): RegisterOutResult
 \end{scala}
-on each of its out-ports, where |alt|, |index| and |iter| are as for
-|registerIn|, and |value| is a computation that, when evaluated, produces the
-value to be sent.  The operation returns a result of one of the following
-forms:
+on each of its out-ports, where |alt| and |index| are as for |registerIn|, and
+|value| is a computation that, when evaluated, produces the value to be sent.
+The operation returns a result of one of the following forms:
 %
 \begin{description}
 \item[\rm{\scalastyle RegisterOutSuccess}:] the port is willing to
@@ -70,8 +78,10 @@ forms:
 \end{description}
 
 If one of the registrations is successful, the alt-thread releases the lock on
-the alt (we explain the reason for this below), and then deregisters from the
-waiting branches, via operations |deregisterIn| and |deregisterOut|.  It then
+the alt (we explain the reason for this below).  It then deregisters from the
+waiting branches, via operations |deregisterIn| and |deregisterOut|; this
+tells the port that the alt is no longer willing to communicate (and the
+channel removes the details of the registration).  The alt-thread then
 executes the continuation of the successful branch.
 
 \def\IP{\emph{IP}}
@@ -88,7 +98,7 @@ finally it deregisters from~\IP.
 %\unScalaMid
 \def\height{7.5} % height of sequence diagram
 \def\gap{3.5} % gap between columns
-\begin{tikzpicture}[yscale = 0.8, >= angle 60]
+\begin{tikzpicture}[yscale = 0.75, >= angle 60]
 \draw (0,0) node[draw](alt){Alt};
 \draw (alt) -- ++ (0,-\height);
 \draw (alt)++(\gap,0) node[draw](c1){\IP};
@@ -123,43 +133,47 @@ finally it deregisters from~\IP.
 
 If no registration is successful, and the alt-thread finds that every port is
 closed or has a guard that is false, then it throws an |AltAbort| exception.
-Otherwise, it waits for a callback from one of the ports with which it is
-registered (which releases the lock on the alt), of one of the following
-forms.
+Otherwise, it waits (releasing the lock on the alt) for a callback from one of
+the ports with which it is registered, of one of the following forms.
 %
 \begin{itemize}
 \item If the alt is registered at the in-port of a channel, and another thread
   tries to send on the channel, it calls
 \begin{scala}
-def maybeReceive(value: A, index: Int, iter: Int): Boolean
+def maybeReceive(value: A, index: Int): Boolean
 \end{scala}
 %
 on the alt, where |value| is the value it is trying to send to the alt, and
-|index| and |iter| match the values provided during registration.  This asks
-the alt whether it is still willing to receive from the in-port.
+|index| matches the value provided during registration.  This asks
+the alt whether it is still willing to receive from the in-port, and if so
+completes the communication, storing |value| in the alt. 
 
 \item If the alt is registered at the out-port of a channel, and another thread
   tries to receive on the channel, it calls
 %
 \begin{scala}
-def maybeSend[A](index: Int, iter: Int): Option[A]
+def maybeSend[A](index: Int): Option[A]
 \end{scala}
 %
-This asks the alt whether it is still willing to send a value to the in-port.
+This asks the alt whether it is still willing to send a value to the in-port,
+and if so completes the communication.
 
 \item If another thread closes the channel, it calls 
 %
 \begin{scala}
-def portClosed(index: Int, iter: Int)
+def portClosed(index: Int)
 \end{scala}
 \end{itemize}
 %
 Each of the callbacks uses the alt's lock, to ensure mutual exclusion. 
+Callbacks are blocked during the registration phase, because the alt-thread
+holds the alt's lock.  
 
 If the alt receives a call of |maybeReceive| or |maybeSend|, it responds
 positively to the first such call, returning |true| to a |maybeReceive|, or
-|Some(x)| to a |maybeSend|, where~|x| is the value it sends.  The alt-thread
-then deregisters from the remaining branches.
+|Some(x)| to a |maybeSend|, where~|x| is the value it sends.
+The  callback operation wakes up the alt-thread, which then
+deregisters from the remaining branches.
 %
 Finally, the alt-thread
 executes the continuation of the successful branch.
@@ -172,7 +186,7 @@ Figure~\ref{fig:alt-2} gives an example of a successful callback of
 %\unScalaMid
 \def\height{9.5} % height of sequence diagram
 \def\gap{3.5} % gap between columns
-\begin{tikzpicture}[yscale = 0.8, >= angle 60]
+\begin{tikzpicture}[yscale = 0.75, >= angle 60]
 \draw (0,0) node[draw](alt){Alt};
 \draw (alt) -- ++ (0,-\height);
 \draw (alt)++(\gap,0) node[draw](c1){\IP};
@@ -210,13 +224,12 @@ Figure~\ref{fig:alt-2} gives an example of a successful callback of
 
 %%%%%
 
-Callbacks are blocked during the registration phase, because the alt-thread
-holds the alt's lock.  If the alt receives multiple callbacks to
+If the alt receives multiple callbacks to
 |maybeReceive| or |maybeSend| (including during deregistration), it responds
 negatively to all except the first, returning |false| or |None|, respectively.
 %
 If all the channels with which the alt is registered call |portClosed|, the
-alt-thread throws an |AltAbort|. 
+alt-thread is woken up, and it throws an |AltAbort|. 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -320,17 +333,23 @@ a thread that is waiting for a signal may resume, even though it has received
 no signal!  This is known as a \emph{spurious wakeup}.  The alt implementation
 guards against spurious wakeups by performing a suitable check when resuming
 after a wait, and waiting again if appropriate.
-
-Our CSP model of a monitor reflects the possibility of spurious wakeups,
-allowing a waiting thread~|t| to resume either as the result of a signal, or a
+%
+Our CSP model of a monitor reflects the possibility of spurious wakeups: it
+allows a waiting thread~|t| to resume either as the result of a signal, or a
 spurious wakeup, modelled by the event |spuriousWakeup.t|.  We run this
-monitor process in parallel with a \emph{regulator process} \CSPM{Reg =
-  CHAOS(\{\|spuriousWakeup\|\})} that nondeterministically chooses whether or not
-to allow a spurious wakeup.  This last point is important: if we allowed
-unrestricted spurious wakeups, there is a danger that our analysis would seem
-to show that suitable progress properties are satisfied, when in fact it is
-only spurious wakeups that allow progress, and without them the system would
-get stuck.
+monitor process in parallel with a \emph{regulator process}
+\begin{cspm}
+Reg = spuriousWakeup?t -> Reg |~| STOP
+\end{cspm}
+(equivalently, \CSPM{Reg = CHAOS(\{\|spuriousWakeup\|\})}).  
+The effect of this combination is that 
+spurious wakeups (nondeterminstically) might or might not happen.
+%
+This last point is important: spurious wakeups can happen, but they can't be
+relied on to happen.  If we allowed unrestricted spurious wakeups in the
+model, there is a danger that our analysis would seem to show that suitable
+progress properties are satisfied, when in fact it is only spurious wakeups
+that allow progress, and without them the system would get stuck.
 
 We choose not to model the guards of alt branches, for we believe that doing
 so would add a lot of complexity to the model, and cause FDR checks to take
@@ -339,17 +358,73 @@ concerning guards is rather straightforward: a branch whose guard is false is
 simply ignored.  We think it is best to concentrate on the more difficult
 parts of the implementation.
 
-We also don't model the expression that generates the value to be sent in an
+We also do not model the expression that generates the value to be sent in an
 out-port branch, but just pick the value nondeterministically.  Likewise, we
-don't model the continuations of branches.  Each of these could contain
-arbitrary code (of the correct type); but they are outside the operation of
-the alt itself.  Instead, the model just records the index of the branch
-selected. 
+do not model the continuations of branches, which are executed after the
+communication itself.  Each continuation could contain arbitrary code (of the
+correct type); but they are outside the operation of the alt itself.  Instead,
+the model just records the index of the branch selected.
  
-Finally, we don't model the |iter| parameter in the registration and
-deregistration operations, since it is used only in assertions as sanity
-checks, and would greatly increase the state space of the models.
+%% Finally, we do not model the |iter| parameter in the registration and
+%% deregistration operations, since it is used only in assertions as sanity
+%% checks, and would greatly increase the state space of the models.
 
+%%%%%
+
+\begin{figure}
+\begin{center}
+\def\height{10mm} % height of boxes
+\def\chanW{15mm} % width of Channel boxes
+\def\gap{0.1} % gap for stacked figure
+\begin{tikzpicture}
+% Alt box
+\draw(0,0) node[draw, minimum height = \height](alt){\cspmstyle Alt};
+% Channel stacked box
+\draw (3,0) node[draw, minimum height = \height, minimum width = \chanW](chan){
+  \cspmstyle Channel};
+\draw (chan.north west) ++ (\gap, 0.0) |- ++ (\chanW, \gap) |- 
+  ++ (-\gap, -\height);
+% Alt external interface
+\draw (alt) -- node[left, at end]{\beginEnd{Alt}}  ++ (-1.3,0);
+\draw (alt) -- node[below, at end]{\cspmstyle spuriousWakeup.AltThread} ++ (0,-1.3);
+% Internal syncs
+\path (alt.east) -- ++(0,-0.2) coordinate (a) -- ++(0,0.4) coordinate (aa);
+\path (chan.west) -- ++(0,-0.2) coordinate (b) -- ++(0,0.4) coordinate (bb);
+\draw (aa) -- node[above]{\inCircle{1}}  (bb);
+\draw (a) -- node[below]{\inCircle{2}}  (b);
+% Channel interface
+\draw (chan.east) ++ (0.1,0) -- node[right, at end]{\inCircle{3}} ++ (0.9,0);
+%
+%%%%% Outer box
+\path (alt.west) -- ++ (-0.5,1) coordinate (a) -- ++(0,-1.9) coordinate (d);
+\path (chan.east) --  ++(0.5,1) coordinate (b) -- ++(0,-1.9) coordinate (c);
+\draw (a) -- (b) -- (c) -- (d) -- (a);
+\end{tikzpicture}
+\end{center}
+
+\textbf{Key.} 
+\raggedright
+%
+\begin{itemize}
+%% \item[\inCircle{1}:]  \beginEnd{Alt};
+\item[\inCircle{1}:] \beginEnd{Register\alt{In}{Out}},
+  \beginEnd{Deregister\alt{In}{Out}};
+
+\item[\inCircle{2}:] \beginEnd{maybe\alt{Send}{Receive}},
+  \beginEnd{PortClosed};
+
+\item[\inCircle{3}:] \beginEnd{Send}, \beginEnd{Receive},
+  \beginEnd{SendWithin}, \beginEnd{ReceiveWithin}, \beginEnd{Close}.
+\end{itemize}
+
+\caption{The interface of the CSP model of an alt and associated channels.}
+\label{fig:alt-chans}
+\end{figure}
+
+%%%%%
+
+Figure~\ref{fig:alt-chans} depicts the interface of the model of an alt, and
+how the interface of the model of a channel is adapted to deal with alts. 
 In the model of a channel, the registration and deregistration operations are
 wrapped in suitable |begin| and |end| events.  In the model of an alt, the
 alt-thread performs these |begin| and |end| events, and then reacts to the

@@ -23,10 +23,13 @@ satisfies synchronisation linearisation and progressibility.
 Scala Concurrency Library (SCL) is a library of concurrency primitives for the
 Scala programming language.  It was developed for teaching concurrent
 programming to students, and includes support for message-passing concurrency,
-monitors and semaphores.  In this paper we analyse the message-passing
-primitives: we build CSP models of them, and then use the model checker FDR to
-test for correctness.  To our surprise, the analysis revealed a (fairly minor)
-bug in the implementation.
+monitors and semaphores.  SCL is based on~CSO (Concurrent Scala
+Objects)~\cite{CSO}; it has similar aims to JCSP~\cite{JCSP}.
+
+In this paper we analyse the message-passing primitives from SCL: we build CSP
+models of them, and then use the model checker FDR to test for correctness.
+To our surprise, the analysis revealed a (fairly minor) bug in the
+implementation.
 
 We start by describing relevant aspects of SCL\@.  Program threads can send
 and receive messages using \emph{channels}.  If |c| is a channel, then the
@@ -37,7 +40,8 @@ sending thread must wait until there is a thread willing to receive, so that
 the two operation executions synchronise.  Channels are typed: the type
 |SyncChan[A]| represents synchronous channels that send data of type~|A|.  A
 channel is composed of an \emph{out-port}, where values are sent, and an
-\emph{in-port}, where values are received.
+\emph{in-port}, where values are received; the ports can be thought of as the
+two ends of the channel.
 
 Channels in SCL also have timed operations.  The operation
 |sendWithin(delay)(x)| attempts to send |x|, but if it is unable to
@@ -49,11 +53,19 @@ a value |Some(x)| to indicate that it successfully received~|x|, or |None| to
 indicate that it timed out.
 
 Ports may be shared: multiple threads may try to send or receive on the same
-port concurrently; the channel is responsible for pairing up a sender with a
-receiver. 
+port concurrently.  However, each synchronisation is between one sender and one
+receiver; the channel is responsible for pairing up a sender with a receiver.
+Shared ports are useful, for example, to allow communication between a server
+and multiple clients.
 
 A channel can be closed (by the |close| operation): subsequently, an attempt
-to send or receive on the channel will throw a |Closed| exception.
+to send or receive on the channel will throw a |Closed| exception.  Closing
+can be useful, for example, to allow a producer thread to indicate the end of
+a stream of data, to allow consumer threads to move on (maybe terminating).
+Likewise, a consumer can close a channel to signal to a producer that it is
+unwilling to receive more data.  (Closing is somewhat similar to the concept
+of poisoning in JCSP~\cite{jcsp-poison}, where a special ``poison'' value is
+sent to indicate the end of a stream of data.)   
 
 An alternation, or \emph{alt}, allows a thread to communicate on one of
 several channels, whichever is available for communication first.  The
@@ -109,9 +121,9 @@ not full and |in| is not closed; the out-port branch is feasible only if the
 buffer is not empty and |out| is not closed.  If no branch of an alt is
 feasible, the alt throws an |AltAbort| exception.
 
-The construct |serve(branches)| is like an |alt(branches)| that is executed
-repeatedly, except any |AltAbort| exception is caught.  Hence it runs
-repeatedly until no branch is feasible. 
+%% The construct |serve(branches)| is like an |alt(branches)| that is executed
+%% repeatedly, except any |AltAbort| exception is caught.  Hence it runs
+%% repeatedly until no branch is feasible. 
 
 There are two restrictions on the usage of alts: a port may not be
 simultaneously feasible in two alts (although a port may be simultaneously
@@ -228,7 +240,8 @@ number of previous occasions.
 %
 Welch and Martin~\cite{welch-martin} present a model of Java multi-threading
 (in particular, monitors), including a model of a channel within their own
-concurrency API\@.
+concurrency API\@; in~\cite{welch-martin-cpa} they also include a model of
+alternation.
 %
 I~\cite{gavin:alt} derive and verify a generalisation of the
 alt construct, by building CSP models and analysing them using FDR.  
